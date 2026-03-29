@@ -1,0 +1,19 @@
+# 数据目录
+/data/
+
+# 后端
+backend/__pycache__/
+backend/app/__pycache__/
+backend/app/**/__pycache__/
+backend/data.db
+*.pyc
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
