@@ -123,6 +123,8 @@ class PrintPlan(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     date = Column(Date, nullable=False)
+    start_time = Column(String, default="08:00", nullable=False)  # "HH:MM"
+    duration_hours = Column(Integer, default=24, nullable=False)
     status = Column(String, default="draft", nullable=False)  # draft / confirmed
     created_at = Column(DateTime, default=datetime.now, nullable=False)
 

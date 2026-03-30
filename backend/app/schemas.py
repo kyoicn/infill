@@ -161,6 +161,8 @@ class PrintBatchOut(BaseModel):
 class PrintPlanOut(BaseModel):
     id: int
     date: date
+    start_time: str
+    duration_hours: int
     status: str
     created_at: datetime
     batches: list[PrintBatchOut] = []
@@ -170,3 +172,4 @@ class GeneratePlanRequest(BaseModel):
     date: date
     surplus_enabled: bool = True
     start_time: str = "08:00"  # "HH:MM" 首批启动时间，可在操作窗口外
+    duration_hours: int = 24   # 排班周期（小时）

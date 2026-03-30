@@ -7,7 +7,7 @@
 3. 按批次调度，尽量同步结束
 """
 
-from datetime import date
+from datetime import date, timedelta
 from collections import defaultdict
 
 from sqlalchemy.orm import Session
@@ -24,12 +24,11 @@ def _get_changeover_minutes(db: Session) -> int:
     return int(cfg.value) if cfg else 15
 
 
-def _get_windows(db: Session, target_date: date) -> list[tuple[int, int]]:
-    """获取目标日期的操作时间窗口，返回 [(start_min, end_min), ...]"""
-    dow = target_date.weekday()  # 0=周一
+def _get_day_windows(db: Session, d: date) -> list[tuple[int, int]]:
+    """获取某一天的操作时间窗口（分钟，0~1440）"""
+    dow = d.weekday()
     cfg = db.query(ScheduleConfig).filter(ScheduleConfig.day_of_week == dow).first()
     if not cfg:
-        # 默认窗口
         return [(480, 720), (750, 1080), (1110, 1380)]  # 8-12, 12:30-18, 18:30-23
     windows = []
     for w in cfg.windows:
@@ -37,6 +36,20 @@ def _get_windows(db: Session, target_date: date) -> list[tuple[int, int]]:
         eh, em = map(int, w["end"].split(":"))
         windows.append((sh * 60 + sm, eh * 60 + em))
     return sorted(windows)
+
+
+def _get_windows(db: Session, target_date: date, start_min: int = 480, duration_hours: int = 24) -> list[tuple[int, int]]:
+    """获取排班周期内的操作时间窗口，跨天时拼接多天的窗口并偏移。"""
+    end_min = start_min + duration_hours * 60
+    days_needed = (end_min + 1439) // 1440  # 覆盖到截止时间所在的那一天
+    windows = []
+    for day_offset in range(days_needed):
+        d = target_date + timedelta(days=day_offset)
+        day_windows = _get_day_windows(db, d)
+        offset = day_offset * 1440
+        for ws, we in day_windows:
+            windows.append((ws + offset, we + offset))
+    return windows
 
 
 def _calc_component_demand(db: Session, target_date: date, surplus_enabled: bool) -> dict[int, int]:
@@ -111,19 +124,19 @@ def _find_next_start(current_min: int, windows: list[tuple[int, int]], changeove
     return None  # 今天窗口内无法启动
 
 
-def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_time: str = "08:00") -> PrintPlan:
+def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_time: str = "08:00", duration_hours: int = 24) -> PrintPlan:
     """生成排班表"""
     changeover = _get_changeover_minutes(db)
-    windows = _get_windows(db, target_date)
     printers = db.query(Printer).all()
-    num_printers = len(printers)
-
-    if num_printers == 0:
+    if not printers:
         raise ValueError("没有可用的打印机")
 
     # 解析自定义开始时间
     sh, sm = map(int, start_time.split(":"))
     custom_start = sh * 60 + sm
+    deadline = custom_start + duration_hours * 60
+
+    windows = _get_windows(db, target_date, custom_start, duration_hours)
 
     # 1. 计算需求并选择打印配置
     demand = _calc_component_demand(db, target_date, surplus_enabled)
@@ -138,7 +151,7 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
     task_config_ids.sort(key=lambda cid: config_cache[cid].duration_minutes, reverse=True)
 
     # 2. 创建排班表
-    plan = PrintPlan(date=target_date, status="draft")
+    plan = PrintPlan(date=target_date, start_time=start_time, duration_hours=duration_hours, status="draft")
     db.add(plan)
     db.flush()
 
@@ -160,11 +173,15 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
             start = _find_next_start(earliest, windows, changeover)
 
             if start is None:
-                # 今天窗口都排满了，最后一批安排过夜任务
+                # 所有窗口都排满了，最后一批安排过夜任务
                 last_window_end = windows[-1][1] if windows else 1380
                 start = last_window_end - changeover
                 if start < earliest:
                     break  # 实在排不下了
+
+        # 超过排班周期则停止
+        if start >= deadline:
+            break
 
         # 找出此时可用的打印机
         available_printers = [p for p in printers if printer_available[p.id] <= start + changeover]

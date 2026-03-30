@@ -27,12 +27,22 @@ def get_plan(plan_id: int, db: Session = Depends(get_db)):
 
 @router.post("/generate", response_model=PrintPlanOut)
 def generate_schedule(req: GeneratePlanRequest, db: Session = Depends(get_db)):
-    """生成指定日期的排班表（每个日期只能有一个）"""
-    existing = db.query(PrintPlan).filter(PrintPlan.date == req.date).first()
-    if existing:
-        raise HTTPException(400, f"{req.date} 已有排班，请先删除后再重新生成")
+    """生成排班表，检查时间段是否与已有排班重叠"""
+    from datetime import datetime, timedelta
+    # 新排班的绝对起止时间
+    sh, sm = map(int, req.start_time.split(":"))
+    new_start = datetime.combine(req.date, datetime.min.time()) + timedelta(hours=sh, minutes=sm)
+    new_end = new_start + timedelta(hours=req.duration_hours)
+
+    # 检查与已有排班是否重叠
+    for plan in db.query(PrintPlan).all():
+        psh, psm = map(int, plan.start_time.split(":"))
+        p_start = datetime.combine(plan.date, datetime.min.time()) + timedelta(hours=psh, minutes=psm)
+        p_end = p_start + timedelta(hours=plan.duration_hours)
+        if new_start < p_end and new_end > p_start:
+            raise HTTPException(400, f"与已有排班（{plan.date} {plan.start_time}，{plan.duration_hours}h）时间重叠")
     try:
-        plan = generate_plan(db, req.date, req.surplus_enabled, req.start_time)
+        plan = generate_plan(db, req.date, req.surplus_enabled, req.start_time, req.duration_hours)
     except ValueError as e:
         raise HTTPException(400, str(e))
     return plan

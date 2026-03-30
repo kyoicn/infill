@@ -13,6 +13,7 @@ export default function Schedule() {
   const [components, setComponents] = useState<any[]>([]);
   const [configs, setConfigs] = useState<any[]>([]);
   const [startTime, setStartTime] = useState(dayjs('08:00', 'HH:mm'));
+  const [durationHours, setDurationHours] = useState(24);
   const [viewMode, setViewMode] = useState('list');
   const [changeoverMin, setChangeoverMin] = useState(15);
   const [products, setProducts] = useState<any[]>([]);
@@ -49,7 +50,7 @@ export default function Schedule() {
 
   const generate = async () => {
     try {
-      const plan = await api.generatePlan({ date: date.format('YYYY-MM-DD'), surplus_enabled: surplusEnabled, start_time: startTime.format('HH:mm') });
+      const plan = await api.generatePlan({ date: date.format('YYYY-MM-DD'), surplus_enabled: surplusEnabled, start_time: startTime.format('HH:mm'), duration_hours: durationHours });
       message.success('排班表已生成');
       reload();
       setSelectedPlan(plan);
@@ -272,9 +273,26 @@ export default function Schedule() {
       surplusMap[s.component_id] = { stock: s.stock, demand: s.demand };
     }
 
+    // 计算比当前排班更早的其他排班的产出
+    const earlierProduction: Record<number, number> = {};
+    const curKey = `${selectedPlan.date} ${selectedPlan.start_time || '08:00'}`;
+    for (const p of plans) {
+      const pKey = `${p.date} ${p.start_time || '08:00'}`;
+      if (pKey >= curKey || p.id === selectedPlan.id) continue;
+      // 需要加载完整的 plan 数据（plans 列表包含 batches）
+      for (const batch of (p.batches || [])) {
+        for (const task of (batch.tasks || [])) {
+          const cfg = configs.find(c => c.id === task.print_config_id);
+          if (cfg) {
+            earlierProduction[cfg.component_id] = (earlierProduction[cfg.component_id] || 0) + cfg.quantity;
+          }
+        }
+      }
+    }
+
     const compRows = components.map(comp => {
       const produced = production[comp.id] || 0;
-      const stock = surplusMap[comp.id]?.stock || 0;
+      const stock = (surplusMap[comp.id]?.stock || 0) + (earlierProduction[comp.id] || 0);
       const demand = surplusMap[comp.id]?.demand || 0;
       const afterPlan = stock + produced;
       const remaining = demand - afterPlan;
@@ -321,6 +339,55 @@ export default function Schedule() {
             </Tag>
           ))}
         </div>
+
+        {/* 打印机利用率 */}
+        {(() => {
+          const totalSpan = (selectedPlan.duration_hours || 24) * 60; // 完整排班周期（分钟）
+
+          // 每台打印机的工作时长
+          const printerWork: Record<number, number> = {};
+          for (const batch of selectedPlan.batches) {
+            for (const task of batch.tasks) {
+              const [sh, sm] = task.start_time.split(':').map(Number);
+              const [eh, em] = task.end_time.split(':').map(Number);
+              const dur = (eh * 60 + em) - (sh * 60 + sm);
+              printerWork[task.printer_id] = (printerWork[task.printer_id] || 0) + dur;
+            }
+          }
+
+          const rows = printers.map(p => {
+            const work = printerWork[p.id] || 0;
+            const rate = Math.round((work / totalSpan) * 100);
+            const workH = Math.floor(work / 60);
+            const workM = work % 60;
+            return { id: p.id, name: p.name, workLabel: workM > 0 ? `${workH}h${workM}m` : `${workH}h`, rate };
+          });
+
+          return (
+            <Table
+              dataSource={rows}
+              rowKey="id"
+              size="small"
+              pagination={false}
+              style={{ marginTop: 12 }}
+              title={() => <strong>打印机利用率（{selectedPlan.duration_hours || 24}小时）</strong>}
+              columns={[
+                { title: '打印机', dataIndex: 'name', width: 120 },
+                { title: '工作时长', dataIndex: 'workLabel', width: 100 },
+                { title: '利用率', dataIndex: 'rate', width: 200,
+                  render: (v: number) => (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ flex: 1, background: '#f0f0f0', borderRadius: 4, height: 16 }}>
+                        <div style={{ width: `${v}%`, background: v > 80 ? '#52c41a' : v > 50 ? '#1677ff' : '#faad14', height: '100%', borderRadius: 4 }} />
+                      </div>
+                      <span style={{ width: 40, textAlign: 'right' }}>{v}%</span>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          );
+        })()}
       </div>
     );
   };
@@ -536,6 +603,7 @@ export default function Schedule() {
         <Space>
           <DatePicker value={date} onChange={v => v && setDate(v)} />
           <TimePicker value={startTime} format="HH:mm" onChange={v => v && setStartTime(v)} placeholder="开始时间" />
+          <InputNumber value={durationHours} min={1} max={168} onChange={v => setDurationHours(v ?? 24)} addonAfter="小时" style={{ width: 120 }} />
           <span>富余生产：</span>
           <Switch checked={surplusEnabled} onChange={setSurplusEnabled} />
           <Button type="primary" onClick={generate}>生成排班表</Button>
@@ -551,7 +619,19 @@ export default function Schedule() {
           pagination={{ pageSize: 10 }}
           onRow={(rec) => ({ onClick: () => api.getPlan(rec.id).then(setSelectedPlan), style: { cursor: 'pointer' } })}
           columns={[
-            { title: '日期', dataIndex: 'date' },
+            { title: '时间范围', render: (_: any, rec: any) => {
+              const st = rec.start_time || '08:00';
+              const [sh, sm] = st.split(':').map(Number);
+              const endMin = sh * 60 + sm + (rec.duration_hours || 24) * 60;
+              const endDay = Math.floor(endMin / 1440);
+              const endH = Math.floor((endMin % 1440) / 60);
+              const endM = endMin % 60;
+              const endDate = dayjs(rec.date).add(endDay, 'day');
+              const endStr = endDay > 0
+                ? `${endDate.format('MM-DD')} ${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}`
+                : `${String(endH).padStart(2,'0')}:${String(endM).padStart(2,'0')}`;
+              return `${rec.date} ${st} ~ ${endStr}`;
+            }},
             {
               title: '状态', dataIndex: 'status',
               render: (v: string) => <Tag color={v === 'draft' ? 'orange' : 'green'}>{v === 'draft' ? '草稿' : '已确认'}</Tag>,
@@ -585,7 +665,7 @@ export default function Schedule() {
 
       {/* 排班详情 */}
       {selectedPlan && (
-        <Card title={`排班详情 — ${selectedPlan.date}`}>
+        <Card title={`排班详情 — ${selectedPlan.date} ${selectedPlan.start_time || '08:00'}（${selectedPlan.duration_hours || 24}小时）`}>
           {renderSummary()}
           <Tabs
             activeKey={viewMode}
