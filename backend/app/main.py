@@ -6,12 +6,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import Base, engine, SessionLocal
 from .routers import catalog, orders, inventory, printers, schedule, config
 from .services.catalog import load_catalog
+from .services.migrate import auto_migrate
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时从 YAML 加载目录
+    # 1. 先补齐缺失的列（旧数据库兼容）
+    auto_migrate(engine)
+    # 2. 再创建可能缺失的整张表
     Base.metadata.create_all(bind=engine)
+    # 3. 从 YAML 加载目录
     db = SessionLocal()
     try:
         stats = load_catalog(db)

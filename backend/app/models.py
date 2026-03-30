@@ -136,6 +136,7 @@ class PrintBatch(Base):
     plan_id = Column(Integer, ForeignKey("print_plans.id"), nullable=False)
     start_time = Column(String, nullable=False)  # "HH:MM" 格式
     batch_order = Column(Integer, nullable=False)
+    status = Column(String, default="pending", nullable=False)  # pending / started / completed
 
     plan = relationship("PrintPlan", back_populates="batches")
     tasks = relationship("PrintTask", back_populates="batch", cascade="all, delete-orphan")
@@ -150,6 +151,7 @@ class PrintTask(Base):
     print_config_id = Column(Integer, ForeignKey("print_configs.id"), nullable=False)
     start_time = Column(String, nullable=False)  # "HH:MM"
     end_time = Column(String, nullable=False)  # "HH:MM"
+    status = Column(String, default="pending", nullable=False)  # pending / completed
 
     batch = relationship("PrintBatch", back_populates="tasks")
     printer = relationship("Printer")

@@ -42,6 +42,7 @@ export const api = {
   upsertScheduleConfig: (dow: number, data: any) => request<any>(`/config/schedule/${dow}`, { method: 'PUT', body: JSON.stringify(data) }),
   getSystemConfigs: () => request<any[]>('/config/system'),
   upsertSystemConfig: (key: string, data: any) => request<any>(`/config/system/${key}`, { method: 'PUT', body: JSON.stringify(data) }),
+  resetDatabase: () => request<any>('/config/reset-db', { method: 'POST' }),
 
   // 排班
   getPlans: () => request<any[]>('/schedule/plans'),
@@ -52,4 +53,8 @@ export const api = {
   deleteTask: (id: number) => request<any>(`/schedule/tasks/${id}`, { method: 'DELETE' }),
   replaceTaskConfig: (taskId: number, configId: number) => request<any>(`/schedule/tasks/${taskId}/config/${configId}`, { method: 'PUT' }),
   deleteBatch: (id: number) => request<any>(`/schedule/batches/${id}`, { method: 'DELETE' }),
+  startBatch: (id: number, actualTime: string) => request<any>(`/schedule/batches/${id}/start`, { method: 'POST', body: JSON.stringify({ actual_time: actualTime }) }),
+  completeTask: (id: number) => request<any>(`/schedule/tasks/${id}/complete`, { method: 'POST' }),
+  cancelTask: (id: number) => request<any>(`/schedule/tasks/${id}/cancel`, { method: 'POST' }),
+  failTask: (id: number) => request<any>(`/schedule/tasks/${id}/fail`, { method: 'POST' }),
 };

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Card, Table, Button, Modal, Form, Input, InputNumber, Space, Popconfirm, TimePicker, message } from 'antd';
-import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Card, Table, Button, Modal, Input, InputNumber, Space, Popconfirm, TimePicker, message } from 'antd';
+import { PlusOutlined, DeleteOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import dayjs from 'dayjs';
 
@@ -14,7 +14,7 @@ export default function Settings() {
   const [windowModal, setWindowModal] = useState(false);
   const [editingDay, setEditingDay] = useState<number>(0);
   const [windows, setWindows] = useState<{ start: string; end: string }[]>([]);
-  const [printerForm] = Form.useForm();
+
 
   const reload = () => {
     api.getPrinters().then(setPrinters);
@@ -27,12 +27,18 @@ export default function Settings() {
 
   useEffect(() => { reload(); }, []);
 
+  const [printerNames, setPrinterNames] = useState<string[]>(['']);
+
   // 打印机
-  const savePrinter = async () => {
-    const vals = await printerForm.validateFields();
-    await api.createPrinter(vals);
+  const savePrinters = async () => {
+    const names = printerNames.map(n => n.trim()).filter(Boolean);
+    if (names.length === 0) { message.warning('请至少输入一个名称'); return; }
+    for (const name of names) {
+      await api.createPrinter({ name });
+    }
     setPrinterModal(false);
-    printerForm.resetFields();
+    setPrinterNames(['']);
+    message.success(`已添加 ${names.length} 台打印机`);
     reload();
   };
   const deletePrinter = async (id: number) => {
@@ -74,7 +80,7 @@ export default function Settings() {
       {/* 打印机 */}
       <Card
         title="打印机管理"
-        extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => { printerForm.resetFields(); setPrinterModal(true); }}>新增打印机</Button>}
+        extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => { setPrinterNames(['']); setPrinterModal(true); }}>新增打印机</Button>}
         style={{ marginBottom: 24 }}
       >
         <Table
@@ -106,7 +112,7 @@ export default function Settings() {
       </Card>
 
       {/* 操作时间窗口 */}
-      <Card title="操作时间窗口">
+      <Card title="操作时间窗口" style={{ marginBottom: 24 }}>
         <Table
           dataSource={Array.from({ length: 7 }, (_, i) => {
             const cfg = scheduleConfigs.find(c => c.day_of_week === i);
@@ -135,13 +141,60 @@ export default function Settings() {
       </Card>
 
       {/* 打印机弹窗 */}
-      <Modal title="新增打印机" open={printerModal} onOk={savePrinter} onCancel={() => setPrinterModal(false)}>
-        <Form form={printerForm} layout="vertical">
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
-            <Input placeholder="如：1号机" />
-          </Form.Item>
-        </Form>
+      <Modal title="新增打印机" open={printerModal} onOk={savePrinters} onCancel={() => setPrinterModal(false)}>
+        {printerNames.map((name, i) => (
+          <Space key={i} style={{ display: 'flex', marginBottom: 8 }}>
+            <Input
+              placeholder={`如：${i + 1}号机`}
+              value={name}
+              onChange={e => {
+                const updated = [...printerNames];
+                updated[i] = e.target.value;
+                setPrinterNames(updated);
+              }}
+              style={{ width: 200 }}
+            />
+            {printerNames.length > 1 && (
+              <Button danger icon={<DeleteOutlined />} onClick={() => setPrinterNames(printerNames.filter((_, j) => j !== i))} />
+            )}
+          </Space>
+        ))}
+        <Button type="dashed" icon={<PlusOutlined />} onClick={() => setPrinterNames([...printerNames, ''])} block>
+          再加一台
+        </Button>
       </Modal>
+
+      {/* 重置数据库 */}
+      <Card title="数据库维护" style={{ marginBottom: 24 }}>
+        <Space direction="vertical">
+          <span style={{ color: '#666' }}>
+            重置数据库会删除所有排班数据并重建表结构。库存、订单、打印机和系统配置会保留，产品目录从 YAML 重新加载。
+          </span>
+          <Button
+            danger
+            onClick={() => {
+              Modal.confirm({
+                title: '确定要重置数据库吗？',
+                icon: <ExclamationCircleOutlined />,
+                content: '排班数据将被清除，库存和订单会保留。此操作不可撤销。',
+                okText: '确定重置',
+                okType: 'danger',
+                onOk: async () => {
+                  try {
+                    const res = await api.resetDatabase();
+                    message.success(`重置完成，已恢复 ${res.restored.inventory} 条库存、${res.restored.orders} 条订单、${res.restored.printers} 台打印机`);
+                    reload();
+                  } catch (e: any) {
+                    message.error(e.message || '重置失败');
+                  }
+                },
+              });
+            }}
+          >
+            重置数据库
+          </Button>
+        </Space>
+      </Card>
 
       {/* 时间窗口弹窗 */}
       <Modal title={`编辑时间窗口 — ${DAY_NAMES[editingDay]}`} open={windowModal} onOk={saveWindows} onCancel={() => setWindowModal(false)} width={500}>

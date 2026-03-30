@@ -147,12 +147,14 @@ class PrintTaskOut(BaseModel):
     print_config_id: int
     start_time: str
     end_time: str
+    status: str
     model_config = {"from_attributes": True}
 
 class PrintBatchOut(BaseModel):
     id: int
     start_time: str
     batch_order: int
+    status: str
     tasks: list[PrintTaskOut] = []
     model_config = {"from_attributes": True}
 
@@ -167,3 +169,4 @@ class PrintPlanOut(BaseModel):
 class GeneratePlanRequest(BaseModel):
     date: date
     surplus_enabled: bool = True
+    start_time: str = "08:00"  # "HH:MM" 首批启动时间，可在操作窗口外

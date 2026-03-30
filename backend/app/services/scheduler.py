@@ -111,7 +111,7 @@ def _find_next_start(current_min: int, windows: list[tuple[int, int]], changeove
     return None  # 今天窗口内无法启动
 
 
-def generate_plan(db: Session, target_date: date, surplus_enabled: bool) -> PrintPlan:
+def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_time: str = "08:00") -> PrintPlan:
     """生成排班表"""
     changeover = _get_changeover_minutes(db)
     windows = _get_windows(db, target_date)
@@ -120,6 +120,10 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool) -> Prin
 
     if num_printers == 0:
         raise ValueError("没有可用的打印机")
+
+    # 解析自定义开始时间
+    sh, sm = map(int, start_time.split(":"))
+    custom_start = sh * 60 + sm
 
     # 1. 计算需求并选择打印配置
     demand = _calc_component_demand(db, target_date, surplus_enabled)
@@ -140,23 +144,27 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool) -> Prin
 
     # 3. 分批调度
     batch_order = 0
-    # 每台打印机的当前可用时间（分钟）
-    printer_available = {p.id: windows[0][0] if windows else 480 for p in printers}
+    # 首批使用自定义开始时间（可在操作窗口外）
+    printer_available = {p.id: custom_start for p in printers}
     remaining_tasks = list(task_config_ids)
 
     while remaining_tasks:
         # 找出最早可开始的时间
         earliest = min(printer_available.values())
-        start = _find_next_start(earliest, windows, changeover)
 
-        if start is None:
-            # 今天窗口都排满了，最后一批安排过夜任务
-            # 找最后一个窗口的末尾作为启动时间
-            last_window_end = windows[-1][1] if windows else 1380
-            # 从最后窗口末尾回推，能否启动
-            start = last_window_end - changeover
-            if start < earliest:
-                break  # 实在排不下了
+        if batch_order == 0:
+            # 首批：直接使用自定义开始时间，不受操作窗口限制
+            start = custom_start
+        else:
+            # 后续批次：需要人去收菜换版，必须在操作窗口内
+            start = _find_next_start(earliest, windows, changeover)
+
+            if start is None:
+                # 今天窗口都排满了，最后一批安排过夜任务
+                last_window_end = windows[-1][1] if windows else 1380
+                start = last_window_end - changeover
+                if start < earliest:
+                    break  # 实在排不下了
 
         # 找出此时可用的打印机
         available_printers = [p for p in printers if printer_available[p.id] <= start + changeover]
