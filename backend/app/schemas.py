@@ -13,6 +13,7 @@ class ComponentCreate(ComponentBase):
 
 class ComponentOut(ComponentBase):
     id: int
+    colors: list[str] = []
     model_config = {"from_attributes": True}
 
 
@@ -36,6 +37,7 @@ class PrintConfigOut(PrintConfigBase):
 
 class ProductComponentBase(BaseModel):
     component_id: int
+    color: str = ""
     quantity: int
 
 class ProductComponentCreate(ProductComponentBase):
@@ -88,11 +90,13 @@ class OrderOut(BaseModel):
 class InventoryOut(BaseModel):
     id: int
     component_id: int
+    color: str = ""
     quantity: int
     model_config = {"from_attributes": True}
 
 class InventoryAdjust(BaseModel):
     component_id: int
+    color: str = ""
     quantity: int  # 正数增加，负数减少
 
 
@@ -145,6 +149,7 @@ class PrintTaskOut(BaseModel):
     id: int
     printer_id: int
     print_config_id: int
+    color: str = ""
     start_time: str
     end_time: str
     status: str
@@ -171,5 +176,5 @@ class PrintPlanOut(BaseModel):
 class GeneratePlanRequest(BaseModel):
     date: date
     surplus_enabled: bool = True
-    start_time: str = "08:00"  # "HH:MM" 首批启动时间，可在操作窗口外
-    duration_hours: int = 24   # 排班周期（小时）
+    start_time: str = "08:00"
+    duration_hours: int = 24

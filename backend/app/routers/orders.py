@@ -47,16 +47,19 @@ def ship_order(order_id: int, db: Session = Depends(get_db)):
     if order.status == "shipped":
         raise HTTPException(400, "订单已发货")
 
-    # 计算需要扣减的组件
+    # 计算需要扣减的组件（按 component + color）
     for item in order.items:
         bom = db.query(ProductComponent).filter(ProductComponent.product_id == item.product_id).all()
         for bom_item in bom:
-            inv = db.query(Inventory).filter(Inventory.component_id == bom_item.component_id).first()
+            inv = db.query(Inventory).filter(
+                Inventory.component_id == bom_item.component_id,
+                Inventory.color == bom_item.color,
+            ).first()
             if not inv:
-                raise HTTPException(400, f"组件 {bom_item.component_id} 无库存记录")
+                raise HTTPException(400, f"组件 {bom_item.component_id}（{bom_item.color or '无颜色'}）无库存记录")
             needed = bom_item.quantity * item.quantity
             if inv.quantity < needed:
-                raise HTTPException(400, f"组件 {bom_item.component_id} 库存不足（需要 {needed}，当前 {inv.quantity}）")
+                raise HTTPException(400, f"组件 {bom_item.component_id}（{bom_item.color or '无颜色'}）库存不足（需要 {needed}，当前 {inv.quantity}）")
             inv.quantity -= needed
 
     order.status = "shipped"

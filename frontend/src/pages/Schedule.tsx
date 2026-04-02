@@ -226,11 +226,12 @@ export default function Schedule() {
     return t;
   };
 
-  const getConfigInfo = (configId: number) => {
+  const getConfigInfo = (configId: number, color?: string) => {
     const cfg = configs.find(c => c.id === configId);
     if (!cfg) return `配置#${configId}`;
     const comp = components.find(c => c.id === cfg.component_id);
-    return `${cfg.plate_name}（${comp?.name || '?'} x${cfg.quantity}, ${cfg.duration_minutes}分钟）`;
+    const colorStr = color ? `/${color}` : '';
+    return `${cfg.plate_name}（${comp?.name || '?'}${colorStr} x${cfg.quantity}, ${cfg.duration_minutes}分钟）`;
   };
 
   const getPrinterName = (printerId: number) => {
@@ -258,53 +259,66 @@ export default function Schedule() {
   const renderSummary = () => {
     if (!selectedPlan?.batches?.length) return null;
 
-    const production: Record<number, number> = {};
+    // 用 "component_id:color" 作为 key
+    const mk = (compId: number, color: string) => `${compId}:${color || ''}`;
+
+    const production: Record<string, number> = {};
     for (const batch of selectedPlan.batches) {
       for (const task of batch.tasks) {
         const cfg = configs.find(c => c.id === task.print_config_id);
         if (cfg) {
-          production[cfg.component_id] = (production[cfg.component_id] || 0) + cfg.quantity;
+          const key = mk(cfg.component_id, task.color || '');
+          production[key] = (production[key] || 0) + cfg.quantity;
         }
       }
     }
 
-    const surplusMap: Record<number, { stock: number; demand: number }> = {};
+    const surplusMap: Record<string, { stock: number; demand: number }> = {};
     for (const s of surplus) {
-      surplusMap[s.component_id] = { stock: s.stock, demand: s.demand };
+      surplusMap[mk(s.component_id, s.color || '')] = { stock: s.stock, demand: s.demand };
     }
 
     // 计算比当前排班更早的其他排班的产出
-    const earlierProduction: Record<number, number> = {};
+    const earlierProduction: Record<string, number> = {};
     const curKey = `${selectedPlan.date} ${selectedPlan.start_time || '08:00'}`;
     for (const p of plans) {
       const pKey = `${p.date} ${p.start_time || '08:00'}`;
       if (pKey >= curKey || p.id === selectedPlan.id) continue;
-      // 需要加载完整的 plan 数据（plans 列表包含 batches）
       for (const batch of (p.batches || [])) {
         for (const task of (batch.tasks || [])) {
           const cfg = configs.find(c => c.id === task.print_config_id);
           if (cfg) {
-            earlierProduction[cfg.component_id] = (earlierProduction[cfg.component_id] || 0) + cfg.quantity;
+            const key = mk(cfg.component_id, task.color || '');
+            earlierProduction[key] = (earlierProduction[key] || 0) + cfg.quantity;
           }
         }
       }
     }
 
-    const compRows = components.map(comp => {
-      const produced = production[comp.id] || 0;
-      const stock = (surplusMap[comp.id]?.stock || 0) + (earlierProduction[comp.id] || 0);
-      const demand = surplusMap[comp.id]?.demand || 0;
+    // 收集所有需要显示的 key
+    const allKeys = new Set<string>();
+    Object.keys(production).forEach(k => allKeys.add(k));
+    Object.keys(surplusMap).forEach(k => { if (surplusMap[k].demand > 0) allKeys.add(k); });
+
+    const compRows = Array.from(allKeys).map(key => {
+      const [compIdStr, color] = key.split(':');
+      const compId = Number(compIdStr);
+      const comp = components.find(c => c.id === compId);
+      const produced = production[key] || 0;
+      const stock = (surplusMap[key]?.stock || 0) + (earlierProduction[key] || 0);
+      const demand = surplusMap[key]?.demand || 0;
       const afterPlan = stock + produced;
       const remaining = demand - afterPlan;
-      return { id: comp.id, name: comp.name, produced, stock, afterPlan, demand, remaining: remaining > 0 ? remaining : 0 };
+      return { key, compId, name: comp?.name || '?', color, produced, stock, afterPlan, demand, remaining: remaining > 0 ? remaining : 0 };
     }).filter(r => r.produced > 0 || r.demand > 0);
 
     const productCapacity = products.map(prod => {
       const bom = prod.bom_items || [];
       if (bom.length === 0) return null;
       const count = Math.min(...bom.map((b: any) => {
-        const row = compRows.find(r => r.id === b.component_id);
-        const available = row ? row.afterPlan : (surplusMap[b.component_id]?.stock || 0);
+        const key = mk(b.component_id, b.color || '');
+        const row = compRows.find(r => r.key === key);
+        const available = row ? row.afterPlan : (surplusMap[key]?.stock || 0);
         return Math.floor(available / b.quantity);
       }));
       return { name: prod.name, count };
@@ -314,12 +328,13 @@ export default function Schedule() {
       <div style={{ marginBottom: 16 }}>
         <Table
           dataSource={compRows}
-          rowKey="id"
+          rowKey="key"
           size="small"
           pagination={false}
           title={() => <strong>排班总结</strong>}
           columns={[
             { title: '组件', dataIndex: 'name' },
+            { title: '颜色', dataIndex: 'color', width: 80, render: (v: string) => v || '-' },
             { title: '当前库存', dataIndex: 'stock', width: 90 },
             { title: '本次生产', dataIndex: 'produced', width: 90,
               render: (v: number) => v > 0 ? <Tag color="blue">+{v}</Tag> : '-',
@@ -446,7 +461,7 @@ export default function Schedule() {
                   return (
                     <div
                       key={task.id}
-                      title={`${getConfigInfo(task.print_config_id)}\n${fmtTime(task.start_time)} - ${fmtTime(task.end_time)}\n${{ completed: '已完成', cancelled: '已取消', failed: '失败' }[task.status as string] || '进行中'}`}
+                      title={`${getConfigInfo(task.print_config_id, task.color)}\n${fmtTime(task.start_time)} - ${fmtTime(task.end_time)}\n${{ completed: '已完成', cancelled: '已取消', failed: '失败' }[task.status as string] || '进行中'}`}
                       style={{
                         position: 'absolute', left: `${left}%`, width: `${width}%`,
                         top: 2, bottom: 2, background: taskColor(task.status),
@@ -454,7 +469,7 @@ export default function Schedule() {
                         overflow: 'hidden', whiteSpace: 'nowrap', cursor: 'pointer',
                       }}
                     >
-                      {getConfigInfo(task.print_config_id)}
+                      {getConfigInfo(task.print_config_id, task.color)}
                     </div>
                   );
                 })}
@@ -521,7 +536,7 @@ export default function Schedule() {
           pagination={false}
           columns={[
             { title: '打印机', dataIndex: 'printer_id', render: (v: number) => getPrinterName(v) },
-            { title: '打印内容', dataIndex: 'print_config_id', render: (v: number) => getConfigInfo(v) },
+            { title: '打印内容', render: (_: any, rec: any) => getConfigInfo(rec.print_config_id, rec.color) },
             { title: '开始', dataIndex: 'start_time', width: 90, render: (v: string) => fmtTime(v) },
             { title: '结束', dataIndex: 'end_time', width: 90, render: (v: string) => fmtTime(v) },
             ...(isConfirmed ? [{

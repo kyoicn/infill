@@ -28,7 +28,7 @@ export const api = {
   // 库存
   getInventory: () => request<any[]>('/inventory'),
   adjustInventory: (data: any) => request<any>('/inventory/adjust', { method: 'POST', body: JSON.stringify(data) }),
-  setInventory: (componentId: number, quantity: number) => request<any>(`/inventory/${componentId}`, { method: 'PUT', body: JSON.stringify({ component_id: componentId, quantity }) }),
+  setInventory: (inventoryId: number, data: { component_id: number; color?: string; quantity: number }) => request<any>(`/inventory/${inventoryId}`, { method: 'PUT', body: JSON.stringify(data) }),
   getSurplus: () => request<any[]>('/inventory/surplus'),
 
   // 打印机

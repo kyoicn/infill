@@ -45,11 +45,12 @@ export default function Dashboard() {
       <Card title="组件库存与需求" style={{ marginBottom: 24 }}>
         <Table
           dataSource={surplus}
-          rowKey="component_id"
+          rowKey={(rec: any) => `${rec.component_id}:${rec.color || ''}`}
           size="small"
           pagination={false}
           columns={[
             { title: '组件', dataIndex: 'component_name' },
+            { title: '颜色', dataIndex: 'color', width: 80, render: (v: string) => v || '-' },
             { title: '库存', dataIndex: 'stock' },
             { title: '订单需求', dataIndex: 'demand' },
             {

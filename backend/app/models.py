@@ -23,9 +23,10 @@ class Component(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
     description = Column(String, default="")
+    colors = Column(JSON, default=list, nullable=False)  # ["白色", "红色", ...]
 
     print_configs = relationship("PrintConfig", back_populates="component", cascade="all, delete-orphan")
-    inventory = relationship("Inventory", back_populates="component", uselist=False, cascade="all, delete-orphan")
+    inventory_items = relationship("Inventory", back_populates="component", cascade="all, delete-orphan")
 
 
 class PrintConfig(Base):
@@ -56,6 +57,7 @@ class ProductComponent(Base):
     id = Column(Integer, primary_key=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
     component_id = Column(Integer, ForeignKey("components.id"), nullable=False)
+    color = Column(String, default="", nullable=False)
     quantity = Column(Integer, nullable=False)
 
     product = relationship("Product", back_populates="bom_items")
@@ -89,10 +91,11 @@ class Inventory(Base):
     __tablename__ = "inventory"
 
     id = Column(Integer, primary_key=True, index=True)
-    component_id = Column(Integer, ForeignKey("components.id"), unique=True, nullable=False)
+    component_id = Column(Integer, ForeignKey("components.id"), nullable=False)
+    color = Column(String, default="", nullable=False)
     quantity = Column(Integer, default=0, nullable=False)
 
-    component = relationship("Component", back_populates="inventory")
+    component = relationship("Component", back_populates="inventory_items")
 
 
 class Printer(Base):
@@ -151,6 +154,7 @@ class PrintTask(Base):
     batch_id = Column(Integer, ForeignKey("print_batches.id"), nullable=False)
     printer_id = Column(Integer, ForeignKey("printers.id"), nullable=False)
     print_config_id = Column(Integer, ForeignKey("print_configs.id"), nullable=False)
+    color = Column(String, default="", nullable=False)
     start_time = Column(String, nullable=False)  # "HH:MM"
     end_time = Column(String, nullable=False)  # "HH:MM"
     status = Column(String, default="pending", nullable=False)  # pending / completed

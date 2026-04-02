@@ -61,7 +61,10 @@ export default function Products() {
             {
               title: 'BOM',
               render: (_: any, rec: any) =>
-                rec.bom_items?.map((b: any) => `${getCompName(b.component_id)} x${b.quantity}`).join(', '),
+                rec.bom_items?.map((b: any) => {
+                  const color = b.color ? `(${b.color})` : '';
+                  return `${getCompName(b.component_id)}${color} x${b.quantity}`;
+                }).join(', '),
             },
           ]}
         />
@@ -77,6 +80,9 @@ export default function Products() {
           columns={[
             { title: '名称', dataIndex: 'name' },
             { title: '描述', dataIndex: 'description' },
+            { title: '可选颜色', render: (_: any, rec: any) =>
+              rec.colors?.length > 0 ? rec.colors.join('、') : <span style={{ color: '#999' }}>无</span>,
+            },
             {
               title: '打印盘',
               render: (_: any, rec: any) => {

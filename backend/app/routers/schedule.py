@@ -206,7 +206,10 @@ def _finish_task(task_id: int, new_status: str, db: Session):
     if new_status == "completed":
         cfg = db.get(PrintConfig, task.print_config_id)
         if cfg:
-            inv = db.query(Inventory).filter(Inventory.component_id == cfg.component_id).first()
+            inv = db.query(Inventory).filter(
+                Inventory.component_id == cfg.component_id,
+                Inventory.color == task.color,
+            ).first()
             if inv:
                 inv.quantity += cfg.quantity
             added_component_id = cfg.component_id

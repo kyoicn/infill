@@ -69,7 +69,7 @@ def reset_database(db: Session = Depends(get_db)):
     """
     # 1. 备份核心数据
     inventory_backup = [
-        {"component_name": db.query(Component).get(inv.component_id).name, "quantity": inv.quantity}
+        {"component_name": db.query(Component).get(inv.component_id).name, "color": inv.color, "quantity": inv.quantity}
         for inv in db.query(Inventory).all()
         if db.query(Component).get(inv.component_id)
     ]
@@ -114,7 +114,8 @@ def reset_database(db: Session = Depends(get_db)):
         for item in inventory_backup:
             if item["component_name"] in comp_map:
                 inv = new_db.query(Inventory).filter(
-                    Inventory.component_id == comp_map[item["component_name"]]
+                    Inventory.component_id == comp_map[item["component_name"]],
+                    Inventory.color == item.get("color", ""),
                 ).first()
                 if inv:
                     inv.quantity = item["quantity"]

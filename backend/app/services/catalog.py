@@ -25,15 +25,32 @@ def load_catalog(db: Session) -> dict:
     for item in data.get("组件", []):
         name = item["名称"]
         yaml_comp_names.add(name)
+        colors = item.get("可选颜色", [])
         comp = db.query(Component).filter(Component.name == name).first()
         if comp:
             comp.description = item.get("描述", "")
+            comp.colors = colors
         else:
-            comp = Component(name=name, description=item.get("描述", ""))
+            comp = Component(name=name, description=item.get("描述", ""), colors=colors)
             db.add(comp)
             db.flush()
-            # 新组件自动创建库存记录
-            db.add(Inventory(component_id=comp.id, quantity=0))
+
+        # 为每种颜色创建库存记录（如果不存在）
+        color_list = colors if colors else [""]  # 无颜色的组件用空字符串
+        for color in color_list:
+            existing_inv = db.query(Inventory).filter(
+                Inventory.component_id == comp.id,
+                Inventory.color == color,
+            ).first()
+            if not existing_inv:
+                db.add(Inventory(component_id=comp.id, color=color, quantity=0))
+
+        # 删除 YAML 中已移除的颜色对应的库存（仅删除数量为 0 的）
+        for inv in db.query(Inventory).filter(Inventory.component_id == comp.id).all():
+            if inv.color not in color_list:
+                if inv.quantity == 0:
+                    db.delete(inv)
+
         stats["组件"] += 1
 
     # 删除 YAML 中不存在的组件
@@ -99,6 +116,7 @@ def load_catalog(db: Session) -> dict:
             db.add(ProductComponent(
                 product_id=product.id,
                 component_id=comp_map[comp_name],
+                color=bom_item.get("颜色", ""),
                 quantity=bom_item["数量"],
             ))
         stats["产品"] += 1
