@@ -4,7 +4,9 @@
 算法步骤：
 1. 计算组件需求（按 component_id + color 维度）
 2. 选择打印配置组合覆盖需求
-3. 按批次调度，尽量同步结束
+3. 智能分批调度：
+   - 临近操作窗口长间隔（如过夜）时，优先安排耗时长的任务，使打印机在无人值守期持续工作
+   - 窗口间隔短时，优先安排耗时短的任务，保留长任务给后续长间隔使用
 """
 
 from datetime import date, timedelta
@@ -126,6 +128,36 @@ def _find_next_start(current_min: int, windows: list[tuple[int, int]], changeove
     return None
 
 
+def _gap_after(start: int, windows: list[tuple[int, int]]) -> int:
+    """计算从 start 所在窗口结束后，到下一个窗口开始的间隔（分钟）。
+    间隔越大说明即将进入长时间无人值守期（如过夜），应安排耗时长的任务。"""
+    current_end = None
+    for ws, we in windows:
+        if ws <= start <= we:
+            current_end = we
+            break
+    if current_end is None:
+        return 0
+    for ws, _we in windows:
+        if ws > current_end:
+            return ws - current_end
+    return 0
+
+
+def _pick_task(remaining: list[tuple[int, str]], config_cache: dict[int, PrintConfig],
+               prefer_long: bool) -> tuple[int, str]:
+    """从剩余任务中选择一个：prefer_long=True 选最长的，否则选最短的。"""
+    best_idx = 0
+    best_dur = config_cache[remaining[0][0]].duration_minutes
+    for i in range(1, len(remaining)):
+        dur = config_cache[remaining[i][0]].duration_minutes
+        if prefer_long and dur > best_dur:
+            best_idx, best_dur = i, dur
+        elif not prefer_long and dur < best_dur:
+            best_idx, best_dur = i, dur
+    return remaining.pop(best_idx)
+
+
 def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_time: str = "08:00", duration_hours: int = 24) -> PrintPlan:
     """生成排班表"""
     changeover = _get_changeover_minutes(db)
@@ -143,20 +175,17 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
     demand = _calc_component_demand(db, target_date, surplus_enabled)
     task_items = _select_configs(db, demand)  # [(config_id, color), ...]
 
-    # 按耗时排序（降序），方便分批
     config_cache: dict[int, PrintConfig] = {}
     for cid, _ in task_items:
         if cid not in config_cache:
             config_cache[cid] = db.get(PrintConfig, cid)
-
-    task_items.sort(key=lambda item: config_cache[item[0]].duration_minutes, reverse=True)
 
     # 2. 创建排班表
     plan = PrintPlan(date=target_date, start_time=start_time, duration_hours=duration_hours, status="draft")
     db.add(plan)
     db.flush()
 
-    # 3. 分批调度
+    # 3. 分批调度 — 智能分配：临近长间隔时安排长任务，间隔短时安排短任务
     batch_order = 0
     printer_available = {p.id: custom_start for p in printers}
     remaining_tasks = list(task_items)
@@ -181,6 +210,10 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
         if not available_printers:
             available_printers = printers[:1]
 
+        # 判断当前窗口后的间隔：> 120 分钟视为长间隔，应安排长任务以跨越空闲期
+        gap = _gap_after(start, windows)
+        prefer_long = gap > 120
+
         batch = PrintBatch(plan_id=plan.id, start_time=f"{start // 60:02d}:{start % 60:02d}", batch_order=batch_order)
         db.add(batch)
         db.flush()
@@ -189,7 +222,7 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
         for printer in available_printers:
             if not remaining_tasks:
                 break
-            config_id, color = remaining_tasks.pop(0)
+            config_id, color = _pick_task(remaining_tasks, config_cache, prefer_long)
             cfg = config_cache[config_id]
             end_min = start + cfg.duration_minutes
             task = PrintTask(

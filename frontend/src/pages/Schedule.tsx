@@ -431,14 +431,25 @@ export default function Schedule() {
       }
     };
 
+    // 根据总时长自动选择刻度间隔，避免标签拥挤
+    const totalHours = Math.ceil(totalMin / 60);
+    const step = totalHours <= 6 ? 1 : totalHours <= 14 ? 2 : totalHours <= 30 ? 3 : 6;
+
     return (
       <div style={{ overflowX: 'auto' }}>
-        <div style={{ display: 'flex', marginLeft: 100, marginBottom: 4, position: 'relative', height: 20 }}>
-          {Array.from({ length: Math.ceil(totalMin / 60) + 1 }, (_, i) => {
-            const hour = Math.floor(minTime / 60) + i;
+        <div style={{ marginLeft: 100, marginBottom: 8, position: 'relative', height: 30 }}>
+          {Array.from({ length: Math.floor(totalHours / step) + 1 }, (_, i) => {
+            const hour = Math.floor(minTime / 60) + i * step;
+            const h24 = ((hour % 24) + 24) % 24;
+            const dayIdx = Math.floor(hour / 24);
+            const prevDayIdx = i === 0 ? -1 : Math.floor((hour - step) / 24);
+            const showDate = dayIdx !== prevDayIdx;
+            const dateLabel = dayjs(selectedPlan.date).add(dayIdx, 'day').format('M/D');
+            const offset = (i * step * 60) / totalMin * 100;
             return (
-              <div key={i} style={{ position: 'absolute', left: `${((i * 60) / totalMin) * 100}%`, fontSize: 12, color: '#999' }}>
-                {hour}:00
+              <div key={i} style={{ position: 'absolute', left: `${offset}%`, fontSize: 12, color: '#999', whiteSpace: 'nowrap' }}>
+                <div>{`${h24}:00`}</div>
+                {showDate && <div style={{ fontSize: 10, color: '#bbb' }}>{dateLabel}</div>}
               </div>
             );
           })}
