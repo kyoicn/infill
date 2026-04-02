@@ -155,6 +155,7 @@ class PrintTask(Base):
     printer_id = Column(Integer, ForeignKey("printers.id"), nullable=False)
     print_config_id = Column(Integer, ForeignKey("print_configs.id"), nullable=False)
     color = Column(String, default="", nullable=False)
+    is_surplus = Column(Boolean, default=False, nullable=False)  # 富余生产任务
     start_time = Column(String, nullable=False)  # "HH:MM"
     end_time = Column(String, nullable=False)  # "HH:MM"
     status = Column(String, default="pending", nullable=False)  # pending / completed

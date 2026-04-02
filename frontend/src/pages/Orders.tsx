@@ -91,6 +91,19 @@ export default function Orders() {
 
   const getProdName = (id: number) => products.find(p => p.id === id)?.name || `#${id}`;
 
+  // 汇总待处理订单的产品需求
+  const pendingOrders = tab === 'pending' ? orders : orders.filter(o => o.status === 'pending');
+  const demandSummary: Record<number, number> = {};
+  for (const order of pendingOrders) {
+    for (const item of (order.items || [])) {
+      demandSummary[item.product_id] = (demandSummary[item.product_id] || 0) + item.quantity;
+    }
+  }
+  const demandEntries = Object.entries(demandSummary).map(([pid, qty]) => ({
+    name: getProdName(Number(pid)),
+    quantity: qty,
+  })).sort((a, b) => b.quantity - a.quantity);
+
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>订单管理</h2>
@@ -103,6 +116,16 @@ export default function Orders() {
           { key: 'shipped', label: '已发货' },
           { key: 'all', label: '全部' },
         ]} />
+
+        {demandEntries.length > 0 && (
+          <div style={{ marginBottom: 16, padding: '8px 12px', background: '#fafafa', borderRadius: 4 }}>
+            <strong>待处理需求：</strong>
+            {demandEntries.map(d => (
+              <Tag key={d.name} color="blue" style={{ marginLeft: 4 }}>{d.name} x{d.quantity}</Tag>
+            ))}
+            <span style={{ marginLeft: 8, color: '#999' }}>共 {pendingOrders.length} 个订单</span>
+          </div>
+        )}
 
         <Table
           dataSource={orders}

@@ -158,6 +158,89 @@ def _pick_task(remaining: list[tuple[int, str]], config_cache: dict[int, PrintCo
     return remaining.pop(best_idx)
 
 
+def _build_surplus_tasks(db: Session, projected_stock: dict[DemandKey, int]) -> list[tuple[int, str]]:
+    """以"能多组装完整产品"为目标构建富余任务池。
+
+    算法：不断找出当前库存的瓶颈组件（限制产品组装数量最多的），
+    安排打印该组件，更新模拟库存，循环直到生成足够多的任务。
+    """
+    from ..models import Product
+    products = db.query(Product).all()
+    if not products:
+        return []
+
+    # 加载所有产品 BOM: [(product_id, component_id, color, qty), ...]
+    bom_list: list[tuple[int, int, str, int]] = []
+    for prod in products:
+        bom = db.query(ProductComponent).filter(ProductComponent.product_id == prod.id).all()
+        for b in bom:
+            bom_list.append((prod.id, b.component_id, b.color, b.quantity))
+
+    if not bom_list:
+        return []
+
+    # 为每个 (component_id, color) 找到最佳打印配置
+    config_map: dict[DemandKey, PrintConfig] = {}
+    seen_comps: set[DemandKey] = set()
+    for _, comp_id, color, _ in bom_list:
+        key = (comp_id, color)
+        if key in seen_comps:
+            continue
+        seen_comps.add(key)
+        cfg = (
+            db.query(PrintConfig)
+            .filter(PrintConfig.component_id == comp_id)
+            .order_by(PrintConfig.quantity.desc())
+            .first()
+        )
+        if cfg:
+            config_map[key] = cfg
+
+    if not config_map:
+        return []
+
+    # 模拟库存：在已有库存 + 需求任务产出的基础上
+    sim_stock: dict[DemandKey, int] = dict(projected_stock)
+
+    def _bottleneck() -> DemandKey | None:
+        """找出限制产品组装最严重的瓶颈组件。
+        对每个产品，找出能组装的数量（由最少的组件决定），
+        然后找出该产品中缺口最大的组件。"""
+        worst_key: DemandKey | None = None
+        worst_score = float('inf')  # 越低越是瓶颈
+
+        for prod in products:
+            bom = [(c, co, q) for (pid, c, co, q) in bom_list if pid == prod.id]
+            if not bom:
+                continue
+            # 各组件能支撑的产品数
+            for comp_id, color, qty in bom:
+                key = (comp_id, color)
+                if key not in config_map:
+                    continue
+                can_make = sim_stock.get(key, 0) / qty if qty > 0 else float('inf')
+                if can_make < worst_score:
+                    worst_score = can_make
+                    worst_key = key
+
+        return worst_key
+
+    pool: list[tuple[int, str]] = []
+    max_rounds = 200  # 安全上限，调度循环会按时间截断
+
+    for _ in range(max_rounds):
+        key = _bottleneck()
+        if key is None:
+            break
+        cfg = config_map.get(key)
+        if cfg is None:
+            break
+        pool.append((cfg.id, key[1]))
+        sim_stock[key] = sim_stock.get(key, 0) + cfg.quantity
+
+    return pool
+
+
 def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_time: str = "08:00", duration_hours: int = 24) -> PrintPlan:
     """生成排班表"""
     changeover = _get_changeover_minutes(db)
@@ -180,6 +263,23 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
         if cid not in config_cache:
             config_cache[cid] = db.get(PrintConfig, cid)
 
+    # 富余任务：满足订单需求后，继续用剩余产能打印
+    # 计算需求任务排完后的预计库存，作为富余生产的起点
+    surplus_tasks: list[tuple[int, str]] = []
+    if surplus_enabled:
+        # 当前库存
+        inventories = db.query(Inventory).all()
+        projected: dict[DemandKey, int] = {(inv.component_id, inv.color): inv.quantity for inv in inventories}
+        # 加上需求任务的产出
+        for cid, color in task_items:
+            cfg = config_cache[cid]
+            key = (cfg.component_id, color)
+            projected[key] = projected.get(key, 0) + cfg.quantity
+        surplus_tasks = _build_surplus_tasks(db, projected)
+        for cid, _ in surplus_tasks:
+            if cid not in config_cache:
+                config_cache[cid] = db.get(PrintConfig, cid)
+
     # 2. 创建排班表
     plan = PrintPlan(date=target_date, start_time=start_time, duration_hours=duration_hours, status="draft")
     db.add(plan)
@@ -189,8 +289,24 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
     batch_order = 0
     printer_available = {p.id: custom_start for p in printers}
     remaining_tasks = list(task_items)
+    surplus_idx = 0  # 富余任务轮询指针
 
-    while remaining_tasks:
+    def _next_task(prefer_long: bool) -> tuple[int, str, bool] | None:
+        """优先从需求任务中取，取完后从富余池中轮询。返回 (config_id, color, is_surplus)"""
+        nonlocal surplus_idx
+        if remaining_tasks:
+            cid, color = _pick_task(remaining_tasks, config_cache, prefer_long)
+            return (cid, color, False)
+        if surplus_enabled and surplus_tasks and surplus_idx < len(surplus_tasks):
+            cid, color = surplus_tasks[surplus_idx]
+            surplus_idx += 1
+            return (cid, color, True)
+        return None
+
+    while True:
+        if not remaining_tasks and (not surplus_enabled or surplus_idx >= len(surplus_tasks)):
+            break
+
         earliest = min(printer_available.values())
 
         if batch_order == 0:
@@ -220,16 +336,20 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
 
         batch_tasks_added = 0
         for printer in available_printers:
-            if not remaining_tasks:
+            item = _next_task(prefer_long)
+            if item is None:
                 break
-            config_id, color = _pick_task(remaining_tasks, config_cache, prefer_long)
+            config_id, color, is_surplus = item
             cfg = config_cache[config_id]
             end_min = start + cfg.duration_minutes
+            if end_min > deadline:
+                break
             task = PrintTask(
                 batch_id=batch.id,
                 printer_id=printer.id,
                 print_config_id=config_id,
                 color=color,
+                is_surplus=is_surplus,
                 start_time=f"{start // 60:02d}:{start % 60:02d}",
                 end_time=f"{end_min // 60:02d}:{end_min % 60:02d}",
             )
@@ -238,6 +358,7 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
             batch_tasks_added += 1
 
         if batch_tasks_added == 0:
+            db.delete(batch)
             break
 
         batch_order += 1

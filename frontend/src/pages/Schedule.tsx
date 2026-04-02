@@ -263,12 +263,16 @@ export default function Schedule() {
     const mk = (compId: number, color: string) => `${compId}:${color || ''}`;
 
     const production: Record<string, number> = {};
+    const surplusProduction: Record<string, number> = {};
     for (const batch of selectedPlan.batches) {
       for (const task of batch.tasks) {
         const cfg = configs.find(c => c.id === task.print_config_id);
         if (cfg) {
           const key = mk(cfg.component_id, task.color || '');
           production[key] = (production[key] || 0) + cfg.quantity;
+          if (task.is_surplus) {
+            surplusProduction[key] = (surplusProduction[key] || 0) + cfg.quantity;
+          }
         }
       }
     }
@@ -305,11 +309,12 @@ export default function Schedule() {
       const compId = Number(compIdStr);
       const comp = components.find(c => c.id === compId);
       const produced = production[key] || 0;
+      const surplusProd = surplusProduction[key] || 0;
       const stock = (surplusMap[key]?.stock || 0) + (earlierProduction[key] || 0);
       const demand = surplusMap[key]?.demand || 0;
       const afterPlan = stock + produced;
       const remaining = demand - afterPlan;
-      return { key, compId, name: comp?.name || '?', color, produced, stock, afterPlan, demand, remaining: remaining > 0 ? remaining : 0 };
+      return { key, compId, name: comp?.name || '?', color, produced, surplusProd, stock, afterPlan, demand, remaining: remaining > 0 ? remaining : 0 };
     }).filter(r => r.produced > 0 || r.demand > 0);
 
     const productCapacity = products.map(prod => {
@@ -336,8 +341,17 @@ export default function Schedule() {
             { title: '组件', dataIndex: 'name' },
             { title: '颜色', dataIndex: 'color', width: 80, render: (v: string) => v || '-' },
             { title: '当前库存', dataIndex: 'stock', width: 90 },
-            { title: '本次生产', dataIndex: 'produced', width: 90,
-              render: (v: number) => v > 0 ? <Tag color="blue">+{v}</Tag> : '-',
+            { title: '本次生产', dataIndex: 'produced', width: 120,
+              render: (_: number, rec: any) => {
+                if (rec.produced <= 0) return '-';
+                const demand = rec.produced - rec.surplusProd;
+                return (
+                  <span>
+                    {demand > 0 && <Tag color="blue">+{demand}</Tag>}
+                    {rec.surplusProd > 0 && <Tag color="orange">+{rec.surplusProd} 富余</Tag>}
+                  </span>
+                );
+              },
             },
             { title: '排班后库存', dataIndex: 'afterPlan', width: 100 },
             { title: '订单需求', dataIndex: 'demand', width: 90 },
@@ -422,12 +436,12 @@ export default function Schedule() {
     }
     const totalMin = maxTime - minTime || 1;
 
-    const taskColor = (status: string) => {
-      switch (status) {
+    const taskColor = (task: any) => {
+      switch (task.status) {
         case 'completed': return '#52c41a';
         case 'cancelled': return '#d9d9d9';
         case 'failed': return '#ff4d4f';
-        default: return '#1677ff';
+        default: return task.is_surplus ? '#faad14' : '#1677ff';
       }
     };
 
@@ -475,7 +489,7 @@ export default function Schedule() {
                       title={`${getConfigInfo(task.print_config_id, task.color)}\n${fmtTime(task.start_time)} - ${fmtTime(task.end_time)}\n${{ completed: '已完成', cancelled: '已取消', failed: '失败' }[task.status as string] || '进行中'}`}
                       style={{
                         position: 'absolute', left: `${left}%`, width: `${width}%`,
-                        top: 2, bottom: 2, background: taskColor(task.status),
+                        top: 2, bottom: 2, background: taskColor(task),
                         borderRadius: 4, color: '#fff', fontSize: 11, padding: '0 4px',
                         overflow: 'hidden', whiteSpace: 'nowrap', cursor: 'pointer',
                       }}
@@ -547,7 +561,12 @@ export default function Schedule() {
           pagination={false}
           columns={[
             { title: '打印机', dataIndex: 'printer_id', render: (v: number) => getPrinterName(v) },
-            { title: '打印内容', render: (_: any, rec: any) => getConfigInfo(rec.print_config_id, rec.color) },
+            { title: '打印内容', render: (_: any, rec: any) => (
+              <span>
+                {getConfigInfo(rec.print_config_id, rec.color)}
+                {rec.is_surplus && <Tag color="orange" style={{ marginLeft: 4 }}>富余</Tag>}
+              </span>
+            )},
             { title: '开始', dataIndex: 'start_time', width: 90, render: (v: string) => fmtTime(v) },
             { title: '结束', dataIndex: 'end_time', width: 90, render: (v: string) => fmtTime(v) },
             ...(isConfirmed ? [{

@@ -150,6 +150,7 @@ class PrintTaskOut(BaseModel):
     printer_id: int
     print_config_id: int
     color: str = ""
+    is_surplus: bool = False
     start_time: str
     end_time: str
     status: str
