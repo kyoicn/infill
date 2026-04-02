@@ -3,7 +3,9 @@ set -e
 
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
+VERSION=$(git rev-parse --short HEAD)
 
+echo "==> 版本: $VERSION"
 echo "==> 构建 Docker 镜像..."
 docker build -t infill:latest .
 
@@ -62,7 +64,9 @@ SCRIPT
 chmod +x "$BUNDLE_DIR/deploy.sh"
 
 # 打成最终的 tar.gz
-OUTPUT="$ROOT/infill-deploy.tar.gz"
+mkdir -p "$ROOT/release"
+FILENAME="infill-deploy-${VERSION}.tar.gz"
+OUTPUT="$ROOT/release/$FILENAME"
 tar -czf "$OUTPUT" -C "$BUNDLE_DIR" .
 
 rm -rf "$BUNDLE_DIR"
@@ -74,9 +78,9 @@ echo " 打包完成！"
 echo " 文件：$OUTPUT ($SIZE)"
 echo ""
 echo " 部署步骤："
-echo "   1. 拷贝到服务器：scp infill-deploy.tar.gz user@server:~/"
+echo "   1. 拷贝到服务器：scp $FILENAME user@server:~/"
 echo "   2. 在服务器上："
 echo "      mkdir infill && cd infill"
-echo "      tar xzf ~/infill-deploy.tar.gz"
+echo "      tar xzf ~/$FILENAME"
 echo "      ./deploy.sh"
 echo "============================="

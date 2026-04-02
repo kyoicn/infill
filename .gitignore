@@ -15,7 +15,7 @@ frontend/node_modules/
 frontend/dist/
 
 # 部署产物
-infill-deploy.tar.gz
+/release/
 
 # IDE
 .vscode/
