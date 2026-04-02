@@ -17,10 +17,8 @@ mkdir -p "$BUNDLE_DIR/data"
 # 镜像
 mv /tmp/infill-image.tar.gz "$BUNDLE_DIR/"
 
-# catalog 示例
+# catalog 示例（首次部署时 deploy.sh 会复制为 catalog.yaml）
 cp "$ROOT/data/catalog.yaml.example" "$BUNDLE_DIR/data/"
-# 如果有用户自己的 catalog.yaml 也带上
-[ -f "$ROOT/data/catalog.yaml" ] && cp "$ROOT/data/catalog.yaml" "$BUNDLE_DIR/data/"
 
 # docker-compose.yml
 cat > "$BUNDLE_DIR/docker-compose.yml" << 'YAML'
