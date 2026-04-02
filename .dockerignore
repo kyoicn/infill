@@ -1,0 +1,11 @@
+.git
+frontend/node_modules
+frontend/dist
+backend/__pycache__
+backend/app/__pycache__
+backend/data.db
+data/data.db
+*.pyc
+.DS_Store
+.vscode
+.idea

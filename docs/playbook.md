@@ -1,103 +1,171 @@
 # 运行手册
 
-## 环境要求
+## 部署方式一览
 
-| 依赖 | 最低版本 | 说明 |
+| 方式 | 适用场景 | 依赖 |
 |---|---|---|
-| Python | 3.10+ | 后端运行时 |
-| Node.js | 18+ | 前端构建和开发 |
-| npm | 8+ | 随 Node.js 安装 |
+| [Docker 部署](#docker-部署) | 服务器 / 生产环境 | Docker |
+| [打包部署](#打包部署) | 服务器无外网 / 内网部署 | Docker（仅本机构建时需要） |
+| [开发模式](#开发模式) | 本地开发调试 | Python 3.10+, Node.js 18+ |
 
 ---
 
-## 首次安装
+## Docker 部署
 
-### 1. 安装后端依赖
+最简单的方式。服务器上需要安装 Docker。
 
-```bash
-cd backend
-pip install -r requirements.txt
-```
-
-依赖列表：
-- fastapi — Web 框架
-- uvicorn — ASGI 服务器
-- sqlalchemy — ORM
-- pydantic — 数据校验
-
-### 2. 安装前端依赖
+### 1. 获取代码并启动
 
 ```bash
-cd frontend
-npm install
+git clone <你的仓库地址> infill
+cd infill
+
+# 准备产品目录
+cp data/catalog.yaml.example data/catalog.yaml
+# 按需编辑 data/catalog.yaml
+
+# 一键启动
+docker compose up -d --build
 ```
+
+访问 **http://服务器IP:8000** 即可使用。
+
+### 2. 日常操作
+
+```bash
+# 查看日志
+docker compose logs -f
+
+# 停止
+docker compose down
+
+# 重启
+docker compose restart
+
+# 更新代码后重新部署
+git pull
+docker compose up -d --build
+```
+
+### 3. 数据说明
+
+- 数据库和产品目录都在 `data/` 目录下，通过 volume 挂载，容器重建不丢数据
+- 修改 `data/catalog.yaml` 后在网页上点"重新加载目录"即可生效，不用重启
+- 备份：直接备份 `data/` 目录
 
 ---
 
-## 启动服务
+## 打包部署
 
-需要**同时运行后端和前端**两个进程。建议开两个终端窗口。
+适用于服务器没有外网、不能 git clone 的场景。在本机打包成一个文件，拷到服务器一键部署。
 
-### 终端 1：启动后端
+### 1. 本机打包
+
+本机需要安装 Docker。
+
+```bash
+cd infill
+./scripts/bundle.sh
+```
+
+打包完成后在项目根目录生成 `infill-deploy.tar.gz`（约几百MB，包含完整的 Docker 镜像）。
+
+### 2. 拷贝到服务器
+
+```bash
+scp infill-deploy.tar.gz user@server:~/
+```
+
+### 3. 服务器上部署
+
+服务器只需要安装 Docker，不需要 Python、Node.js、git。
+
+```bash
+mkdir infill && cd infill
+tar xzf ~/infill-deploy.tar.gz
+./deploy.sh
+```
+
+`deploy.sh` 会自动加载镜像、启动服务，并提示访问地址。
+
+### 4. 更新
+
+本机重新 `./scripts/bundle.sh`，拷贝到服务器同一目录再次运行 `./deploy.sh` 即可。
+
+---
+
+## 开发模式
+
+需要**同时运行后端和前端**两个进程。
+
+### 环境要求
+
+| 依赖 | 最低版本 |
+|---|---|
+| Python | 3.10+ |
+| Node.js | 18+ |
+
+### 1. 安装依赖
+
+```bash
+cd backend && pip install -r requirements.txt
+cd ../frontend && npm install
+```
+
+### 2. 准备产品目录
+
+```bash
+cp data/catalog.yaml.example data/catalog.yaml
+# 按需编辑
+```
+
+### 3. 启动服务
+
+**终端 1 — 后端：**
 
 ```bash
 cd backend
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-- `--reload`：代码修改后自动重启（开发模式）
-- `--host 0.0.0.0`：允许局域网内其他设备访问（如不需要可省略）
-- `--port 8000`：后端端口，默认 8000
-
-启动成功后会看到类似输出：
-```
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process
-```
-
-首次启动时会自动在 `backend/` 目录下创建 `data.db` 数据库文件。
-
-### 终端 2：启动前端
+**终端 2 — 前端：**
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-启动成功后会看到类似输出：
-```
-VITE v6.x.x  ready in xxx ms
+访问 **http://localhost:5173**。前端代理已配置，`/api` 请求自动转发到后端。
 
-➜  Local:   http://localhost:5173/
-➜  Network: http://192.168.x.x:5173/
-```
+### 4. 停止
 
-### 3. 打开浏览器
-
-访问 **http://localhost:5173** 即可使用。
-
-前端开发服务器已配置代理，所有 `/api` 请求会自动转发到后端的 `http://localhost:8000`。
+各终端按 `Ctrl + C`。
 
 ---
 
-## 停止服务
+## 产品目录
 
-在各自的终端窗口按 `Ctrl + C` 即可停止。
+系统的产品、组件、打印盘配置全部由 `data/catalog.yaml` 定义（唯一数据源）。
+
+- 格式参考 `data/catalog.yaml.example`
+- 修改后在网页"产品目录"页面点"重新加载目录"即可生效
+- 不需要重启服务
 
 ---
 
 ## 数据库
 
-- 数据库文件位于 `backend/data.db`（SQLite）
-- 首次启动后端时自动创建
-- 备份：直接复制 `data.db` 文件即可
-- 重置：删除 `data.db` 文件后重启后端，会自动生成空数据库
+- Docker 部署：数据库位于 `data/data.db`
+- 开发模式：数据库位于 `backend/data.db`
+- 首次启动后自动创建
+- 备份：直接复制 `.db` 文件
+- 重置：在网页"系统设置"页面点"重置数据库"（保留库存和订单），或删除 `.db` 文件重启（全部清空）
 
 ---
 
 ## 后端 API 文档
 
-后端启动后，可以访问自动生成的 API 文档：
+后端启动后，访问自动生成的文档：
 
 - Swagger UI：**http://localhost:8000/docs**
 - ReDoc：**http://localhost:8000/redoc**
@@ -108,45 +176,49 @@ VITE v6.x.x  ready in xxx ms
 
 ```
 infill/
-├── docs/
-│   ├── requirements.md      # 原始需求
-│   ├── specs.md              # 详细设计规格（开发基准）
-│   └── playbook.md           # 本文件
+├── data/
+│   ├── catalog.yaml            # 产品目录（用户数据）
+│   ├── catalog.yaml.example    # 产品目录示例
+│   └── data.db                 # 数据库（Docker 模式，运行后生成）
 ├── backend/
-│   ├── requirements.txt      # Python 依赖
-│   ├── data.db               # SQLite 数据库（运行后生成）
+│   ├── requirements.txt
+│   ├── data.db                 # 数据库（开发模式，运行后生成）
 │   └── app/
-│       ├── main.py           # FastAPI 应用入口
-│       ├── database.py       # 数据库连接配置
-│       ├── models.py         # SQLAlchemy 数据模型
-│       ├── schemas.py        # Pydantic 请求/响应模型
-│       ├── routers/          # API 路由
-│       │   ├── components.py # 组件管理
-│       │   ├── products.py   # 产品管理
-│       │   ├── orders.py     # 订单管理
-│       │   ├── inventory.py  # 库存管理
-│       │   ├── printers.py   # 打印机管理
-│       │   ├── schedule.py   # 排班管理
-│       │   └── config.py     # 系统配置
+│       ├── main.py             # FastAPI 入口 + 静态文件托管
+│       ├── database.py         # 数据库配置
+│       ├── models.py           # 数据模型
+│       ├── schemas.py          # API 模型
+│       ├── routers/            # API 路由
+│       │   ├── catalog.py
+│       │   ├── orders.py
+│       │   ├── inventory.py
+│       │   ├── printers.py
+│       │   ├── schedule.py
+│       │   └── config.py
 │       └── services/
-│           └── scheduler.py  # 排班算法
-└── frontend/
-    ├── package.json
-    ├── vite.config.ts        # Vite 配置（含 API 代理）
-    └── src/
-        ├── main.tsx          # 应用入口
-        ├── App.tsx           # 路由配置
-        ├── api/
-        │   └── client.ts     # API 客户端
-        ├── components/
-        │   └── Layout.tsx    # 侧边栏布局
-        └── pages/
-            ├── Dashboard.tsx # 仪表盘
-            ├── Products.tsx  # 产品目录
-            ├── Orders.tsx    # 订单管理
-            ├── Inventory.tsx # 库存管理
-            ├── Schedule.tsx  # 排班中心
-            └── Settings.tsx  # 系统设置
+│           ├── scheduler.py    # 排班算法
+│           ├── catalog.py      # 目录加载
+│           └── migrate.py      # 数据库迁移
+├── frontend/
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── src/
+│       ├── App.tsx
+│       ├── api/client.ts
+│       ├── components/Layout.tsx
+│       └── pages/
+│           ├── Dashboard.tsx
+│           ├── Products.tsx
+│           ├── Orders.tsx
+│           ├── Inventory.tsx
+│           ├── Schedule.tsx
+│           └── Settings.tsx
+├── scripts/
+│   └── bundle.sh               # 打包部署脚本
+├── Dockerfile
+├── docker-compose.yml
+└── docs/
+    └── playbook.md             # 本文件
 ```
 
 ---
@@ -155,25 +227,29 @@ infill/
 
 ### 端口被占用
 
-如果 8000 或 5173 端口被占用：
-
 ```bash
-# 后端换端口
-uvicorn app.main:app --reload --port 8001
+# Docker 模式：修改 docker-compose.yml 中的端口映射
+ports:
+  - "9000:8000"    # 改成 9000
 
-# 前端换端口
-npm run dev -- --port 3000
+# 开发模式
+uvicorn app.main:app --reload --port 8001        # 后端换端口
+npm run dev -- --port 3000                        # 前端换端口
+# 后端换端口后需同步修改 frontend/vite.config.ts 中的代理地址
 ```
 
-如果后端换了端口，需要同步修改 `frontend/vite.config.ts` 中的代理地址。
+### 局域网访问
 
-### 数据库损坏或需要重置
+Docker 模式下默认监听所有网卡，局域网设备直接用 IP 访问即可（如 `http://192.168.1.100:8000`）。
+
+### 数据库损坏
 
 ```bash
+# Docker 模式
+rm data/data.db
+docker compose restart
+
+# 开发模式
 rm backend/data.db
-# 重启后端即可
+# 重启后端
 ```
-
-### 局域网内其他设备访问
-
-确保后端启动时使用了 `--host 0.0.0.0`，然后用本机局域网 IP 访问前端页面即可（如 `http://192.168.1.100:5173`）。

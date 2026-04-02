@@ -3,6 +3,7 @@
 YAML 是唯一数据源，数据库只是运行时的镜像。
 """
 
+import os
 from pathlib import Path
 
 import yaml
@@ -10,7 +11,8 @@ from sqlalchemy.orm import Session
 
 from ..models import Component, PrintConfig, Product, ProductComponent, Inventory
 
-CATALOG_PATH = Path(__file__).resolve().parent.parent.parent.parent / "data/catalog.yaml"
+_default_path = Path(__file__).resolve().parent.parent.parent.parent / "data/catalog.yaml"
+CATALOG_PATH = Path(os.environ.get("CATALOG_PATH", str(_default_path)))
 
 
 def load_catalog(db: Session) -> dict:

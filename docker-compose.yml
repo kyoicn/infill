@@ -1,0 +1,9 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # 持久化数据：数据库 + 产品目录
+      - ./data:/app/data
+    restart: unless-stopped
