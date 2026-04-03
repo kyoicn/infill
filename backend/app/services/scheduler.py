@@ -29,7 +29,7 @@ from ..models import (
 DemandKey = tuple[int, str]
 
 # 富余生产：目标额外完整产品数量上限
-SURPLUS_TARGET_PRODUCTS = 5
+SURPLUS_TARGET_PRODUCTS = 20
 
 
 def _get_changeover_minutes(db: Session) -> int:
@@ -353,13 +353,13 @@ def _build_surplus_tasks(
 ) -> list[tuple[int, str]]:
     """以"能多组装完整产品"为目标构建富余任务池。
 
-    只针对有待处理订单的产品生成富余任务，不会生产无人订购的产品组件。
-    如果指定了 target_product_ids，则只考虑匹配的产品。
+    默认只针对有待处理订单的产品生成富余任务。
+    如果指定了 target_product_ids，则直接使用指定的产品（即使无订单也生产）。
     算法：不断找出当前库存的瓶颈组件（限制产品组装数量最多的），
     安排打印该组件，更新模拟库存，循环直到生成足够多的任务。
     """
     from ..models import Product, OrderItem
-    # 只考虑有待处理订单的产品
+    # 确定目标产品范围
     ordered_product_ids = set(
         pid for (pid,) in db.query(OrderItem.product_id)
         .join(Order, OrderItem.order_id == Order.id)
@@ -367,10 +367,12 @@ def _build_surplus_tasks(
         .distinct()
         .all()
     )
-    # 如果指定了产品过滤，取交集
     if target_product_ids:
-        ordered_product_ids = ordered_product_ids & target_product_ids
-    products = db.query(Product).filter(Product.id.in_(ordered_product_ids)).all() if ordered_product_ids else []
+        # 指定产品过滤时，即使没有订单也允许富余生产（specs 11.4）
+        candidate_ids = target_product_ids
+    else:
+        candidate_ids = ordered_product_ids
+    products = db.query(Product).filter(Product.id.in_(candidate_ids)).all() if candidate_ids else []
     if not products:
         return []
 
@@ -512,6 +514,16 @@ def generate_plan(
     if use_product_first:
         orders = db.query(Order).filter(Order.status == "pending").order_by(Order.created_at).all()
         product_units, bom_cache = _build_product_context(db, orders, product_filter)
+        # 指定产品过滤时，即使无订单也构建产品上下文（用于富余任务的凑齐评分）
+        if product_filter:
+            existing_pids = set(pid for _, pid in product_units)
+            for pid in product_filter:
+                if pid not in existing_pids:
+                    for _ in range(SURPLUS_TARGET_PRODUCTS):
+                        product_units.append((999, pid))  # 低优先级合成单元
+                    if pid not in bom_cache:
+                        bom = db.query(ProductComponent).filter(ProductComponent.product_id == pid).all()
+                        bom_cache[pid] = {(b.component_id, b.color): b.quantity for b in bom}
         sim_supply = _get_initial_supply(db, target_date)
         _try_assemble(sim_supply, product_units, bom_cache, assembled)
 
@@ -552,7 +564,13 @@ def generate_plan(
             if not any(start + config_cache[t[0]].duration_minutes <= deadline for t in remaining_tasks):
                 remaining_tasks.clear()
         if remaining_surplus:
-            result = _pick_task(remaining_surplus, config_cache, start, changeover, windows, deadline)
+            if use_product_first:
+                result = _pick_task(
+                    remaining_surplus, config_cache, start, changeover, windows, deadline,
+                    sim_supply, product_units, bom_cache, assembled,
+                )
+            else:
+                result = _pick_task(remaining_surplus, config_cache, start, changeover, windows, deadline)
             if result:
                 return (result[0], result[1], True)
             if not any(start + config_cache[t[0]].duration_minutes <= deadline for t in remaining_surplus):
@@ -601,7 +619,7 @@ def generate_plan(
             end_min = start + cfg.duration_minutes
 
             # product_first 策略：更新模拟库存，检查是否有产品可组装
-            if use_product_first and not is_surplus:
+            if use_product_first:
                 comp_key = (cfg.component_id, color)
                 sim_supply[comp_key] = sim_supply.get(comp_key, 0) + cfg.quantity
                 _try_assemble(sim_supply, product_units, bom_cache, assembled)
