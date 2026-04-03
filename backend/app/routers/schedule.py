@@ -42,7 +42,10 @@ def generate_schedule(req: GeneratePlanRequest, db: Session = Depends(get_db)):
         if new_start < p_end and new_end > p_start:
             raise HTTPException(400, f"与已有排班（{plan.date} {plan.start_time}，{plan.duration_hours}h）时间重叠")
     try:
-        plan = generate_plan(db, req.date, req.surplus_enabled, req.start_time, req.duration_hours)
+        plan = generate_plan(
+            db, req.date, req.surplus_enabled, req.start_time, req.duration_hours,
+            strategy=req.strategy, target_product_ids=req.target_product_ids,
+        )
     except ValueError as e:
         raise HTTPException(400, str(e))
     return plan

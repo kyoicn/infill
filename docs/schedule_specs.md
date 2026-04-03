@@ -8,7 +8,7 @@
 ## 1. 输入参数
 
 - **排班日期** (`target_date`)：排班起始日
-- **开始时间** (`start_time`)：当天几点开始，默认 `08:00`
+- **开始时间** (`start_time`)：当天几点开始，默认 `00:00`
 - **排班时长** (`duration_hours`)：总时长，如 24h、48h、168h（一周）
 - **调度策略** (`strategy`)：`"product_first"` 或 `"utilization"`，默认 `"product_first"`（见第 5 节）
 - **指定产品** (`target_product_ids`)：可选，用户手动指定本次排班只考虑的产品列表（见第 11 节）

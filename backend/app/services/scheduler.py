@@ -111,11 +111,14 @@ def _select_configs(db: Session, demand: dict[DemandKey, int]) -> list[tuple[int
     return tasks
 
 
-def _calc_ordered_tasks(db: Session, target_date: date) -> tuple[list[tuple[int, str, int]], dict[DemandKey, int]]:
+def _calc_ordered_tasks(
+    db: Session, target_date: date, target_product_ids: set[int] | None = None,
+) -> tuple[list[tuple[int, str, int]], dict[DemandKey, int]]:
     """按订单 FIFO 顺序计算任务，返回 (带优先级的任务列表, 预计库存)。
 
     每个任务为 (config_id, color, priority)，priority 越小越优先。
     库存已满足的订单会被跳过。前序订单的打印溢出量会顺延给后续订单使用。
+    如果指定了 target_product_ids，则只计算匹配产品的订单项需求。
     """
     supply = _get_initial_supply(db, target_date)
     orders = db.query(Order).filter(Order.status == "pending").order_by(Order.created_at).all()
@@ -123,9 +126,11 @@ def _calc_ordered_tasks(db: Session, target_date: date) -> tuple[list[tuple[int,
     all_tasks: list[tuple[int, str, int]] = []  # (config_id, color, priority)
 
     for priority, order in enumerate(orders):
-        # 计算此订单的组件需求
+        # 计算此订单的组件需求（如有产品过滤则只考虑匹配产品）
         order_demand: dict[DemandKey, int] = defaultdict(int)
         for item in order.items:
+            if target_product_ids and item.product_id not in target_product_ids:
+                continue
             bom = db.query(ProductComponent).filter(ProductComponent.product_id == item.product_id).all()
             for b in bom:
                 order_demand[(b.component_id, b.color)] += b.quantity * item.quantity
@@ -184,13 +189,14 @@ def _idle_after(start: int, duration: int, changeover: int, windows: list[tuple[
 
 
 def _build_product_context(
-    db: Session, orders: list,
+    db: Session, orders: list, target_product_ids: set[int] | None = None,
 ) -> tuple[list[tuple[int, int]], dict[int, dict[DemandKey, int]]]:
     """构建产品单元队列和 BOM 缓存，供凑齐产品优先调度使用。
 
     返回:
         product_units: [(order_priority, product_id), ...] 按订单顺序展开
         bom_cache: {product_id: {(comp_id, color): qty}}
+    如果指定了 target_product_ids，则只包含匹配产品。
     """
     product_units: list[tuple[int, int]] = []
     bom_cache: dict[int, dict[DemandKey, int]] = {}
@@ -198,6 +204,8 @@ def _build_product_context(
     for order_pri, order in enumerate(orders):
         for item in order.items:
             pid = item.product_id
+            if target_product_ids and pid not in target_product_ids:
+                continue
             for _ in range(item.quantity):
                 product_units.append((order_pri, pid))
             if pid not in bom_cache:
@@ -340,10 +348,13 @@ def _pick_task(
     return remaining.pop(best_idx)
 
 
-def _build_surplus_tasks(db: Session, projected_stock: dict[DemandKey, int]) -> list[tuple[int, str]]:
+def _build_surplus_tasks(
+    db: Session, projected_stock: dict[DemandKey, int], target_product_ids: set[int] | None = None,
+) -> list[tuple[int, str]]:
     """以"能多组装完整产品"为目标构建富余任务池。
 
     只针对有待处理订单的产品生成富余任务，不会生产无人订购的产品组件。
+    如果指定了 target_product_ids，则只考虑匹配的产品。
     算法：不断找出当前库存的瓶颈组件（限制产品组装数量最多的），
     安排打印该组件，更新模拟库存，循环直到生成足够多的任务。
     """
@@ -356,6 +367,9 @@ def _build_surplus_tasks(db: Session, projected_stock: dict[DemandKey, int]) -> 
         .distinct()
         .all()
     )
+    # 如果指定了产品过滤，取交集
+    if target_product_ids:
+        ordered_product_ids = ordered_product_ids & target_product_ids
     products = db.query(Product).filter(Product.id.in_(ordered_product_ids)).all() if ordered_product_ids else []
     if not products:
         return []
@@ -453,8 +467,17 @@ def _build_surplus_tasks(db: Session, projected_stock: dict[DemandKey, int]) -> 
     return pool
 
 
-def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_time: str = "08:00", duration_hours: int = 24) -> PrintPlan:
-    """生成排班表"""
+def generate_plan(
+    db: Session, target_date: date, surplus_enabled: bool,
+    start_time: str = "00:00", duration_hours: int = 24,
+    strategy: str = "product_first", target_product_ids: list[int] | None = None,
+) -> PrintPlan:
+    """生成排班表
+
+    Args:
+        strategy: "product_first"（优先凑齐发货）或 "utilization"（最大化利用率）
+        target_product_ids: 指定产品过滤，None 表示不过滤
+    """
     changeover = _get_changeover_minutes(db)
     printers = db.query(Printer).all()
     if not printers:
@@ -466,8 +489,11 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
 
     windows = _get_windows(db, target_date, custom_start, duration_hours)
 
+    # 产品过滤集合
+    product_filter = set(target_product_ids) if target_product_ids else None
+
     # 1. 按订单 FIFO 顺序计算需求任务
-    task_items, projected_supply = _calc_ordered_tasks(db, target_date)
+    task_items, projected_supply = _calc_ordered_tasks(db, target_date, product_filter)
 
     config_cache: dict[int, PrintConfig] = {}
     for item in task_items:
@@ -475,17 +501,24 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
         if cid not in config_cache:
             config_cache[cid] = db.get(PrintConfig, cid)
 
-    # 2. 构建产品凑齐上下文：用于调度时动态评估优先级
-    orders = db.query(Order).filter(Order.status == "pending").order_by(Order.created_at).all()
-    product_units, bom_cache = _build_product_context(db, orders)
-    sim_supply = _get_initial_supply(db, target_date)
+    # 2. 根据策略初始化上下文
+    use_product_first = strategy == "product_first"
+
+    sim_supply: dict[DemandKey, int] = {}
+    product_units: list[tuple[int, int]] = []
+    bom_cache: dict[int, dict[DemandKey, int]] = {}
     assembled: set[int] = set()
-    _try_assemble(sim_supply, product_units, bom_cache, assembled)
+
+    if use_product_first:
+        orders = db.query(Order).filter(Order.status == "pending").order_by(Order.created_at).all()
+        product_units, bom_cache = _build_product_context(db, orders, product_filter)
+        sim_supply = _get_initial_supply(db, target_date)
+        _try_assemble(sim_supply, product_units, bom_cache, assembled)
 
     # 3. 富余任务：满足订单需求后，继续用剩余产能打印
     surplus_tasks: list[tuple[int, str]] = []
     if surplus_enabled:
-        surplus_tasks = _build_surplus_tasks(db, projected_supply)
+        surplus_tasks = _build_surplus_tasks(db, projected_supply, product_filter)
         for cid, _ in surplus_tasks:
             if cid not in config_cache:
                 config_cache[cid] = db.get(PrintConfig, cid)
@@ -495,7 +528,7 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
     db.add(plan)
     db.flush()
 
-    # 5. 分批调度 — 产品凑齐优先 + 最小化空闲时间策略
+    # 5. 分批调度
     batch_order = 0
     printer_available = {p.id: custom_start for p in printers}
     remaining_tasks: list = list(task_items)
@@ -504,10 +537,15 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
     def _next_task(start: int) -> tuple[int, str, bool] | None:
         """优先从需求任务中取，取完后从富余池中取。返回 (config_id, color, is_surplus)"""
         if remaining_tasks:
-            result = _pick_task(
-                remaining_tasks, config_cache, start, changeover, windows, deadline,
-                sim_supply, product_units, bom_cache, assembled,
-            )
+            if use_product_first:
+                result = _pick_task(
+                    remaining_tasks, config_cache, start, changeover, windows, deadline,
+                    sim_supply, product_units, bom_cache, assembled,
+                )
+            else:
+                result = _pick_task(
+                    remaining_tasks, config_cache, start, changeover, windows, deadline,
+                )
             if result:
                 return (result[0], result[1], False)
             # 需求池里都放不下了（全部超出 deadline），清空以避免死循环
@@ -562,8 +600,8 @@ def generate_plan(db: Session, target_date: date, surplus_enabled: bool, start_t
             cfg = config_cache[config_id]
             end_min = start + cfg.duration_minutes
 
-            # 更新模拟库存，检查是否有产品可组装
-            if not is_surplus:
+            # product_first 策略：更新模拟库存，检查是否有产品可组装
+            if use_product_first and not is_surplus:
                 comp_key = (cfg.component_id, color)
                 sim_supply[comp_key] = sim_supply.get(comp_key, 0) + cfg.quantity
                 _try_assemble(sim_supply, product_units, bom_cache, assembled)

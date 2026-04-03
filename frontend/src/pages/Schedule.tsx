@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Card, Button, DatePicker, Table, Tag, Space, Popconfirm, Switch, message, Tabs, InputNumber, TimePicker } from 'antd';
+import { Card, Button, DatePicker, Table, Tag, Space, Popconfirm, Switch, message, Tabs, InputNumber, TimePicker, Select, Radio, Divider } from 'antd';
 import { BellOutlined, CheckCircleOutlined, PlayCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import dayjs from 'dayjs';
@@ -12,12 +12,14 @@ export default function Schedule() {
   const [printers, setPrinters] = useState<any[]>([]);
   const [components, setComponents] = useState<any[]>([]);
   const [configs, setConfigs] = useState<any[]>([]);
-  const [startTime, setStartTime] = useState(dayjs('08:00', 'HH:mm'));
+  const [startTime, setStartTime] = useState(dayjs('00:00', 'HH:mm'));
   const [durationHours, setDurationHours] = useState(24);
   const [viewMode, setViewMode] = useState('list');
   const [changeoverMin, setChangeoverMin] = useState(15);
   const [products, setProducts] = useState<any[]>([]);
   const [surplus, setSurplus] = useState<any[]>([]);
+  const [strategy, setStrategy] = useState<string>('product_first');
+  const [targetProductIds, setTargetProductIds] = useState<number[]>([]);
 
   // 闹钟
   const [alarmTime, setAlarmTime] = useState<string | null>(null);
@@ -50,7 +52,14 @@ export default function Schedule() {
 
   const generate = async () => {
     try {
-      const plan = await api.generatePlan({ date: date.format('YYYY-MM-DD'), surplus_enabled: surplusEnabled, start_time: startTime.format('HH:mm'), duration_hours: durationHours });
+      const plan = await api.generatePlan({
+        date: date.format('YYYY-MM-DD'),
+        surplus_enabled: surplusEnabled,
+        start_time: startTime.format('HH:mm'),
+        duration_hours: durationHours,
+        strategy,
+        target_product_ids: targetProductIds.length > 0 ? targetProductIds : null,
+      });
       message.success('排班表已生成');
       reload();
       setSelectedPlan(plan);
@@ -645,14 +654,61 @@ export default function Schedule() {
 
       {/* 生成排班 */}
       <Card style={{ marginBottom: 24 }}>
-        <Space>
-          <DatePicker value={date} onChange={v => v && setDate(v)} />
-          <TimePicker value={startTime} format="HH:mm" onChange={v => v && setStartTime(v)} placeholder="开始时间" />
-          <InputNumber value={durationHours} min={1} max={168} onChange={v => setDurationHours(v ?? 24)} addonAfter="小时" style={{ width: 120 }} />
-          <span>富余生产：</span>
-          <Switch checked={surplusEnabled} onChange={setSurplusEnabled} />
-          <Button type="primary" onClick={generate}>生成排班表</Button>
-        </Space>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* 第一行：基本参数 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <DatePicker value={date} onChange={v => v && setDate(v)} />
+            <TimePicker value={startTime} format="HH:mm" onChange={v => v && setStartTime(v)} placeholder="开始时间" />
+            <InputNumber value={durationHours} min={1} max={168} onChange={v => setDurationHours(v ?? 24)} addonAfter="小时" style={{ width: 120 }} />
+          </div>
+
+          {/* 第二行：策略 + 富余 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>调度策略：</span>
+            <Radio.Group value={strategy} onChange={e => setStrategy(e.target.value)} optionType="button" buttonStyle="solid">
+              <Radio.Button value="product_first">优先凑齐发货</Radio.Button>
+              <Radio.Button value="utilization">最大化利用率</Radio.Button>
+            </Radio.Group>
+            <span style={{ color: '#999', fontSize: 12 }}>
+              {strategy === 'product_first' ? '优先安排能凑齐完整产品的瓶颈组件' : '优先减少打印机空闲时间'}
+            </span>
+            <Divider type="vertical" style={{ height: 24, margin: '0 4px' }} />
+            <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>富余生产：</span>
+            <Switch checked={surplusEnabled} onChange={setSurplusEnabled} />
+          </div>
+
+          {/* 第三行：指定产品 */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <span style={{ fontWeight: 500, whiteSpace: 'nowrap', lineHeight: '32px' }}>指定产品：</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Select
+                  mode="multiple"
+                  allowClear
+                  placeholder="全部产品（按订单顺序）"
+                  value={targetProductIds}
+                  onChange={setTargetProductIds}
+                  style={{ flex: 1, maxWidth: 600 }}
+                  maxTagCount="responsive"
+                  options={products.map((p: any) => ({ label: p.name, value: p.id }))}
+                />
+                {targetProductIds.length > 0 && (
+                  <Button size="small" onClick={() => setTargetProductIds([])}>清除</Button>
+                )}
+              </div>
+              {targetProductIds.length > 0 && (
+                <div style={{ marginTop: 4, fontSize: 12, color: '#999' }}>
+                  仅排班选中产品的组件，其余产品不会被生产
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 生成按钮 */}
+          <div>
+            <Button type="primary" size="large" onClick={generate}>生成排班表</Button>
+          </div>
+        </div>
       </Card>
 
       {/* 排班历史 */}
