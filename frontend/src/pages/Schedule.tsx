@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Card, Button, DatePicker, Table, Tag, Space, Popconfirm, Switch, message, Tabs, InputNumber, TimePicker, Select, Radio, Divider } from 'antd';
+import { Card, Button, DatePicker, Table, Tag, Space, Popconfirm, Switch, message, Tabs, InputNumber, TimePicker, Select, Radio } from 'antd';
 import { BellOutlined, CheckCircleOutlined, PlayCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import dayjs from 'dayjs';
@@ -633,7 +633,7 @@ export default function Schedule() {
       )}
 
       {/* 自定义闹钟 */}
-      <Card size="small" style={{ marginBottom: 16 }}>
+      <Card size="small" style={{ marginBottom: 24 }}>
         <Space>
           <ClockCircleOutlined />
           <span>快速闹钟：</span>
@@ -654,50 +654,63 @@ export default function Schedule() {
 
       {/* 生成排班 */}
       <Card style={{ marginBottom: 24 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {/* 第一行：基本参数 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <DatePicker value={date} onChange={v => v && setDate(v)} />
-            <TimePicker value={startTime} format="HH:mm" onChange={v => v && setStartTime(v)} placeholder="开始时间" />
-            <InputNumber value={durationHours} min={1} max={168} onChange={v => setDurationHours(v ?? 24)} addonAfter="小时" style={{ width: 120 }} />
+        <div style={{ maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Row 1: 时间参数 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+            <span style={{ fontWeight: 500, width: 70, flexShrink: 0 }}>排班时间</span>
+            <DatePicker value={date} onChange={v => v && setDate(v)} style={{ flex: 1 }} />
+            <TimePicker value={startTime} format="HH:mm" onChange={v => v && setStartTime(v)} placeholder="开始时间" style={{ flex: 1 }} />
+            <InputNumber value={durationHours} min={1} max={168} onChange={v => setDurationHours(v ?? 24)} addonAfter="小时" style={{ flex: 1 }} />
           </div>
 
-          {/* 第二行：策略 + 富余 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>调度策略：</span>
-            <Radio.Group value={strategy} onChange={e => setStrategy(e.target.value)} optionType="button" buttonStyle="solid">
-              <Radio.Button value="product_first">优先凑齐发货</Radio.Button>
-              <Radio.Button value="utilization">最大化利用率</Radio.Button>
-            </Radio.Group>
-            <span style={{ color: '#999', fontSize: 12 }}>
-              {strategy === 'product_first' ? '优先安排能凑齐完整产品的瓶颈组件' : '优先减少打印机空闲时间'}
-            </span>
-            <Divider type="vertical" style={{ height: 24, margin: '0 4px' }} />
-            <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>富余生产：</span>
-            <Switch checked={surplusEnabled} onChange={setSurplusEnabled} />
+          {/* Row 2: 调度策略 + 富余 */}
+          <div style={{ display: 'flex', gap: 12 }}>
+            <span style={{ fontWeight: 500, width: 70, flexShrink: 0, lineHeight: '32px' }}>调度策略</span>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div>
+                <Radio.Group value={strategy} onChange={e => setStrategy(e.target.value)} optionType="button" buttonStyle="solid">
+                  <Radio.Button value="product_first">优先凑齐发货</Radio.Button>
+                  <Radio.Button value="utilization">最大化利用率</Radio.Button>
+                  <Radio.Button value="two_phase">智能规划</Radio.Button>
+                </Radio.Group>
+                <div style={{ fontSize: 12, color: '#999', marginTop: 6, textAlign: 'right' }}>
+                  {strategy === 'product_first' ? '优先安排能凑齐完整产品的瓶颈组件'
+                    : strategy === 'utilization' ? '优先填满打印机，减少空闲时间'
+                    : '全局优化组件配比，凑齐最多完整产品'}
+                </div>
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, lineHeight: '32px' }}>
+                  <span style={{ whiteSpace: 'nowrap' }}>富余生产</span>
+                  <Switch checked={surplusEnabled} onChange={setSurplusEnabled} />
+                </div>
+                <div style={{ fontSize: 12, color: '#999', marginTop: 6, textAlign: 'right' }}>
+                  {surplusEnabled ? '满足后继续备货' : '仅生产订单所需'}
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* 第三行：指定产品 */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-            <span style={{ fontWeight: 500, whiteSpace: 'nowrap', lineHeight: '32px' }}>指定产品：</span>
+          {/* Row 3: 指定产品 */}
+          <div style={{ display: 'flex', gap: 12 }}>
+            <span style={{ fontWeight: 500, width: 70, flexShrink: 0, lineHeight: '32px' }}>指定产品</span>
             <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                 <Select
                   mode="multiple"
                   allowClear
                   placeholder="全部产品（按订单顺序）"
                   value={targetProductIds}
                   onChange={setTargetProductIds}
-                  style={{ flex: 1, maxWidth: 600 }}
-                  maxTagCount="responsive"
+                  style={{ flex: 1 }}
                   options={products.map((p: any) => ({ label: p.name, value: p.id }))}
                 />
                 {targetProductIds.length > 0 && (
-                  <Button size="small" onClick={() => setTargetProductIds([])}>清除</Button>
+                  <Button size="small" style={{ marginTop: 4 }} onClick={() => setTargetProductIds([])}>清除</Button>
                 )}
               </div>
               {targetProductIds.length > 0 && (
-                <div style={{ marginTop: 4, fontSize: 12, color: '#999' }}>
+                <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
                   仅排班选中产品的组件，其余产品不会被生产
                 </div>
               )}

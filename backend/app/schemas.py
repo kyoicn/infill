@@ -179,5 +179,5 @@ class GeneratePlanRequest(BaseModel):
     surplus_enabled: bool = True
     start_time: str = "00:00"
     duration_hours: int = 24
-    strategy: str = "product_first"  # "product_first" | "utilization"
+    strategy: str = "product_first"  # "product_first" | "utilization" | "two_phase"
     target_product_ids: list[int] | None = None  # 指定产品过滤，None 表示不过滤
