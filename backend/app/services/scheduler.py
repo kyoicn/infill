@@ -24,9 +24,17 @@ from ..models import (
     PrintConfig, Printer, ScheduleConfig, SystemConfig,
     PrintPlan, PrintBatch, PrintTask,
 )
-
-# 需求维度：(component_id, color)
-DemandKey = tuple[int, str]
+from .scheduler_core import (
+    ConfigInfo, ScheduledTask, DemandKey,
+    find_next_start as _find_next_start,
+    idle_after as _idle_after,
+    product_completion_score as _product_completion_score,
+    try_assemble as _try_assemble,
+    pick_task as _pick_task_core,
+    compute_effective_capacity,
+    plan_two_phase as _plan_two_phase_core,
+    schedule_tasks as _schedule_tasks_core,
+)
 
 # 富余生产：目标额外完整产品数量上限
 SURPLUS_TARGET_PRODUCTS = 20
@@ -165,27 +173,8 @@ def _calc_ordered_tasks(
 
     return all_tasks, supply
 
+# _find_next_start 和 _idle_after 已从 scheduler_core 导入
 
-def _find_next_start(current_min: int, windows: list[tuple[int, int]]) -> int | None:
-    """找到 >= current_min 的最早可启动时间（必须在操作窗口内）。
-    注意：current_min 来自 printer_available，已包含换料时间。"""
-    for ws, we in windows:
-        if current_min <= we:
-            return max(current_min, ws)
-    return None
-
-
-def _idle_after(start: int, duration: int, changeover: int, windows: list[tuple[int, int]]) -> int:
-    """计算任务结束后打印机的空闲等待时间（分钟）。
-    空闲时间 = 下一个操作窗口开始时间 - 打印机可用时间。
-    值越小说明利用率越高——任务刚好在操作窗口内或窗口开始前结束。"""
-    available_at = start + duration + changeover
-    for ws, we in windows:
-        if ws <= available_at <= we:
-            return 0  # 在操作窗口内，无空闲
-        if ws > available_at:
-            return ws - available_at  # 等到下一个窗口
-    return 0  # 排班周期结束，无需等待
 
 
 def _build_product_context(
@@ -215,70 +204,8 @@ def _build_product_context(
     return product_units, bom_cache
 
 
-def _product_completion_score(
-    comp_key: DemandKey,
-    sim_supply: dict[DemandKey, int],
-    product_units: list[tuple[int, int]],
-    bom_cache: dict[int, dict[DemandKey, int]],
-    assembled: set[int],
-) -> tuple[float, float, float]:
-    """计算生产某组件对凑齐产品的贡献分数（越小越优先）。
+# _product_completion_score 和 _try_assemble 已从 scheduler_core 导入
 
-    返回 (order_priority, -completion_ratio, bottleneck_ratio):
-    - order_priority: 该组件对应的最高优先级订单（小=早=优先）
-    - -completion_ratio: 产品完成度的负数（越接近完成越优先）
-    - bottleneck_ratio: 该组件的供给比例（越低=越是瓶颈=越优先）
-    """
-    best: tuple[float, float, float] = (float('inf'), 0.0, float('inf'))
-
-    for i, (pu_pri, pu_pid) in enumerate(product_units):
-        if i in assembled:
-            continue
-        bom = bom_cache.get(pu_pid, {})
-        if comp_key not in bom:
-            continue
-
-        # 产品完成度 = 最短板组件的供给比例
-        min_ratio = float('inf')
-        for bom_key, bom_qty in bom.items():
-            if bom_qty <= 0:
-                continue
-            ratio = sim_supply.get(bom_key, 0) / bom_qty
-            min_ratio = min(min_ratio, ratio)
-
-        # 该组件自身的供给比例
-        comp_bom_qty = bom[comp_key]
-        comp_ratio = sim_supply.get(comp_key, 0) / comp_bom_qty if comp_bom_qty > 0 else float('inf')
-
-        prod_score = (pu_pri, -min_ratio, comp_ratio)
-        if prod_score < best:
-            best = prod_score
-
-    return best
-
-
-def _try_assemble(
-    sim_supply: dict[DemandKey, int],
-    product_units: list[tuple[int, int]],
-    bom_cache: dict[int, dict[DemandKey, int]],
-    assembled: set[int],
-) -> None:
-    """尝试从模拟库存中组装产品单元，按优先级消费供给。"""
-    changed = True
-    while changed:
-        changed = False
-        for i, (_, pid) in enumerate(product_units):
-            if i in assembled:
-                continue
-            bom = bom_cache.get(pid, {})
-            if not bom:
-                continue
-            if all(sim_supply.get(k, 0) >= qty for k, qty in bom.items()):
-                assembled.add(i)
-                for k, qty in bom.items():
-                    sim_supply[k] = sim_supply.get(k, 0) - qty
-                changed = True
-                break  # 从头重新检查以确保优先级顺序
 
 
 def _pick_task(
@@ -489,70 +416,19 @@ def _plan_two_phase(
     target_product_ids: set[int] | None = None,
     start_time: str = "00:00",
 ) -> list[tuple[int, str, bool]]:
-    """两阶段法 — 阶段 1：生产规划。
+    """两阶段法 — 阶段 1：生产规划（DB 包装层）。
 
-    从总产能出发，按 BOM 精确计算各组件目标盘数，利用溢出复用减少浪费。
-
-    Returns:
-        [(config_id, color, is_surplus), ...] 展开的任务列表
+    查询数据库获取数据，委托给 scheduler_core.plan_two_phase 执行纯算法。
     """
     from ..models import Product, OrderItem
-    from math import ceil
 
-    # -- 1. 计算有效产能（基于操作窗口） --
     sh, sm = map(int, start_time.split(":"))
     custom_start = sh * 60 + sm
     deadline = custom_start + duration_hours * 60
     windows = _get_windows(db, target_date, custom_start, duration_hours)
 
-    # 有效产能估算：
-    # 任务可以跨窗口运行，所以"有效时间"不仅是窗口内的时间。
-    # 关键约束：任务只能在操作窗口内启动（batch_0 除外，可以在 custom_start 启动）。
-    # 一旦启动，任务运行到结束（可以跨越窗口间隔）。
-    # 但如果打印机在窗口间隔中空闲（上一个任务已完成），它必须等到下一个窗口才能启动新任务。
-    #
-    # 实际可用时间 ≈ 总排班时长 - 估计的窗口间空闲时间
-    # 窗口间的空闲 = 完成一个任务后需要等到下一个窗口才能启动新任务的等待时间
-    #
-    # 简化估算：使用 (deadline - custom_start) 减去窗口间隔的估算损耗
-    total_span = deadline - custom_start  # 排班总跨度
-
-    # 计算窗口间隔（打印机可能在这些间隔中空闲等待）
-    all_starts = [custom_start]  # batch_0 可以在 custom_start 启动
-    for ws, we in windows:
-        if ws >= custom_start and ws < deadline:
-            all_starts.append(ws)
-    all_starts = sorted(set(all_starts))
-
-    # 每个窗口的结束时间
-    window_ends = []
-    for ws, we in windows:
-        w_end = min(we, deadline)
-        if w_end > custom_start:
-            window_ends.append(w_end)
-
-    # 估算间隔损耗：各窗口间的空隙（打印机在此期间可能空闲）
-    # 但因为长任务可以跨越间隔，实际损耗取决于任务时长分布
-    # 保守估算：每个窗口间隔的一半会是空闲（长任务跨越，短任务不跨越）
-    gap_loss = 0
-    sorted_windows = sorted([(max(ws, custom_start), min(we, deadline)) for ws, we in windows if min(we, deadline) > max(ws, custom_start)])
-    for i in range(len(sorted_windows) - 1):
-        gap = sorted_windows[i + 1][0] - sorted_windows[i][1]
-        if gap > 0:
-            gap_loss += gap * 0.5  # 50% 的间隔时间被浪费
-
-    effective_per_printer = total_span - gap_loss
-    # 安全余量：Phase 2 的实际吞吐量低于估算（deadline边界、窗口间隙对齐、换料损耗）
-    # 扣除 10% 避免 Phase 1 过度规划导致任务排不进去
-    total_capacity = int(effective_per_printer * num_printers * 0.9)
-
-    print(f"[two_phase P1] total_span={total_span}, gap_loss={gap_loss}, effective/printer={effective_per_printer}, total_capacity={total_capacity}, windows={len(windows)}")
-
-    # -- 2. 确定目标产品集合及优先级 --
-    # 构建产品单元队列：(priority, product_id)
+    # -- 构建产品队列 --
     product_queue: list[tuple[int, int]] = []
-
-    # 从订单中获取需求（受产品过滤影响）
     orders = db.query(Order).filter(Order.status == "pending").order_by(Order.created_at).all()
     for pri, order in enumerate(orders):
         for item in order.items:
@@ -561,17 +437,14 @@ def _plan_two_phase(
             for _ in range(item.quantity):
                 product_queue.append((pri, item.product_id))
 
-    # 如果指定了产品但无订单，或开启富余，添加富余目标
     if target_product_ids:
         existing_pids = set(pid for _, pid in product_queue)
         for pid in target_product_ids:
             if pid not in existing_pids:
-                # 无订单的指定产品 → 全部作为富余
                 for _ in range(SURPLUS_TARGET_PRODUCTS):
                     product_queue.append((999, pid))
 
     if surplus_enabled:
-        # 收集需要富余生产的产品 ID
         if target_product_ids:
             surplus_pids = target_product_ids
         else:
@@ -588,18 +461,16 @@ def _plan_two_phase(
     if not product_queue:
         return []
 
-    # -- 3. 加载 BOM 和打印配置 --
+    # -- 加载 BOM --
     all_product_ids = set(pid for _, pid in product_queue)
     products = db.query(Product).filter(Product.id.in_(all_product_ids)).all()
-
-    # BOM: {product_id: {(comp_id, color): qty_per_product}}
     bom_map: dict[int, dict[DemandKey, int]] = {}
     for prod in products:
         bom = db.query(ProductComponent).filter(ProductComponent.product_id == prod.id).all()
         bom_map[prod.id] = {(b.component_id, b.color): b.quantity for b in bom}
 
-    # 为每种组件选最佳打印配置（产出最多的）
-    config_map: dict[DemandKey, PrintConfig] = {}
+    # -- 加载打印配置 → ConfigInfo --
+    config_map: dict[DemandKey, ConfigInfo] = {}
     for pid, bom in bom_map.items():
         for key in bom:
             if key in config_map:
@@ -611,115 +482,38 @@ def _plan_two_phase(
                 .first()
             )
             if cfg:
-                config_map[key] = cfg
+                config_map[key] = ConfigInfo(
+                    id=cfg.id,
+                    component_id=cfg.component_id,
+                    component_name=cfg.component.name,
+                    quantity=cfg.quantity,
+                    duration_minutes=cfg.duration_minutes,
+                )
 
-    # -- 4. 获取初始库存 --
+    # -- 初始库存 --
     initial_supply = _get_initial_supply(db, target_date)
-    overflow: dict[DemandKey, int] = dict(initial_supply)  # 溢出池（含初始库存）
 
-    # -- 5. 贪心分配产能 --
-    plan_counts: dict[tuple[int, str], int] = defaultdict(int)  # {(config_id, color): plate_count}
-    remaining_capacity = total_capacity
-    order_demand_boundary = len([1 for pri, _ in product_queue if pri < 999])
-
-    for idx, (pri, pid) in enumerate(product_queue):
-        bom = bom_map.get(pid)
-        if not bom:
-            continue
-
-        is_surplus = idx >= order_demand_boundary
-
-        # 计算此产品单元需要的各组件盘数（考虑溢出抵扣）
-        plates_needed: dict[DemandKey, int] = {}
-        time_needed = 0
-
-        for comp_key, bom_qty in bom.items():
-            cfg = config_map.get(comp_key)
-            if not cfg:
-                continue
-
-            # 溢出抵扣：已有库存/溢出可以覆盖多少
-            available = overflow.get(comp_key, 0)
-            net_need = max(0, bom_qty - available)
-
-            if net_need == 0:
-                plates_needed[comp_key] = 0
-            else:
-                plates = ceil(net_need / cfg.quantity)
-                plates_needed[comp_key] = plates
-                time_needed += plates * (cfg.duration_minutes + changeover)
-
-        # 检查产能是否足够
-        if time_needed > remaining_capacity:
-            # 产能不足，尝试用剩余产能生产最缺的瓶颈组件
-            # 按"缺口比例"排序，优先生产最缺的
-            bottleneck_items = []
-            for comp_key, plates in plates_needed.items():
-                if plates > 0:
-                    cfg = config_map[comp_key]
-                    plate_time = cfg.duration_minutes + changeover
-                    bottleneck_items.append((comp_key, plates, plate_time))
-            # 按单盘耗时从长到短排（长的更紧急），作为 tiebreaker
-            bottleneck_items.sort(key=lambda x: -x[2])
-
-            for comp_key, plates, plate_time in bottleneck_items:
-                cfg = config_map[comp_key]
-                affordable = int(remaining_capacity // plate_time)
-                actual = min(plates, affordable)
-                if actual > 0:
-                    plan_counts[(cfg.id, comp_key[1])] += actual
-                    overflow[comp_key] = overflow.get(comp_key, 0) + actual * cfg.quantity - (bom.get(comp_key, 0) if actual >= plates else 0)
-                    remaining_capacity -= actual * plate_time
-            break  # 产能耗尽
-
-        # 产能足够：记录盘数，更新溢出池
-        remaining_capacity -= time_needed
-        for comp_key, plates in plates_needed.items():
-            if plates > 0:
-                cfg = config_map[comp_key]
-                plan_counts[(cfg.id, comp_key[1])] += plates
-                produced = plates * cfg.quantity
-                consumed = bom[comp_key]
-                # 溢出 = 已有溢出 - 消耗 + 新产出（抵扣后的净溢出）
-                available = overflow.get(comp_key, 0)
-                if available >= bom[comp_key]:
-                    # 全部由溢出满足，新产出全部成为溢出
-                    overflow[comp_key] = available - consumed + produced
-                else:
-                    # 部分由溢出满足，新产出覆盖剩余需求后的溢出
-                    overflow[comp_key] = produced - (consumed - available)
-            else:
-                # 不需要额外打印，仅消耗溢出
-                overflow[comp_key] = overflow.get(comp_key, 0) - bom.get(comp_key, 0)
-
-    # -- 6. 展开为任务列表 --
-    # 区分订单任务和富余任务：前 order_demand_boundary 个产品单元是订单需求
-    # 简化处理：统一标记。因为两阶段法中订单需求和富余是混合规划的，
-    # 用初始供给来判断哪些是"额外的"
-    tasks: list[tuple[int, str, bool]] = []
-    for (config_id, color), count in plan_counts.items():
-        for _ in range(count):
-            tasks.append((config_id, color, False))
-
-    # 标记富余：如果产能主要用在订单之外，做一个近似标记
-    # 实际上两阶段法模糊了订单/富余边界，这里用一个启发式：
-    # 计算订单需求的总盘数，超出部分标记为富余
+    # -- 订单需求盘数（用于标记富余） --
     order_demand, _ = _calc_ordered_tasks(db, target_date, target_product_ids=target_product_ids)
-    order_plate_keys: dict[tuple[int, str], int] = defaultdict(int)
+    order_demand_counts: dict[tuple[int, str], int] = defaultdict(int)
     for item in order_demand:
-        order_plate_keys[(item[0], item[1])] += 1
+        order_demand_counts[(item[0], item[1])] += 1
 
-    tasks_final: list[tuple[int, str, bool]] = []
-    remaining_order: dict[tuple[int, str], int] = dict(order_plate_keys)
-    for config_id, color, _ in tasks:
-        key = (config_id, color)
-        if remaining_order.get(key, 0) > 0:
-            remaining_order[key] -= 1
-            tasks_final.append((config_id, color, False))
-        else:
-            tasks_final.append((config_id, color, True))
-
-    return tasks_final
+    # -- 委托给核心算法 --
+    return _plan_two_phase_core(
+        num_printers=num_printers,
+        duration_hours=duration_hours,
+        changeover=changeover,
+        surplus_enabled=surplus_enabled,
+        windows=windows,
+        custom_start=custom_start,
+        deadline=deadline,
+        product_queue=product_queue,
+        bom_map=bom_map,
+        config_map=config_map,
+        initial_supply=initial_supply,
+        order_demand_counts=dict(order_demand_counts),
+    )
 
 
 def generate_plan(
@@ -763,123 +557,54 @@ def generate_plan(
             if cid not in config_cache:
                 config_cache[cid] = db.get(PrintConfig, cid)
 
-        # 创建排班表
+        # 构建 ConfigInfo 映射供 core 使用
+        config_info: dict[int, ConfigInfo] = {}
+        for cid, cfg in config_cache.items():
+            if cid not in config_info:
+                config_info[cid] = ConfigInfo(
+                    id=cfg.id,
+                    component_id=cfg.component_id,
+                    component_name=cfg.component.name,
+                    quantity=cfg.quantity,
+                    duration_minutes=cfg.duration_minutes,
+                )
+
+        # 阶段 2：委托给核心算法
+        scheduled = _schedule_tasks_core(
+            two_phase_tasks, config_info, len(printers), windows,
+            custom_start, deadline, changeover, sync_strength,
+        )
+
+        # 创建排班表并持久化
         plan = PrintPlan(date=target_date, start_time=start_time, duration_hours=duration_hours, status="draft")
         db.add(plan)
         db.flush()
 
-        # 阶段 2：时间排程（简化贪心：idle + duration desc）
-        batch_order = 0
-        printer_available = {p.id: custom_start for p in printers}
-        remaining: list[tuple[int, str, bool]] = list(two_phase_tasks)
-
-        def _pick_two_phase(start: int, anchor_dur: int | None = None) -> tuple[int, str, bool] | None:
-            """Phase 2 task picker: minimize idle, prefer longer tasks, with sync penalty."""
-            best_idx = -1
-            best_score: tuple | None = None
-            for i, (cid, color, is_surplus) in enumerate(remaining):
-                cfg = config_cache[cid]
-                dur = cfg.duration_minutes
-                if start + dur > deadline:
-                    continue
-                idle = _idle_after(start, dur, changeover, windows)
-                # 同步惩罚
-                if anchor_dur is not None and anchor_dur > 0 and sync_strength > 0:
-                    sp = abs(dur - anchor_dur) / anchor_dur * (sync_strength / 100)
-                else:
-                    sp = 0.0
-                score = (sp, idle)  # sync penalty → idle（不偏好长短，保持Phase1的组件平衡）
-                if best_idx == -1 or score < best_score:
-                    best_idx = i
-                    best_score = score
-            if best_idx == -1:
-                return None
-            return remaining.pop(best_idx)
-
-        while remaining:
-            earliest = min(printer_available.values())
-
-            if batch_order == 0:
-                start = custom_start
-            else:
-                start = _find_next_start(earliest, windows)
-                if start is None:
-                    break
-
-            if start >= deadline:
-                break
-
-            available_printers = [p for p in printers if printer_available[p.id] <= start]
-            if not available_printers:
-                next_start = _find_next_start(earliest + 1, windows)
-                if next_start is None or next_start >= deadline:
-                    break
-                for pid_key in printer_available:
-                    if printer_available[pid_key] <= earliest:
-                        printer_available[pid_key] = next_start
-                        break
-                continue
-
-            batch = PrintBatch(plan_id=plan.id, start_time=f"{start // 60:02d}:{start % 60:02d}", batch_order=batch_order)
-            db.add(batch)
-            db.flush()
-
-            batch_tasks_added = 0
-            batch_anchor: int | None = None  # 锚定时长
-            for printer in available_printers:
-                item = _pick_two_phase(start, batch_anchor)
-                if item is None:
-                    break
-                config_id, color, is_surplus = item
-                cfg = config_cache[config_id]
-                end_min = start + cfg.duration_minutes
-                if batch_anchor is None:
-                    batch_anchor = cfg.duration_minutes  # 第一台设锚
-
-                task = PrintTask(
-                    batch_id=batch.id,
-                    printer_id=printer.id,
-                    print_config_id=config_id,
-                    color=color,
-                    is_surplus=is_surplus,
-                    start_time=f"{start // 60:02d}:{start % 60:02d}",
-                    end_time=f"{end_min // 60:02d}:{end_min % 60:02d}",
+        # 将 ScheduledTask 转换为 DB 模型
+        printer_list = list(printers)
+        batches_by_idx: dict[int, PrintBatch] = {}
+        for st in scheduled:
+            if st.batch_index not in batches_by_idx:
+                batch = PrintBatch(
+                    plan_id=plan.id,
+                    start_time=f"{st.start_min // 60:02d}:{st.start_min % 60:02d}",
+                    batch_order=st.batch_index,
                 )
-                db.add(task)
-                printer_available[printer.id] = end_min + changeover
-                batch_tasks_added += 1
+                db.add(batch)
+                db.flush()
+                batches_by_idx[st.batch_index] = batch
 
-            if batch_tasks_added == 0:
-                db.delete(batch)
-                print(f"[two_phase P2] no tasks fit at start={start}, remaining={len(remaining)}, deadline={deadline}")
-                break
+            task = PrintTask(
+                batch_id=batches_by_idx[st.batch_index].id,
+                printer_id=printer_list[st.printer_index].id,
+                print_config_id=st.config_id,
+                color=st.color,
+                is_surplus=st.is_surplus,
+                start_time=f"{st.start_min // 60:02d}:{st.start_min % 60:02d}",
+                end_time=f"{st.end_min // 60:02d}:{st.end_min % 60:02d}",
+            )
+            db.add(task)
 
-            batch_order += 1
-
-        # 详细日志：组件分布
-        from collections import Counter
-        planned_comps = Counter()
-        for cid, color, _ in two_phase_tasks:
-            cfg = config_cache[cid]
-            planned_comps[f"{cfg.component.name}({color}) {cfg.duration_minutes}min×{cfg.quantity}"] += 1
-
-        scheduled_comps = Counter()
-        for b in plan.batches:
-            for t in b.tasks:
-                cfg = config_cache[t.print_config_id]
-                scheduled_comps[f"{cfg.component.name}({t.color}) {cfg.duration_minutes}min×{cfg.quantity}"] += 1
-
-        print(f"\n[two_phase] phase1_tasks={len(two_phase_tasks)}, scheduled={batch_order} batches, unscheduled={len(remaining)}")
-        print(f"[two_phase] PLANNED per component:")
-        for k, v in planned_comps.most_common():
-            print(f"  {k}: {v} plates")
-        print(f"[two_phase] SCHEDULED per component:")
-        for k, v in scheduled_comps.most_common():
-            sched_pct = ""
-            if planned_comps[k] > 0:
-                sched_pct = f" ({v}/{planned_comps[k]})"
-            print(f"  {k}: {v} plates{sched_pct}")
-        print()
         db.commit()
         db.refresh(plan)
         return plan
