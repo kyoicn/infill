@@ -45,6 +45,7 @@ def generate_schedule(req: GeneratePlanRequest, db: Session = Depends(get_db)):
         plan = generate_plan(
             db, req.date, req.surplus_enabled, req.start_time, req.duration_hours,
             strategy=req.strategy, target_product_ids=req.target_product_ids,
+            sync_strength=req.sync_strength,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

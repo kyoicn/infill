@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Card, Button, DatePicker, Table, Tag, Space, Popconfirm, Switch, message, Tabs, InputNumber, TimePicker, Select, Radio } from 'antd';
+import { Card, Button, DatePicker, Table, Tag, Space, Popconfirm, Switch, message, Tabs, InputNumber, TimePicker, Select, Radio, Slider } from 'antd';
 import { BellOutlined, CheckCircleOutlined, PlayCircleOutlined, ClockCircleOutlined, CloseCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import dayjs from 'dayjs';
@@ -20,6 +20,7 @@ export default function Schedule() {
   const [surplus, setSurplus] = useState<any[]>([]);
   const [strategy, setStrategy] = useState<string>('product_first');
   const [targetProductIds, setTargetProductIds] = useState<number[]>([]);
+  const [syncStrength, setSyncStrength] = useState<number>(50);
 
   // 闹钟
   const [alarmTime, setAlarmTime] = useState<string | null>(null);
@@ -59,6 +60,7 @@ export default function Schedule() {
         duration_hours: durationHours,
         strategy,
         target_product_ids: targetProductIds.length > 0 ? targetProductIds : null,
+        sync_strength: syncStrength,
       });
       message.success('排班表已生成');
       reload();
@@ -714,6 +716,28 @@ export default function Schedule() {
                   仅排班选中产品的组件，其余产品不会被生产
                 </div>
               )}
+            </div>
+          </div>
+          {/* Row 4: 同步强度 */}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <span style={{ fontWeight: 500, width: 70, flexShrink: 0 }}>同步强度</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Slider
+                  min={0}
+                  max={100}
+                  value={syncStrength}
+                  onChange={setSyncStrength}
+                  style={{ flex: 1 }}
+                  marks={{ 0: '0', 50: '50', 100: '100' }}
+                />
+                <span style={{ minWidth: 30, textAlign: 'right', fontWeight: 500 }}>{syncStrength}</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#999', marginTop: 2, textAlign: 'right' }}>
+                {syncStrength === 0 ? '不对齐，各打印机独立选最优任务'
+                  : syncStrength === 100 ? '强制对齐，尽量所有打印机同时完成'
+                  : '平衡最优任务和同批次打印机完成时间对齐'}
+              </div>
             </div>
           </div>
 

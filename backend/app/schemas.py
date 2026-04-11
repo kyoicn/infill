@@ -181,3 +181,4 @@ class GeneratePlanRequest(BaseModel):
     duration_hours: int = 24
     strategy: str = "product_first"  # "product_first" | "utilization" | "two_phase"
     target_product_ids: list[int] | None = None  # 指定产品过滤，None 表示不过滤
+    sync_strength: int = 50  # 0~100, 同步强度

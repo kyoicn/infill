@@ -292,6 +292,8 @@ def _pick_task(
     product_units: list[tuple[int, int]] | None = None,
     bom_cache: dict[int, dict[DemandKey, int]] | None = None,
     assembled: set[int] | None = None,
+    anchor_duration: int | None = None,
+    sync_strength: int = 0,
 ) -> tuple | None:
     """选择最优任务。remaining 元素为 (config_id, color) 或 (config_id, color, priority)。
 
@@ -304,6 +306,9 @@ def _pick_task(
     3. 时长：短任务优先（为长间隔保留长任务）
 
     未提供产品上下文时回退到静态订单 FIFO 优先级。
+
+    anchor_duration / sync_strength：同步策略参数。当 anchor_duration 有值时，
+    时长偏差惩罚作为评分前缀，sync_strength 控制惩罚权重。
     """
     if not remaining:
         return None
@@ -337,7 +342,13 @@ def _pick_task(
             pri = item[2] if len(item) > 2 else 0
             prod_score = (float(pri), 0.0, 0.0)
 
-        score = (prod_score, idle, dur)
+        # 同步惩罚：anchor_duration 有值时，时长偏差越大惩罚越高
+        if anchor_duration is not None and anchor_duration > 0 and sync_strength > 0:
+            sync_penalty = abs(dur - anchor_duration) / anchor_duration * (sync_strength / 100)
+        else:
+            sync_penalty = 0.0
+
+        score = (sync_penalty, prod_score, idle, dur)
 
         if best_idx == -1 or score < best_score:
             best_idx = i
@@ -476,6 +487,7 @@ def _plan_two_phase(
     changeover: int,
     surplus_enabled: bool,
     target_product_ids: set[int] | None = None,
+    start_time: str = "00:00",
 ) -> list[tuple[int, str, bool]]:
     """两阶段法 — 阶段 1：生产规划。
 
@@ -487,8 +499,54 @@ def _plan_two_phase(
     from ..models import Product, OrderItem
     from math import ceil
 
-    # -- 1. 计算总可用产能（分钟） --
-    total_capacity = num_printers * duration_hours * 60
+    # -- 1. 计算有效产能（基于操作窗口） --
+    sh, sm = map(int, start_time.split(":"))
+    custom_start = sh * 60 + sm
+    deadline = custom_start + duration_hours * 60
+    windows = _get_windows(db, target_date, custom_start, duration_hours)
+
+    # 有效产能估算：
+    # 任务可以跨窗口运行，所以"有效时间"不仅是窗口内的时间。
+    # 关键约束：任务只能在操作窗口内启动（batch_0 除外，可以在 custom_start 启动）。
+    # 一旦启动，任务运行到结束（可以跨越窗口间隔）。
+    # 但如果打印机在窗口间隔中空闲（上一个任务已完成），它必须等到下一个窗口才能启动新任务。
+    #
+    # 实际可用时间 ≈ 总排班时长 - 估计的窗口间空闲时间
+    # 窗口间的空闲 = 完成一个任务后需要等到下一个窗口才能启动新任务的等待时间
+    #
+    # 简化估算：使用 (deadline - custom_start) 减去窗口间隔的估算损耗
+    total_span = deadline - custom_start  # 排班总跨度
+
+    # 计算窗口间隔（打印机可能在这些间隔中空闲等待）
+    all_starts = [custom_start]  # batch_0 可以在 custom_start 启动
+    for ws, we in windows:
+        if ws >= custom_start and ws < deadline:
+            all_starts.append(ws)
+    all_starts = sorted(set(all_starts))
+
+    # 每个窗口的结束时间
+    window_ends = []
+    for ws, we in windows:
+        w_end = min(we, deadline)
+        if w_end > custom_start:
+            window_ends.append(w_end)
+
+    # 估算间隔损耗：各窗口间的空隙（打印机在此期间可能空闲）
+    # 但因为长任务可以跨越间隔，实际损耗取决于任务时长分布
+    # 保守估算：每个窗口间隔的一半会是空闲（长任务跨越，短任务不跨越）
+    gap_loss = 0
+    sorted_windows = sorted([(max(ws, custom_start), min(we, deadline)) for ws, we in windows if min(we, deadline) > max(ws, custom_start)])
+    for i in range(len(sorted_windows) - 1):
+        gap = sorted_windows[i + 1][0] - sorted_windows[i][1]
+        if gap > 0:
+            gap_loss += gap * 0.5  # 50% 的间隔时间被浪费
+
+    effective_per_printer = total_span - gap_loss
+    # 安全余量：Phase 2 的实际吞吐量低于估算（deadline边界、窗口间隙对齐、换料损耗）
+    # 扣除 10% 避免 Phase 1 过度规划导致任务排不进去
+    total_capacity = int(effective_per_printer * num_printers * 0.9)
+
+    print(f"[two_phase P1] total_span={total_span}, gap_loss={gap_loss}, effective/printer={effective_per_printer}, total_capacity={total_capacity}, windows={len(windows)}")
 
     # -- 2. 确定目标产品集合及优先级 --
     # 构建产品单元队列：(priority, product_id)
@@ -668,6 +726,7 @@ def generate_plan(
     db: Session, target_date: date, surplus_enabled: bool,
     start_time: str = "00:00", duration_hours: int = 24,
     strategy: str = "product_first", target_product_ids: list[int] | None = None,
+    sync_strength: int = 50,
 ) -> PrintPlan:
     """生成排班表
 
@@ -675,6 +734,7 @@ def generate_plan(
         strategy: "product_first"（优先凑齐发货）、"utilization"（最大化利用率）
                   或 "two_phase"（智能规划）
         target_product_ids: 指定产品过滤，None 表示不过滤
+        sync_strength: 0~100，同步强度
     """
     changeover = _get_changeover_minutes(db)
     printers = db.query(Printer).all()
@@ -695,7 +755,7 @@ def generate_plan(
         # 阶段 1：生产规划
         two_phase_tasks = _plan_two_phase(
             db, target_date, len(printers), duration_hours, changeover,
-            surplus_enabled, product_filter,
+            surplus_enabled, product_filter, start_time=start_time,
         )
 
         config_cache: dict[int, PrintConfig] = {}
@@ -713,8 +773,8 @@ def generate_plan(
         printer_available = {p.id: custom_start for p in printers}
         remaining: list[tuple[int, str, bool]] = list(two_phase_tasks)
 
-        def _pick_two_phase(start: int) -> tuple[int, str, bool] | None:
-            """Phase 2 task picker: minimize idle, prefer longer tasks."""
+        def _pick_two_phase(start: int, anchor_dur: int | None = None) -> tuple[int, str, bool] | None:
+            """Phase 2 task picker: minimize idle, prefer longer tasks, with sync penalty."""
             best_idx = -1
             best_score: tuple | None = None
             for i, (cid, color, is_surplus) in enumerate(remaining):
@@ -723,7 +783,12 @@ def generate_plan(
                 if start + dur > deadline:
                     continue
                 idle = _idle_after(start, dur, changeover, windows)
-                score = (idle, -dur)  # 小 idle 优先，同 idle 时长任务优先
+                # 同步惩罚
+                if anchor_dur is not None and anchor_dur > 0 and sync_strength > 0:
+                    sp = abs(dur - anchor_dur) / anchor_dur * (sync_strength / 100)
+                else:
+                    sp = 0.0
+                score = (sp, idle)  # sync penalty → idle（不偏好长短，保持Phase1的组件平衡）
                 if best_idx == -1 or score < best_score:
                     best_idx = i
                     best_score = score
@@ -760,13 +825,16 @@ def generate_plan(
             db.flush()
 
             batch_tasks_added = 0
+            batch_anchor: int | None = None  # 锚定时长
             for printer in available_printers:
-                item = _pick_two_phase(start)
+                item = _pick_two_phase(start, batch_anchor)
                 if item is None:
                     break
                 config_id, color, is_surplus = item
                 cfg = config_cache[config_id]
                 end_min = start + cfg.duration_minutes
+                if batch_anchor is None:
+                    batch_anchor = cfg.duration_minutes  # 第一台设锚
 
                 task = PrintTask(
                     batch_id=batch.id,
@@ -783,10 +851,35 @@ def generate_plan(
 
             if batch_tasks_added == 0:
                 db.delete(batch)
+                print(f"[two_phase P2] no tasks fit at start={start}, remaining={len(remaining)}, deadline={deadline}")
                 break
 
             batch_order += 1
 
+        # 详细日志：组件分布
+        from collections import Counter
+        planned_comps = Counter()
+        for cid, color, _ in two_phase_tasks:
+            cfg = config_cache[cid]
+            planned_comps[f"{cfg.component.name}({color}) {cfg.duration_minutes}min×{cfg.quantity}"] += 1
+
+        scheduled_comps = Counter()
+        for b in plan.batches:
+            for t in b.tasks:
+                cfg = config_cache[t.print_config_id]
+                scheduled_comps[f"{cfg.component.name}({t.color}) {cfg.duration_minutes}min×{cfg.quantity}"] += 1
+
+        print(f"\n[two_phase] phase1_tasks={len(two_phase_tasks)}, scheduled={batch_order} batches, unscheduled={len(remaining)}")
+        print(f"[two_phase] PLANNED per component:")
+        for k, v in planned_comps.most_common():
+            print(f"  {k}: {v} plates")
+        print(f"[two_phase] SCHEDULED per component:")
+        for k, v in scheduled_comps.most_common():
+            sched_pct = ""
+            if planned_comps[k] > 0:
+                sched_pct = f" ({v}/{planned_comps[k]})"
+            print(f"  {k}: {v} plates{sched_pct}")
+        print()
         db.commit()
         db.refresh(plan)
         return plan
@@ -845,17 +938,19 @@ def generate_plan(
     remaining_tasks: list = list(task_items)
     remaining_surplus: list = list(surplus_tasks) if surplus_enabled else []
 
-    def _next_task(start: int) -> tuple[int, str, bool] | None:
+    def _next_task(start: int, batch_anchor: int | None = None) -> tuple[int, str, bool] | None:
         """优先从需求任务中取，取完后从富余池中取。返回 (config_id, color, is_surplus)"""
         if remaining_tasks:
             if use_product_first:
                 result = _pick_task(
                     remaining_tasks, config_cache, start, changeover, windows, deadline,
                     sim_supply, product_units, bom_cache, assembled,
+                    anchor_duration=batch_anchor, sync_strength=sync_strength,
                 )
             else:
                 result = _pick_task(
                     remaining_tasks, config_cache, start, changeover, windows, deadline,
+                    anchor_duration=batch_anchor, sync_strength=sync_strength,
                 )
             if result:
                 return (result[0], result[1], False)
@@ -867,9 +962,13 @@ def generate_plan(
                 result = _pick_task(
                     remaining_surplus, config_cache, start, changeover, windows, deadline,
                     sim_supply, product_units, bom_cache, assembled,
+                    anchor_duration=batch_anchor, sync_strength=sync_strength,
                 )
             else:
-                result = _pick_task(remaining_surplus, config_cache, start, changeover, windows, deadline)
+                result = _pick_task(
+                    remaining_surplus, config_cache, start, changeover, windows, deadline,
+                    anchor_duration=batch_anchor, sync_strength=sync_strength,
+                )
             if result:
                 return (result[0], result[1], True)
             if not any(start + config_cache[t[0]].duration_minutes <= deadline for t in remaining_surplus):
@@ -909,13 +1008,16 @@ def generate_plan(
         db.flush()
 
         batch_tasks_added = 0
+        batch_anchor: int | None = None  # 锚定时长
         for printer in available_printers:
-            item = _next_task(start)
+            item = _next_task(start, batch_anchor)
             if item is None:
                 break
             config_id, color, is_surplus = item
             cfg = config_cache[config_id]
             end_min = start + cfg.duration_minutes
+            if batch_anchor is None:
+                batch_anchor = cfg.duration_minutes  # 第一台设锚
 
             # product_first 策略：更新模拟库存，检查是否有产品可组装
             if use_product_first:
