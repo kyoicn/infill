@@ -484,6 +484,74 @@ class TestSyncStrength:
         # 应该都能排入，即使时长差异大
         assert len(result) == 2
 
+    def test_sync_100_fewer_batches_than_0(self):
+        """4.7 sync=100 不应比 sync=0 产生更多批次（回归测试）"""
+        tasks, configs = self._make_mixed_tasks()
+
+        r0 = schedule_tasks(
+            list(tasks), configs, 4, DEFAULT_WINDOWS,
+            custom_start=480, deadline=1440, changeover=CHANGEOVER,
+            sync_strength=0,
+        )
+        r100 = schedule_tasks(
+            list(tasks), configs, 4, DEFAULT_WINDOWS,
+            custom_start=480, deadline=1440, changeover=CHANGEOVER,
+            sync_strength=100,
+        )
+
+        batches_0 = max((t.batch_index for t in r0), default=-1) + 1
+        batches_100 = max((t.batch_index for t in r100), default=-1) + 1
+        assert batches_100 <= batches_0, \
+            f"sync=100 has {batches_100} batches > sync=0 has {batches_0}"
+
+    def test_sync_100_fills_batches_with_real_tasks(self):
+        """4.8 sync=100 用真实混合时长（65~776min）不应导致批次暴增"""
+        # 模拟真实书桌场景
+        tasks = (
+            [(201, "白色", False)] * 16 +  # 上柜 149min
+            [(202, "粉色", False)] * 16 +  # 桌板 65min
+            [(203, "白色", False)] * 8 +   # 下桌 200min
+            [(204, "白色", False)] * 4 +   # 抽屉 273min
+            [(206, "白色", False)] * 3     # 下柜 776min
+        )
+        r100 = schedule_tasks(
+            list(tasks), REAL_CONFIG_BY_ID, 4, TWO_DAY_WINDOWS,
+            custom_start=0, deadline=2880, changeover=CHANGEOVER,
+            sync_strength=100,
+        )
+        r0 = schedule_tasks(
+            list(tasks), REAL_CONFIG_BY_ID, 4, TWO_DAY_WINDOWS,
+            custom_start=0, deadline=2880, changeover=CHANGEOVER,
+            sync_strength=0,
+        )
+        batches_0 = max((t.batch_index for t in r0), default=-1) + 1
+        batches_100 = max((t.batch_index for t in r100), default=-1) + 1
+        # sync=100 应该不比 sync=0 多太多批次（允许 10% 误差）
+        assert batches_100 <= batches_0 * 1.1, \
+            f"sync=100 batches={batches_100} >> sync=0 batches={batches_0}"
+
+    def test_sync_gradient_sensitivity(self):
+        """4.9 sync 0→25→50→75→100 批次数应渐变递减（不应都一样或反跳）"""
+        tasks, configs = self._make_mixed_tasks()
+        batch_counts = {}
+        for s in [0, 25, 50, 75, 100]:
+            result = schedule_tasks(
+                list(tasks), configs, 4, DEFAULT_WINDOWS,
+                custom_start=480, deadline=1440, changeover=CHANGEOVER,
+                sync_strength=s,
+            )
+            batch_counts[s] = max((t.batch_index for t in result), default=-1) + 1
+
+        # 单调不增（允许相邻值相等）
+        values = [batch_counts[s] for s in [0, 25, 50, 75, 100]]
+        for i in range(len(values) - 1):
+            assert values[i] >= values[i + 1], \
+                f"batch counts not monotonic: {dict(zip([0,25,50,75,100], values))}"
+
+        # 0 和 100 之间应该有明显差距（不能全一样）
+        assert batch_counts[0] > batch_counts[100] or batch_counts[0] <= 3, \
+            f"no gradient: all values = {values}"
+
 
 # =====================================================================
 # 5. 组件平衡与回归测试

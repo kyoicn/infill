@@ -187,13 +187,15 @@ def pick_task(
             pri = item[2] if len(item) > 2 else 0
             prod_score = (float(pri), 0.0, 0.0)
 
-        # 同步惩罚
+        # 同步惩罚：转换为等效空闲分钟（additive，不阻止批次填满）
+        # 使用二次方缩放：低强度几乎无惩罚，高强度强惩罚
         if anchor_duration is not None and anchor_duration > 0 and sync_strength > 0:
-            sync_penalty = abs(dur - anchor_duration) / anchor_duration * (sync_strength / 100)
+            strength_factor = (sync_strength / 100) ** 2
+            sync_penalty = abs(dur - anchor_duration) / anchor_duration * strength_factor * changeover * 4
         else:
             sync_penalty = 0.0
 
-        score = (sync_penalty, prod_score, idle, dur)
+        score = (prod_score, idle + sync_penalty, dur)
 
         if best_idx == -1 or score < best_score:
             best_idx = i
@@ -382,7 +384,7 @@ def schedule_tasks(
 
     def _pick(start: int, anchor_dur: int | None = None) -> tuple[int, str, bool] | None:
         best_idx = -1
-        best_score: tuple | None = None
+        best_score: float | None = None
         for i, (cid, color, is_surplus) in enumerate(remaining):
             cfg = configs[cid]
             dur = cfg.duration_minutes
@@ -390,10 +392,13 @@ def schedule_tasks(
                 continue
             idle = idle_after(start, dur, changeover, windows)
             if anchor_dur is not None and anchor_dur > 0 and sync_strength > 0:
-                sp = abs(dur - anchor_dur) / anchor_dur * (sync_strength / 100)
+                # 同步惩罚：时长偏差转换为"等效空闲分钟"
+                # 使用二次方缩放：低强度（<30）几乎无惩罚，高强度（>70）强惩罚
+                strength_factor = (sync_strength / 100) ** 2
+                sp = abs(dur - anchor_dur) / anchor_dur * strength_factor * changeover * 4
             else:
                 sp = 0.0
-            score = (sp, idle)
+            score = idle + sp
             if best_idx == -1 or score < best_score:
                 best_idx = i
                 best_score = score
@@ -402,12 +407,24 @@ def schedule_tasks(
         return remaining.pop(best_idx)
 
     while remaining:
-        earliest = min(printer_available.values())
+        sorted_times = sorted(printer_available.values())
 
         if batch_order == 0:
             start = custom_start
         else:
-            start = find_next_start(earliest, windows)
+            # sync_strength 控制等多久才开新批次（连续插值）：
+            # sync=0 → 用最早打印机的可用时间
+            # sync=100 → 用最晚打印机的可用时间
+            # sync=50 → 用中间值
+            t_earliest = sorted_times[0]
+            t_latest = sorted_times[-1]
+            wait_time = t_earliest + (t_latest - t_earliest) * sync_strength / 100
+            start = find_next_start(int(wait_time), windows)
+
+            # 如果等待导致超时，回退到最早可用的打印机
+            if start is None or start >= deadline:
+                start = find_next_start(t_earliest, windows)
+
             if start is None:
                 break
 
@@ -416,11 +433,11 @@ def schedule_tasks(
 
         available_printers = [p for p in range(num_printers) if printer_available[p] <= start]
         if not available_printers:
-            next_start = find_next_start(earliest + 1, windows)
+            next_start = find_next_start(sorted_times[0] + 1, windows)
             if next_start is None or next_start >= deadline:
                 break
             for pid in printer_available:
-                if printer_available[pid] <= earliest:
+                if printer_available[pid] <= sorted_times[0]:
                     printer_available[pid] = next_start
                     break
             continue
