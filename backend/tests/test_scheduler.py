@@ -262,6 +262,167 @@ class TestPlanTwoPhase:
         # 至少 80% 的任务应该排入（理想 100%，留少量容错）
         assert len(scheduled) >= len(tasks) * 0.8
 
+    # ----- 凑整放弃（complete-or-skip）语义 -----
+
+    @staticmethod
+    def _count_plate_time(tasks, configs):
+        """根据 (config_id, color) 任务列表汇总盘数与总占用产能（含换料）。"""
+        plate_counts: dict[int, int] = defaultdict(int)
+        for cid, _, _ in tasks:
+            plate_counts[cid] += 1
+        config_by_id = {c.id: c for c in configs.values()}
+        total_time = sum(
+            cnt * (config_by_id[cid].duration_minutes + CHANGEOVER)
+            for cid, cnt in plate_counts.items()
+        )
+        return plate_counts, total_time
+
+    @staticmethod
+    def _assert_no_orphans(tasks, bom, configs, n_units):
+        """断言产出恰好满足 n_units 个完整产品的 BOM，无孤儿件。
+
+        每个组件的实际产出（盘数 × 每盘产量）应 >= n_units × bom_qty，
+        且每个被生产的组件都属于该 BOM（无组件被部分生产成孤儿）。
+        """
+        config_by_id = {c.id: c for c in configs.values()}
+        # 组件 component_id -> 产出数量
+        produced: dict[int, int] = defaultdict(int)
+        for cid, _, _ in tasks:
+            cfg = config_by_id[cid]
+            produced[cfg.component_id] += cfg.quantity
+        for comp_key, qty in bom.items():
+            comp_id = comp_key[0]
+            # 必须凑齐 n_units 个产品的该组件需求
+            assert produced[comp_id] >= n_units * qty, (
+                f"component {comp_id}: produced {produced[comp_id]} "
+                f"< required {n_units * qty}"
+            )
+
+    def test_complete_or_skip_threshold(self):
+        """2.9 临界：产能恰好够 N 个完整产品，第 N+1 个差一点 → 产出恰为 N 个，无孤儿件。
+
+        用单组件产品（1 盘 = 1 个产品单元），把 deadline 调到只够 N 个完整单元，
+        N+1 个的最后一盘差一点，断言产出 == N 盘且无部分生产的孤儿盘。
+        """
+        # 单组件产品：1 个桌板 = 1 个产品；桌板 120min，changeover 15 → 135min/单元
+        bom = {10: {(1, "白色"): 1}}
+        configs = {(1, "白色"): DESK_CONFIGS[(1, "白色")]}
+        plate_unit = 120 + CHANGEOVER  # 135
+
+        # 1 台打印机、无窗口约束（custom_start=0, 连续窗口）便于精确控产能
+        N = 3
+        # compute_effective_capacity 用 safety_margin=0.9，故按 0.9 反推 deadline。
+        # 让有效产能恰好覆盖 N 个单元、不足 N+1 个：
+        #   0.9 * deadline ∈ [N*plate_unit, (N+1)*plate_unit)
+        # 取 deadline 使 0.9*deadline 略大于 N*plate_unit 但远小于 (N+1)*plate_unit
+        target_cap = N * plate_unit + 10  # 略多于 N 个、远不足 N+1 个
+        deadline = int(target_cap / 0.9) + 1
+        full_window = [(0, deadline)]
+
+        queue = [(0, 10)] * (N + 5)  # 远多于产能
+        tasks = plan_two_phase(
+            num_printers=1, duration_hours=deadline // 60, changeover=CHANGEOVER,
+            surplus_enabled=False, windows=full_window,
+            custom_start=0, deadline=deadline,
+            product_queue=queue, bom_map=bom,
+            config_map=configs, initial_supply={},
+        )
+        plate_counts, total_time = self._count_plate_time(tasks, configs)
+        # 恰好 N 盘（= N 个完整产品），无第 N+1 个的孤儿盘
+        assert plate_counts[101] == N, f"expected {N} plates, got {dict(plate_counts)}"
+        self._assert_no_orphans(tasks, bom[10], configs, N)
+
+    def test_complete_or_skip_first_unit_too_big(self):
+        """2.10 第一个产品就放不下 → 返回空列表（无任何孤儿盘）。"""
+        # 4 组件桌子产品需要 4 盘，把 deadline 调到连 1 个完整单元都放不下
+        # 最短组件螺丝 60min + 15 = 75min；0.9*50=45 < 75，连一盘都不够
+        tasks = plan_two_phase(
+            num_printers=1, duration_hours=1, changeover=CHANGEOVER,
+            surplus_enabled=False, windows=[(0, 50)],
+            custom_start=0, deadline=50,
+            product_queue=[(0, 10)], bom_map={10: DESK_BOM},
+            config_map=DESK_CONFIGS, initial_supply={},
+        )
+        assert tasks == [], f"expected empty plan, got {tasks}"
+
+    def test_complete_or_skip_exact_boundary(self):
+        """2.11 边界恰好够：某单元 time_needed == remaining_capacity → 正常产出（走产能足够分支）。"""
+        # 单组件产品，1 盘/单元。让有效产能恰好 == 1 个单元的 time_needed。
+        bom = {10: {(1, "白色"): 1}}
+        configs = {(1, "白色"): DESK_CONFIGS[(1, "白色")]}
+        plate_unit = 120 + CHANGEOVER  # 135
+        # 需要 compute_effective_capacity == plate_unit，即 0.9*deadline == 135
+        deadline = round(plate_unit / 0.9)  # 150 → 0.9*150 = 135
+        full_window = [(0, deadline)]
+        tasks = plan_two_phase(
+            num_printers=1, duration_hours=deadline // 60 + 1, changeover=CHANGEOVER,
+            surplus_enabled=False, windows=full_window,
+            custom_start=0, deadline=deadline,
+            product_queue=[(0, 10), (0, 10)], bom_map=bom,
+            config_map=configs, initial_supply={},
+        )
+        plate_counts, _ = self._count_plate_time(tasks, configs)
+        # 恰好够 1 个单元（== 边界），第 2 个放不下
+        assert plate_counts[101] == 1, f"expected exactly 1 plate at boundary, got {dict(plate_counts)}"
+        self._assert_no_orphans(tasks, bom[10], configs, 1)
+
+    def test_capacity_exhaustion_no_orphans(self):
+        """2.12 产能截断后产出仍为整数个完整产品（无孤儿件）。
+
+        多组件产品 + 产能不足以全部生产 → 截断后每个组件总产出
+        都满足同样数量个完整产品的 BOM。
+        """
+        queue = [(0, 10)] * 100  # 远超产能
+        tasks = self._run_plan(product_queue=queue)
+        # 推断完成的完整产品数（按桌板 1:1 = 完整产品数下界）
+        config_by_id = {c.id: c for c in DESK_CONFIGS.values()}
+        produced: dict[int, int] = defaultdict(int)
+        for cid, _, _ in tasks:
+            cfg = config_by_id[cid]
+            produced[cfg.component_id] += cfg.quantity
+        # 每个组件的产出都能凑齐 n 个完整产品（n = 各组件可支撑的最小完整数）
+        n_complete = min(
+            produced[comp_key[0]] // qty for comp_key, qty in DESK_BOM.items()
+        )
+        assert n_complete >= 1
+        self._assert_no_orphans(tasks, DESK_BOM, DESK_CONFIGS, n_complete)
+
+    def test_complete_or_skip_no_long_component_orphan(self):
+        """2.13 截断剩余产能足够单个长组件盘但凑不齐整单元 → 不产出长件孤儿盘。
+
+        这是「凑整放弃」相对旧 partial（按 plate_time 降序塞长件）的关键区别：
+        旧逻辑会用剩余产能塞 1 个最长组件盘，产出无法装配的孤儿件；
+        新逻辑直接 break，长组件计数不应被这部分剩余产能抬高。
+
+        构造：2 组件产品（长件 100min、短件 30min，各 1 件/盘，BOM 各 1）。
+        让剩余产能在 K 个完整单元后 ≈ 长件单盘时间但 < 一个完整单元 →
+        断言长件与短件盘数相等（成对、无孤儿长件）。
+        """
+        bom = {10: {(91, "白色"): 1, (92, "白色"): 1}}
+        long_cfg = make_config(901, 91, "长件", qty=1, dur=100)   # 100+15=115/盘
+        short_cfg = make_config(902, 92, "短件", qty=1, dur=30)   # 30+15=45/盘
+        configs = {(91, "白色"): long_cfg, (92, "白色"): short_cfg}
+        unit_time = 115 + 45  # 160/完整单元
+        K = 2
+        # 剩余产能目标：K 个完整单元 + 长件单盘(115) + 一点零头，但 < (K+1) 个完整单元
+        # → 旧逻辑会在第 K+1 单元塞入 1 个长件孤儿盘（115 <= 剩余），新逻辑 break
+        target_cap = K * unit_time + 115 + 10  # 在 [K*unit, (K+1)*unit) 内但够 1 个长件盘
+        deadline = int(target_cap / 0.9) + 1
+        tasks = plan_two_phase(
+            num_printers=1, duration_hours=deadline // 60 + 1, changeover=CHANGEOVER,
+            surplus_enabled=False, windows=[(0, deadline)],
+            custom_start=0, deadline=deadline,
+            product_queue=[(0, 10)] * (K + 5), bom_map=bom,
+            config_map=configs, initial_supply={},
+        )
+        plate_counts, _ = self._count_plate_time(tasks, configs)
+        long_plates = plate_counts.get(901, 0)
+        short_plates = plate_counts.get(902, 0)
+        # 成对产出：长件与短件盘数相等（无孤儿长件），且恰为 K 个完整单元
+        assert long_plates == short_plates == K, (
+            f"expected paired {K} plates each, got long={long_plates} short={short_plates}"
+        )
+
 
 # =====================================================================
 # 3. Phase 2 时间排程测试
