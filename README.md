@@ -24,7 +24,7 @@ tar xzf bundle.tar.gz
 ./deploy.sh
 
 # 4. 健康检查
-curl -fsS http://localhost:8000/api/catalog/products >/dev/null && echo OK
+curl -fsS http://localhost:8000/api/products >/dev/null && echo OK
 ```
 
 部署成功后访问 `http://<服务器 IP>:8000`。
@@ -85,8 +85,8 @@ curl -fsS http://localhost:8000/api/catalog/products >/dev/null && echo OK
 
 ```bash
 curl -fsS http://localhost:8000/                          # 前端首页
-curl -fsS http://localhost:8000/api/catalog/products       # API 根
-curl -fsS http://localhost:8000/api/config/printers        # 打印机列表
+curl -fsS http://localhost:8000/api/products               # 产品列表
+curl -fsS http://localhost:8000/api/printers               # 打印机列表
 ```
 
 如果 `curl` 失败，看容器状态：
