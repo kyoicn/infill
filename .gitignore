@@ -26,3 +26,9 @@ frontend/dist/
 # AI 工具本地配置
 .claude/
 .codex/
+
+# QA / 多agent工作流
+.qa-dev-server.pid
+.qa-dev-server.log
+docs/issues-attachments/
+docs/gorilla/*/screenshots/
