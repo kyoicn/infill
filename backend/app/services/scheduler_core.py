@@ -299,22 +299,7 @@ def plan_two_phase(
 
         # 检查产能是否足够
         if time_needed > remaining_capacity:
-            bottleneck_items = []
-            for comp_key, plates in plates_needed.items():
-                if plates > 0:
-                    cfg = config_map[comp_key]
-                    plate_time = cfg.duration_minutes + changeover
-                    bottleneck_items.append((comp_key, plates, plate_time))
-            bottleneck_items.sort(key=lambda x: -x[2])
-
-            for comp_key, plates, plate_time in bottleneck_items:
-                cfg = config_map[comp_key]
-                affordable = int(remaining_capacity // plate_time)
-                actual = min(plates, affordable)
-                if actual > 0:
-                    plan_counts[(cfg.id, comp_key[1])] += actual
-                    overflow[comp_key] = overflow.get(comp_key, 0) + actual * cfg.quantity - (bom.get(comp_key, 0) if actual >= plates else 0)
-                    remaining_capacity -= actual * plate_time
+            # 凑整放弃：放不下整个单元则不产出任何盘，结束分配
             break
 
         # 产能足够：记录盘数，更新溢出池
