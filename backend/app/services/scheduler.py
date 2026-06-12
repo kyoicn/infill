@@ -34,10 +34,8 @@ from .scheduler_core import (
     compute_effective_capacity,
     plan_two_phase as _plan_two_phase_core,
     schedule_tasks as _schedule_tasks_core,
+    SURPLUS_TARGET_PRODUCTS,
 )
-
-# 富余生产：目标额外完整产品数量上限
-SURPLUS_TARGET_PRODUCTS = 20
 
 
 def _get_changeover_minutes(db: Session) -> int:
