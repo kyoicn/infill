@@ -1,0 +1,145 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: 打印排班
+      - menu [ref=e7]:
+        - menuitem "dashboard 仪表盘" [ref=e8] [cursor=pointer]:
+          - img "dashboard" [ref=e9]:
+            - img [ref=e10]
+          - generic [ref=e12]: 仪表盘
+        - menuitem "appstore 产品目录" [ref=e13] [cursor=pointer]:
+          - img "appstore" [ref=e14]:
+            - img [ref=e15]
+          - generic [ref=e17]: 产品目录
+        - menuitem "shopping-cart 订单管理" [ref=e18] [cursor=pointer]:
+          - img "shopping-cart" [ref=e19]:
+            - img [ref=e20]
+          - generic [ref=e22]: 订单管理
+        - menuitem "inbox 库存管理" [ref=e23] [cursor=pointer]:
+          - img "inbox" [ref=e24]:
+            - img [ref=e25]
+          - generic [ref=e27]: 库存管理
+        - menuitem "schedule 排班中心" [ref=e28] [cursor=pointer]:
+          - img "schedule" [ref=e29]:
+            - img [ref=e30]
+          - generic [ref=e32]: 排班中心
+        - menuitem "setting 系统设置" [active] [ref=e33] [cursor=pointer]:
+          - img "setting" [ref=e34]:
+            - img [ref=e35]
+          - generic [ref=e37]: 系统设置
+  - main [ref=e39]:
+    - generic [ref=e1465]:
+      - heading "系统设置" [level=2] [ref=e1466]
+      - generic [ref=e1467]:
+        - generic [ref=e1469]:
+          - generic [ref=e1470]: 打印机管理
+          - button "plus 新增打印机" [ref=e1472] [cursor=pointer]:
+            - img "plus" [ref=e1474]:
+              - img [ref=e1475]
+            - generic [ref=e1478]: 新增打印机
+        - table [ref=e1486]:
+          - rowgroup [ref=e1491]:
+            - row "ID 名称 操作" [ref=e1492]:
+              - columnheader "ID" [ref=e1493]
+              - columnheader "名称" [ref=e1494]
+              - columnheader "操作" [ref=e1495]
+          - rowgroup [ref=e1496]:
+            - row "1 1号 delete" [ref=e1497]:
+              - cell "1" [ref=e1498]
+              - cell "1号" [ref=e1499]
+              - cell "delete" [ref=e1500]:
+                - button "delete" [ref=e1501] [cursor=pointer]:
+                  - img "delete" [ref=e1503]:
+                    - img [ref=e1504]
+            - row "2 2号 delete" [ref=e1506]:
+              - cell "2" [ref=e1507]
+              - cell "2号" [ref=e1508]
+              - cell "delete" [ref=e1509]:
+                - button "delete" [ref=e1510] [cursor=pointer]:
+                  - img "delete" [ref=e1512]:
+                    - img [ref=e1513]
+            - row "3 3号 delete" [ref=e1515]:
+              - cell "3" [ref=e1516]
+              - cell "3号" [ref=e1517]
+              - cell "delete" [ref=e1518]:
+                - button "delete" [ref=e1519] [cursor=pointer]:
+                  - img "delete" [ref=e1521]:
+                    - img [ref=e1522]
+            - row "4 4号 delete" [ref=e1524]:
+              - cell "4" [ref=e1525]
+              - cell "4号" [ref=e1526]
+              - cell "delete" [ref=e1527]:
+                - button "delete" [ref=e1528] [cursor=pointer]:
+                  - img "delete" [ref=e1530]:
+                    - img [ref=e1531]
+      - generic [ref=e1533]:
+        - generic [ref=e1536]: 换版时间（分钟）
+        - generic [ref=e1538]:
+          - generic [ref=e1540]:
+            - spinbutton [ref=e1541]: "15"
+            - generic:
+              - button "Increase Value" [ref=e1542] [cursor=pointer]:
+                - img "up" [ref=e1543]:
+                  - img [ref=e1544]
+              - button "Decrease Value" [ref=e1546] [cursor=pointer]:
+                - img "down" [ref=e1547]:
+                  - img [ref=e1548]
+          - button "保 存" [ref=e1551] [cursor=pointer]:
+            - generic [ref=e1552]: 保 存
+      - generic [ref=e1553]:
+        - generic [ref=e1556]: 操作时间窗口
+        - table [ref=e1564]:
+          - rowgroup [ref=e1569]:
+            - row "星期 时间窗口 操作" [ref=e1570]:
+              - columnheader "星期" [ref=e1571]
+              - columnheader "时间窗口" [ref=e1572]
+              - columnheader "操作" [ref=e1573]
+          - rowgroup [ref=e1574]:
+            - row "周一 未配置（使用默认） 编 辑" [ref=e1575]:
+              - cell "周一" [ref=e1576]
+              - cell "未配置（使用默认）" [ref=e1577]
+              - cell "编 辑" [ref=e1578]:
+                - button "编 辑" [ref=e1579] [cursor=pointer]:
+                  - generic [ref=e1580]: 编 辑
+            - row "周二 未配置（使用默认） 编 辑" [ref=e1581]:
+              - cell "周二" [ref=e1582]
+              - cell "未配置（使用默认）" [ref=e1583]
+              - cell "编 辑" [ref=e1584]:
+                - button "编 辑" [ref=e1585] [cursor=pointer]:
+                  - generic [ref=e1586]: 编 辑
+            - row "周三 未配置（使用默认） 编 辑" [ref=e1587]:
+              - cell "周三" [ref=e1588]
+              - cell "未配置（使用默认）" [ref=e1589]
+              - cell "编 辑" [ref=e1590]:
+                - button "编 辑" [ref=e1591] [cursor=pointer]:
+                  - generic [ref=e1592]: 编 辑
+            - row "周四 未配置（使用默认） 编 辑" [ref=e1593]:
+              - cell "周四" [ref=e1594]
+              - cell "未配置（使用默认）" [ref=e1595]
+              - cell "编 辑" [ref=e1596]:
+                - button "编 辑" [ref=e1597] [cursor=pointer]:
+                  - generic [ref=e1598]: 编 辑
+            - row "周五 未配置（使用默认） 编 辑" [ref=e1599]:
+              - cell "周五" [ref=e1600]
+              - cell "未配置（使用默认）" [ref=e1601]
+              - cell "编 辑" [ref=e1602]:
+                - button "编 辑" [ref=e1603] [cursor=pointer]:
+                  - generic [ref=e1604]: 编 辑
+            - row "周六 未配置（使用默认） 编 辑" [ref=e1605]:
+              - cell "周六" [ref=e1606]
+              - cell "未配置（使用默认）" [ref=e1607]
+              - cell "编 辑" [ref=e1608]:
+                - button "编 辑" [ref=e1609] [cursor=pointer]:
+                  - generic [ref=e1610]: 编 辑
+            - row "周日 未配置（使用默认） 编 辑" [ref=e1611]:
+              - cell "周日" [ref=e1612]
+              - cell "未配置（使用默认）" [ref=e1613]
+              - cell "编 辑" [ref=e1614]:
+                - button "编 辑" [ref=e1615] [cursor=pointer]:
+                  - generic [ref=e1616]: 编 辑
+      - generic [ref=e1617]:
+        - generic [ref=e1620]: 数据库维护
+        - generic [ref=e1622]:
+          - generic [ref=e1623]: 重置数据库会删除所有排班数据并重建表结构。库存、订单、打印机和系统配置会保留，产品目录从 YAML 重新加载。
+          - button "重置数据库" [ref=e1625] [cursor=pointer]:
+            - generic [ref=e1626]: 重置数据库

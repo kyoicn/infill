@@ -1,0 +1,113 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: 打印排班
+      - menu [ref=e7]:
+        - menuitem "dashboard 仪表盘" [ref=e8] [cursor=pointer]:
+          - img "dashboard" [ref=e9]:
+            - img [ref=e10]
+          - generic [ref=e12]: 仪表盘
+        - menuitem "appstore 产品目录" [ref=e13] [cursor=pointer]:
+          - img "appstore" [ref=e14]:
+            - img [ref=e15]
+          - generic [ref=e17]: 产品目录
+        - menuitem "shopping-cart 订单管理" [active] [ref=e18] [cursor=pointer]:
+          - img "shopping-cart" [ref=e19]:
+            - img [ref=e20]
+          - generic [ref=e22]: 订单管理
+        - menuitem "inbox 库存管理" [ref=e23] [cursor=pointer]:
+          - img "inbox" [ref=e24]:
+            - img [ref=e25]
+          - generic [ref=e27]: 库存管理
+        - menuitem "schedule 排班中心" [ref=e28] [cursor=pointer]:
+          - img "schedule" [ref=e29]:
+            - img [ref=e30]
+          - generic [ref=e32]: 排班中心
+        - menuitem "setting 系统设置" [ref=e33] [cursor=pointer]:
+          - img "setting" [ref=e34]:
+            - img [ref=e35]
+          - generic [ref=e37]: 系统设置
+  - main [ref=e39]:
+    - generic [ref=e1155]:
+      - heading "订单管理" [level=2] [ref=e1156]
+      - generic [ref=e1157]:
+        - button "plus 新增订单" [ref=e1161] [cursor=pointer]:
+          - img "plus" [ref=e1163]:
+            - img [ref=e1164]
+          - generic [ref=e1167]: 新增订单
+        - generic [ref=e1168]:
+          - generic [ref=e1169]:
+            - tablist [ref=e1170]:
+              - generic [ref=e1172]:
+                - tab "待处理" [selected] [ref=e1174] [cursor=pointer]
+                - tab "已发货" [ref=e1176] [cursor=pointer]
+                - tab "全部" [ref=e1178] [cursor=pointer]
+            - generic:
+              - generic:
+                - tabpanel "待处理"
+          - generic [ref=e1179]:
+            - strong [ref=e1180]: 待处理需求：
+            - generic [ref=e1181]: 转角书桌-配色3-白柜棕桌 x50
+            - generic [ref=e1182]: 芭蕾风鞋子-配色1-白色 x1
+            - generic [ref=e1183]: 芭蕾风鞋子-配色2-粉色 x1
+            - generic [ref=e1184]: 共 3 个订单
+          - generic [ref=e1187]:
+            - table [ref=e1191]:
+              - rowgroup [ref=e1198]:
+                - row "订单号 创建时间 状态 产品明细 操作" [ref=e1199]:
+                  - columnheader "订单号" [ref=e1200]
+                  - columnheader "创建时间" [ref=e1201]
+                  - columnheader "状态" [ref=e1202]
+                  - columnheader "产品明细" [ref=e1203]
+                  - columnheader "操作" [ref=e1204]
+              - rowgroup [ref=e1205]:
+                - row "1 2026/4/2 15:56:08 待处理 转角书桌-配色3-白柜棕桌 x50 发 货 delete" [ref=e1206]:
+                  - cell "1" [ref=e1207]
+                  - cell "2026/4/2 15:56:08" [ref=e1208]
+                  - cell "待处理" [ref=e1209]:
+                    - generic [ref=e1210]: 待处理
+                  - cell "转角书桌-配色3-白柜棕桌 x50" [ref=e1211]
+                  - cell "发 货 delete" [ref=e1212]:
+                    - generic [ref=e1213]:
+                      - button "发 货" [ref=e1215] [cursor=pointer]:
+                        - generic [ref=e1216]: 发 货
+                      - button "delete" [ref=e1218] [cursor=pointer]:
+                        - img "delete" [ref=e1220]:
+                          - img [ref=e1221]
+                - row "2 2026/4/2 15:56:08 待处理 芭蕾风鞋子-配色1-白色 x1 发 货 delete" [ref=e1223]:
+                  - cell "2" [ref=e1224]
+                  - cell "2026/4/2 15:56:08" [ref=e1225]
+                  - cell "待处理" [ref=e1226]:
+                    - generic [ref=e1227]: 待处理
+                  - cell "芭蕾风鞋子-配色1-白色 x1" [ref=e1228]
+                  - cell "发 货 delete" [ref=e1229]:
+                    - generic [ref=e1230]:
+                      - button "发 货" [ref=e1232] [cursor=pointer]:
+                        - generic [ref=e1233]: 发 货
+                      - button "delete" [ref=e1235] [cursor=pointer]:
+                        - img "delete" [ref=e1237]:
+                          - img [ref=e1238]
+                - row "4 2026/4/2 15:56:08 待处理 芭蕾风鞋子-配色2-粉色 x1 发 货 delete" [ref=e1240]:
+                  - cell "4" [ref=e1241]
+                  - cell "2026/4/2 15:56:08" [ref=e1242]
+                  - cell "待处理" [ref=e1243]:
+                    - generic [ref=e1244]: 待处理
+                  - cell "芭蕾风鞋子-配色2-粉色 x1" [ref=e1245]
+                  - cell "发 货 delete" [ref=e1246]:
+                    - generic [ref=e1247]:
+                      - button "发 货" [ref=e1249] [cursor=pointer]:
+                        - generic [ref=e1250]: 发 货
+                      - button "delete" [ref=e1252] [cursor=pointer]:
+                        - img "delete" [ref=e1254]:
+                          - img [ref=e1255]
+            - list [ref=e1257]:
+              - listitem "Previous Page" [ref=e1258]:
+                - button "left" [disabled] [ref=e1259]:
+                  - img "left" [ref=e1260]:
+                    - img [ref=e1261]
+              - listitem "1" [ref=e1263] [cursor=pointer]:
+                - generic [ref=e1264]: "1"
+              - listitem "Next Page" [ref=e1265]:
+                - button "right" [disabled] [ref=e1266]:
+                  - img "right" [ref=e1267]:
+                    - img [ref=e1268]

@@ -11,14 +11,16 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-BACKEND_CMD="python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+BACKEND_PORT="${QA_BACKEND_PORT:-8000}"  # override via env if 8000 占用
+BACKEND_CMD="python -m uvicorn app.main:app --host 0.0.0.0 --port $BACKEND_PORT"
 BACKEND_DIR="backend"
-BACKEND_PORT=8000
 FRONTEND_CMD="npm run dev"
 FRONTEND_DIR="frontend"
 DEV_PORT=5173                  # QA 访问端口（vite，代理 /api）
 PID_FILE=".qa-dev-server.pid"  # 两行：backend pid、frontend pid
 LOG_FILE=".qa-dev-server.log"
+VITE_CFG="frontend/vite.config.ts"
+VITE_CFG_BAK="frontend/vite.config.ts.qa.bak"
 
 running() {
   [ -f "$PID_FILE" ] || return 1
@@ -35,6 +37,12 @@ case "${1:-}" in
     fi
     rm -f "$PID_FILE"
     : > "$LOG_FILE"
+    # Temporarily patch vite proxy target if backend port differs from default 8000.
+    if [ "$BACKEND_PORT" != "8000" ] && [ -f "$VITE_CFG" ] && [ ! -f "$VITE_CFG_BAK" ]; then
+      cp "$VITE_CFG" "$VITE_CFG_BAK"
+      sed -i.tmp "s|http://localhost:8000|http://localhost:$BACKEND_PORT|g" "$VITE_CFG"
+      rm -f "$VITE_CFG.tmp"
+    fi
     (cd "$BACKEND_DIR" && nohup $BACKEND_CMD >> "../$LOG_FILE" 2>&1 & echo $! > "../$PID_FILE")
     (cd "$FRONTEND_DIR" && nohup $FRONTEND_CMD >> "../$LOG_FILE" 2>&1 & echo $! >> "../$PID_FILE")
     # Wait for both ports to start responding (max ~20s).
@@ -59,6 +67,11 @@ case "${1:-}" in
       echo "stopped"
     else
       echo "not running (no $PID_FILE)"
+    fi
+    # Restore vite proxy if it was patched.
+    if [ -f "$VITE_CFG_BAK" ]; then
+      mv "$VITE_CFG_BAK" "$VITE_CFG"
+      echo "restored $VITE_CFG"
     fi
     ;;
   restart)

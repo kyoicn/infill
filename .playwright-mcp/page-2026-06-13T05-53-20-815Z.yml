@@ -1,0 +1,157 @@
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: 打印排班
+      - menu [ref=e7]:
+        - menuitem "dashboard 仪表盘" [ref=e8] [cursor=pointer]:
+          - img "dashboard" [ref=e9]:
+            - img [ref=e10]
+          - generic [ref=e12]: 仪表盘
+        - menuitem "appstore 产品目录" [ref=e13] [cursor=pointer]:
+          - img "appstore" [ref=e14]:
+            - img [ref=e15]
+          - generic [ref=e17]: 产品目录
+        - menuitem "shopping-cart 订单管理" [ref=e18] [cursor=pointer]:
+          - img "shopping-cart" [ref=e19]:
+            - img [ref=e20]
+          - generic [ref=e22]: 订单管理
+        - menuitem "inbox 库存管理" [ref=e23] [cursor=pointer]:
+          - img "inbox" [ref=e24]:
+            - img [ref=e25]
+          - generic [ref=e27]: 库存管理
+        - menuitem "schedule 排班中心" [active] [ref=e28] [cursor=pointer]:
+          - img "schedule" [ref=e29]:
+            - img [ref=e30]
+          - generic [ref=e32]: 排班中心
+        - menuitem "setting 系统设置" [ref=e33] [cursor=pointer]:
+          - img "setting" [ref=e34]:
+            - img [ref=e35]
+          - generic [ref=e37]: 系统设置
+  - main [ref=e39]:
+    - generic [ref=e263]:
+      - heading "排班中心" [level=2] [ref=e264]
+      - generic [ref=e267]:
+        - img "clock-circle" [ref=e269]:
+          - img [ref=e270]
+        - generic [ref=e273]: 快速闹钟：
+        - generic [ref=e275]:
+          - spinbutton "分钟" [ref=e276]
+          - generic:
+            - button "Increase Value" [ref=e277] [cursor=pointer]:
+              - img "up" [ref=e278]:
+                - img [ref=e279]
+            - button "Decrease Value" [ref=e281] [cursor=pointer]:
+              - img "down" [ref=e282]:
+                - img [ref=e283]
+        - button "设 定" [disabled] [ref=e286]:
+          - generic: 设 定
+        - generic [ref=e287]: 或在下方批次中点"设闹钟"
+      - generic [ref=e290]:
+        - generic [ref=e291]:
+          - generic [ref=e292]: 排班时间
+          - generic [ref=e294]:
+            - textbox "Select date" [ref=e295]: 2026-06-14
+            - generic:
+              - img "calendar":
+                - img
+            - button "close-circle" [ref=e296] [cursor=pointer]:
+              - img "close-circle" [ref=e297]:
+                - img [ref=e298]
+          - generic [ref=e301]:
+            - textbox "开始时间" [ref=e302]: 00:00
+            - generic:
+              - img "clock-circle":
+                - img
+            - button "close-circle" [ref=e303] [cursor=pointer]:
+              - img "close-circle" [ref=e304]:
+                - img [ref=e305]
+          - generic [ref=e307]:
+            - generic [ref=e308]:
+              - spinbutton [ref=e309]: "24"
+              - generic:
+                - button "Increase Value" [ref=e310] [cursor=pointer]:
+                  - img "up" [ref=e311]:
+                    - img [ref=e312]
+                - button "Decrease Value" [ref=e314] [cursor=pointer]:
+                  - img "down" [ref=e315]:
+                    - img [ref=e316]
+            - generic [ref=e318]: 小时
+        - generic [ref=e319]:
+          - generic [ref=e320]: 调度策略
+          - generic [ref=e321]:
+            - generic [ref=e322]:
+              - radiogroup [ref=e323]:
+                - generic [ref=e324] [cursor=pointer]:
+                  - generic [ref=e325]:
+                    - radio "优先凑齐发货" [checked]
+                  - text: 优先凑齐发货
+                - generic [ref=e326] [cursor=pointer]:
+                  - generic [ref=e327]:
+                    - radio "最大化利用率"
+                  - text: 最大化利用率
+                - generic [ref=e328] [cursor=pointer]:
+                  - generic [ref=e329]:
+                    - radio "智能规划"
+                  - text: 智能规划
+              - generic [ref=e330]: 优先安排能凑齐完整产品的瓶颈组件
+            - generic [ref=e331]:
+              - generic [ref=e332]:
+                - generic [ref=e333]: 富余生产
+                - switch [checked] [ref=e334] [cursor=pointer]
+              - generic [ref=e337]: 满足后继续备货
+        - generic [ref=e338]:
+          - generic [ref=e339]: 指定产品
+          - generic [ref=e342]:
+            - generic [ref=e343]:
+              - generic:
+                - generic: 全部产品（按订单顺序）
+              - combobox [ref=e345]
+            - img "down" [ref=e347]:
+              - img [ref=e348]
+        - generic [ref=e350]:
+          - generic [ref=e351]: 同步强度
+          - generic [ref=e352]:
+            - generic [ref=e353]:
+              - generic [ref=e354] [cursor=pointer]:
+                - slider [ref=e360]
+                - generic:
+                  - generic [ref=e361]: "0"
+                  - generic [ref=e362]: "50"
+                  - generic [ref=e363]: "100"
+              - generic [ref=e364]: "50"
+            - generic [ref=e365]: 平衡最优任务和同批次打印机完成时间对齐
+        - button "生成排班表" [ref=e367] [cursor=pointer]:
+          - generic [ref=e368]: 生成排班表
+      - generic [ref=e369]:
+        - generic [ref=e372]: 排班表列表
+        - generic [ref=e376]:
+          - table [ref=e380]:
+            - rowgroup [ref=e381]:
+              - row "时间范围 状态 批次数 操作" [ref=e382]:
+                - columnheader "时间范围" [ref=e383]
+                - columnheader "状态" [ref=e384]
+                - columnheader "批次数" [ref=e385]
+                - columnheader "操作" [ref=e386]
+            - rowgroup [ref=e387]:
+              - row "2026-04-12 00:00 ~ 04-14 00:00 草稿 24 确 认 删 除" [ref=e388] [cursor=pointer]:
+                - cell "2026-04-12 00:00 ~ 04-14 00:00" [ref=e389]
+                - cell "草稿" [ref=e390]:
+                  - generic [ref=e391]: 草稿
+                - cell "24" [ref=e392]
+                - cell "确 认 删 除" [ref=e393]:
+                  - generic [ref=e394]:
+                    - button "确 认" [ref=e396]:
+                      - generic [ref=e397]: 确 认
+                    - button "删 除" [ref=e399]:
+                      - generic [ref=e400]: 删 除
+          - list [ref=e401]:
+            - listitem "Previous Page" [ref=e402]:
+              - button "left" [disabled] [ref=e403]:
+                - img "left" [ref=e404]:
+                  - img [ref=e405]
+            - listitem "1" [ref=e407] [cursor=pointer]:
+              - generic [ref=e408]: "1"
+            - listitem "Next Page" [ref=e409]:
+              - button "right" [disabled] [ref=e410]:
+                - img "right" [ref=e411]:
+                  - img [ref=e412]

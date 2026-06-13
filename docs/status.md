@@ -1,7 +1,7 @@
 # 项目状态
 
 > 自动生成的项目状态摘要。
-> 最后更新：2026-06-13 03:38:32 (UTC+8)
+> 最后更新：2026-06-13 14:22:22 (UTC+8)
 
 ## 概述
 
@@ -28,7 +28,7 @@
 
 单体全栈应用，前后端分离但打包在同一 Docker 镜像中：
 
-- **后端**（`backend/app/`）：FastAPI 应用，`main.py` 注册所有路由，`lifespan` 启动时从 `data/catalog.yaml` 差量同步目录进 SQLite。路由层（`routers/`）薄，核心业务逻辑在 `services/`。排班算法分为 `scheduler.py`（DB 服务层 + 贪心主循环）和 `scheduler_core.py`（纯函数算法核心，含单元测试）。
+- **后端**（`backend/app/`）：FastAPI 应用，`main.py` 注册所有路由，`lifespan` 启动时从 `data/catalog.yaml` 差量同步目录进 SQLite。路由层（`routers/`）薄，核心业务逻辑在 `services/`。排班算法分层：`scheduler_core.py` 是单一纯函数算法核心（含 `_sync_penalty()` additive 同步惩罚、`schedule_greedy()` 三策略共用贪心主循环、two_phase 凑整放弃逻辑、`SURPLUS_TARGET_PRODUCTS`/`DEFAULT_CHANGEOVER_MINUTES`/`CAPACITY_SAFETY_MARGIN`/`SYNC_PENALTY_CHANGEOVER_MULT` 常量集中源）；`scheduler.py` 仅保留 DB 服务层与 `_persist_scheduled()` 共享持久化辅助。
 - **前端**（`frontend/src/`）：React SPA，`App.tsx` 配置路由，六个页面组件（`pages/`）对应六条路由，所有接口调用经 `api/client.ts` 集中管理。
 - **数据流**：`catalog.yaml` → `load_catalog()` → SQLite（目录、库存初始行）→ FastAPI REST API → React 前端状态 → 用户界面。订单发货和排班任务完成是库存减少/增加的两个唯一入口。
 - **部署**：Docker 内后端静态服务前端 `dist/`，数据库与 catalog 文件通过卷挂载持久化。
@@ -48,7 +48,7 @@
 | CUJ-1：查看组件库存与富余 | prd-002 | P0 | merged | — | — |
 | CUJ-2：手动调整库存数量 | prd-002 | P0 | merged | — | — |
 | CUJ-3：Dashboard 库存预警与库存/需求总览 | prd-002 | P1 | merged | — | — |
-| CUJ-1：生成排班表 | prd-003 | P0 | merged | — | — |
+| CUJ-1：生成排班表 | prd-003 | P0 | merged | PASS | — |
 | CUJ-2：查看排班（列表 + 甘特图 + 总结） | prd-003 | P0 | merged | — | — |
 | CUJ-3：确认排班并按批次执行 | prd-003 | P0 | merged | — | — |
 | CUJ-4：手动编辑草稿排班 | prd-003 | P1 | merged | — | — |
@@ -63,7 +63,7 @@
 - `QA`：`PASS` | `FAIL` | `BLOCKED` | `NOT_RUN` | `WAIVED` | `—`（尚无 QA 运行）
 - `PM`：`Satisfied` | `Caveats` | `Not done` | `—`（尚无 PM 评审）
 
-CUJ **完全完成**的条件：Impl=`merged` AND QA=`PASS` AND PM=`Satisfied`。当前所有 CUJ 的 QA 与 PM 均为 `—`，尚需首次质量验收。
+CUJ **完全完成**的条件：Impl=`merged` AND QA=`PASS` AND PM=`Satisfied`。本轮迭代由 `docs/qa-report.md` 给出 prd-003 CUJ-1 的权威 QA 判定（PASS）；其余 CUJ 的 QA 仅做冒烟回归未变更状态，PM 评审尚未开始。
 
 ## 核心数据类型
 
@@ -127,8 +127,8 @@ infill/
 │   │   │   └── schedule.py      # 排班生成、确认、执行状态机
 │   │   └── services/
 │   │       ├── catalog.py       # load_catalog()：YAML 差量同步入 DB
-│   │       ├── scheduler.py     # DB 服务层 + product_first/utilization 贪心主循环
-│   │       ├── scheduler_core.py# 纯函数算法核心（two_phase 策略），含 additive 同步惩罚
+│   │       ├── scheduler.py     # DB 服务层 + _persist_scheduled 共享持久化辅助
+│   │       ├── scheduler_core.py# 纯函数算法核心：三策略共用 schedule_greedy + additive 同步惩罚 + 常量单一源
 │   │       └── migrate.py       # 数据库迁移辅助
 │   ├── tests/
 │   │   └── test_scheduler.py    # scheduler_core 单元测试（850 行）
@@ -158,17 +158,17 @@ infill/
 
 ## 近期活动
 
-最近 5 次提交（HEAD~5 起）涉及文件：
+本轮 dev-cycle 聚焦排班算法的统一与修复，相关提交（自旧 → 新）：
 
-| 文件/模块 | 变化性质 |
-|-----------|----------|
-| `backend/app/services/scheduler_core.py` | 新增：纯函数算法核心，510 行，two_phase 策略 + additive 同步惩罚 |
-| `backend/app/services/scheduler.py` | 重构：删减 362 行，抽取逻辑到 scheduler_core，保留 DB 层与 product_first/utilization 路径 |
-| `backend/tests/test_scheduler.py` | 新增：850 行单元测试，覆盖 scheduler_core 纯函数逻辑 |
-| `docs/project-overview.md` | 新增：原 STATUS.md 重命名后的项目状态长篇报告（229 行） |
-| `README.md` | 新增：LLM 友好的部署与开发指南（151 行） |
+| 提交 | 性质 | 摘要 |
+|------|------|------|
+| `3875ae5` refactor | Task-C | `SURPLUS_TARGET_PRODUCTS` 集中到 `scheduler_core.py = 20`，删除其余两处副本 |
+| `733ac88` fix | Task-B | two_phase partial 分支改为「凑整放弃」（单 `break`），消除孤儿长盘产出 |
+| `b9fdc83` refactor | Task-A | 统一 `_sync_penalty()` 为 additive equivalent-idle 公式；product_first/utilization 贪心主循环下沉到 `schedule_greedy()`；删除 `scheduler.py._pick_task` 与内联循环；抽出 `_persist_scheduled()` 共享持久化辅助 |
+| `8b0f35a` docs | Task-F | `schedule_specs.md` §9.3 改写为 additive 公式；§5.1/§10 明确 hard-FIFO + skip-if-stock-suffices；§7.3 surplus = 20；常量（`DEFAULT_CHANGEOVER_MINUTES`、`CAPACITY_SAFETY_MARGIN`、`SYNC_PENALTY_CHANGEOVER_MULT`）集中说明 |
+| `c44ca23` chore | code review | 删除未使用 import；收紧 printers 类型标注 |
 
-近期开发重心：**排班算法重构**——将 `two_phase` 策略的核心逻辑提取为可测试的纯函数（`scheduler_core.py`），并完善单元测试覆盖。`product_first` 和 `utilization` 两种策略仍在 `scheduler.py` 中以贪心主循环实现（multiplicative 同步惩罚），与 `scheduler_core.py` 的 additive 惩罚公式存在双实现分歧。
+行为变化：`sync_strength` 语义现在三种策略下完全一致（additive equivalent-idle，不再是旧的 multiplicative 强压机制）。QA 报告（`docs/qa-report.md`）已就本轮 prd-003 CUJ-1 给出 PASS 终判：74/74 单测全绿；前端两轮独立 walk 完全一致；红线（不动 routers/前端/DB schema/富余口径）未触犯。
 
 ## 已知问题与待办
 

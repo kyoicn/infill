@@ -1,0 +1,895 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - complementary [ref=e4]:
+      - generic [ref=e5]:
+        - generic [ref=e6]: 打印排班
+        - menu [ref=e7]:
+          - menuitem "dashboard 仪表盘" [ref=e8] [cursor=pointer]:
+            - img "dashboard" [ref=e9]:
+              - img [ref=e10]
+            - generic [ref=e12]: 仪表盘
+          - menuitem "appstore 产品目录" [ref=e13] [cursor=pointer]:
+            - img "appstore" [ref=e14]:
+              - img [ref=e15]
+            - generic [ref=e17]: 产品目录
+          - menuitem "shopping-cart 订单管理" [ref=e18] [cursor=pointer]:
+            - img "shopping-cart" [ref=e19]:
+              - img [ref=e20]
+            - generic [ref=e22]: 订单管理
+          - menuitem "inbox 库存管理" [ref=e23] [cursor=pointer]:
+            - img "inbox" [ref=e24]:
+              - img [ref=e25]
+            - generic [ref=e27]: 库存管理
+          - menuitem "schedule 排班中心" [ref=e28] [cursor=pointer]:
+            - img "schedule" [ref=e29]:
+              - img [ref=e30]
+            - generic [ref=e32]: 排班中心
+          - menuitem "setting 系统设置" [ref=e33] [cursor=pointer]:
+            - img "setting" [ref=e34]:
+              - img [ref=e35]
+            - generic [ref=e37]: 系统设置
+    - main [ref=e39]:
+      - generic [ref=e40]:
+        - heading "排班中心" [level=2] [ref=e41]
+        - generic [ref=e44]:
+          - img "clock-circle" [ref=e46]:
+            - img [ref=e47]
+          - generic [ref=e50]: 快速闹钟：
+          - generic [ref=e52]:
+            - spinbutton "分钟" [ref=e53]
+            - generic:
+              - button "Increase Value" [ref=e54] [cursor=pointer]:
+                - img "up" [ref=e55]:
+                  - img [ref=e56]
+              - button "Decrease Value" [ref=e58] [cursor=pointer]:
+                - img "down" [ref=e59]:
+                  - img [ref=e60]
+          - button "设 定" [disabled] [ref=e63]:
+            - generic: 设 定
+          - generic [ref=e64]: 或在下方批次中点"设闹钟"
+        - generic [ref=e67]:
+          - generic [ref=e68]:
+            - generic [ref=e69]: 排班时间
+            - generic [ref=e71]:
+              - textbox "Select date" [ref=e72]: 2026-06-14
+              - generic:
+                - img "calendar":
+                  - img
+              - button "close-circle" [ref=e73] [cursor=pointer]:
+                - img "close-circle" [ref=e74]:
+                  - img [ref=e75]
+            - generic [ref=e78]:
+              - textbox "开始时间" [ref=e79]: 00:00
+              - generic:
+                - img "clock-circle":
+                  - img
+              - button "close-circle" [ref=e80] [cursor=pointer]:
+                - img "close-circle" [ref=e81]:
+                  - img [ref=e82]
+            - generic [ref=e84]:
+              - generic [ref=e85]:
+                - spinbutton [ref=e86]: "24"
+                - generic:
+                  - button "Increase Value" [ref=e87] [cursor=pointer]:
+                    - img "up" [ref=e88]:
+                      - img [ref=e89]
+                  - button "Decrease Value" [ref=e91] [cursor=pointer]:
+                    - img "down" [ref=e92]:
+                      - img [ref=e93]
+              - generic [ref=e95]: 小时
+          - generic [ref=e96]:
+            - generic [ref=e97]: 调度策略
+            - generic [ref=e98]:
+              - generic [ref=e99]:
+                - radiogroup [ref=e100]:
+                  - generic [ref=e101] [cursor=pointer]:
+                    - generic [ref=e102]:
+                      - radio "优先凑齐发货" [checked]
+                    - text: 优先凑齐发货
+                  - generic [ref=e103] [cursor=pointer]:
+                    - generic [ref=e104]:
+                      - radio "最大化利用率"
+                    - text: 最大化利用率
+                  - generic [ref=e105] [cursor=pointer]:
+                    - generic [ref=e106]:
+                      - radio "智能规划"
+                    - text: 智能规划
+                - generic [ref=e107]: 优先安排能凑齐完整产品的瓶颈组件
+              - generic [ref=e108]:
+                - generic [ref=e109]:
+                  - generic [ref=e110]: 富余生产
+                  - switch [checked] [ref=e111] [cursor=pointer]
+                - generic [ref=e114]: 满足后继续备货
+          - generic [ref=e115]:
+            - generic [ref=e116]: 指定产品
+            - generic [ref=e119]:
+              - generic [ref=e120]:
+                - generic:
+                  - generic: 全部产品（按订单顺序）
+                - combobox [ref=e122]
+              - img "down" [ref=e124]:
+                - img [ref=e125]
+          - generic [ref=e127]:
+            - generic [ref=e128]: 同步强度
+            - generic [ref=e129]:
+              - generic [ref=e130]:
+                - generic [ref=e131] [cursor=pointer]:
+                  - slider [ref=e137]
+                  - generic:
+                    - generic [ref=e138]: "0"
+                    - generic [ref=e139]: "50"
+                    - generic [ref=e140]: "100"
+                - generic [ref=e141]: "50"
+              - generic [ref=e142]: 平衡最优任务和同批次打印机完成时间对齐
+          - button "生成排班表" [ref=e144] [cursor=pointer]:
+            - generic [ref=e145]: 生成排班表
+        - generic [ref=e146]:
+          - generic [ref=e149]: 排班表列表
+          - generic [ref=e153]:
+            - table [ref=e157]:
+              - rowgroup [ref=e158]:
+                - row "时间范围 状态 批次数 操作" [ref=e159]:
+                  - columnheader "时间范围" [ref=e160]
+                  - columnheader "状态" [ref=e161]
+                  - columnheader "批次数" [ref=e162]
+                  - columnheader "操作" [ref=e163]
+              - rowgroup [ref=e164]:
+                - row "2026-06-14 00:00 ~ 06-15 00:00 草稿 19 确 认 删 除" [ref=e202] [cursor=pointer]:
+                  - cell "2026-06-14 00:00 ~ 06-15 00:00" [ref=e203]
+                  - cell "草稿" [ref=e204]:
+                    - generic [ref=e205]: 草稿
+                  - cell "19" [ref=e206]
+                  - cell "确 认 删 除" [ref=e207]:
+                    - generic [ref=e208]:
+                      - button "确 认" [ref=e210]:
+                        - generic [ref=e211]: 确 认
+                      - button "删 除" [ref=e213]:
+                        - generic [ref=e214]: 删 除
+                - row "2026-04-12 00:00 ~ 04-14 00:00 草稿 24 确 认 删 除" [ref=e176] [cursor=pointer]:
+                  - cell "2026-04-12 00:00 ~ 04-14 00:00" [ref=e177]
+                  - cell "草稿" [ref=e178]:
+                    - generic [ref=e179]: 草稿
+                  - cell "24" [ref=e180]
+                  - cell "确 认 删 除" [ref=e181]:
+                    - generic [ref=e182]:
+                      - button "确 认" [ref=e184]:
+                        - generic [ref=e185]: 确 认
+                      - button "删 除" [ref=e187]:
+                        - generic [ref=e188]: 删 除
+            - list [ref=e189]:
+              - listitem "Previous Page" [ref=e190]:
+                - button "left" [disabled] [ref=e191]:
+                  - img "left" [ref=e192]:
+                    - img [ref=e193]
+              - listitem "1" [ref=e195] [cursor=pointer]:
+                - generic [ref=e196]: "1"
+              - listitem "Next Page" [ref=e197]:
+                - button "right" [disabled] [ref=e198]:
+                  - img "right" [ref=e199]:
+                    - img [ref=e200]
+        - generic [ref=e215]:
+          - generic [ref=e218]: 排班详情 — 2026-06-14 00:00（24小时）
+          - generic [ref=e219]:
+            - generic [ref=e220]:
+              - generic [ref=e224]:
+                - strong [ref=e226]: 排班总结
+                - table [ref=e229]:
+                  - rowgroup [ref=e238]:
+                    - row "组件 颜色 当前库存 本次生产 排班后库存 订单需求 仍缺" [ref=e239]:
+                      - columnheader "组件" [ref=e240]
+                      - columnheader "颜色" [ref=e241]
+                      - columnheader "当前库存" [ref=e242]
+                      - columnheader "本次生产" [ref=e243]
+                      - columnheader "排班后库存" [ref=e244]
+                      - columnheader "订单需求" [ref=e245]
+                      - columnheader "仍缺" [ref=e246]
+                  - rowgroup [ref=e247]:
+                    - row "转角书桌-桌板 棕色 0 +25 25 50 -25" [ref=e248]:
+                      - cell "转角书桌-桌板" [ref=e249]
+                      - cell "棕色" [ref=e250]
+                      - cell "0" [ref=e251]
+                      - cell "+25" [ref=e252]:
+                        - generic [ref=e254]: "+25"
+                      - cell "25" [ref=e255]
+                      - cell "50" [ref=e256]
+                      - cell "-25" [ref=e257]:
+                        - generic [ref=e258]: "-25"
+                    - row "转角书桌-上柜 白色 16 +7 23 50 -27" [ref=e259]:
+                      - cell "转角书桌-上柜" [ref=e260]
+                      - cell "白色" [ref=e261]
+                      - cell "16" [ref=e262]
+                      - cell "+7" [ref=e263]:
+                        - generic [ref=e265]: "+7"
+                      - cell "23" [ref=e266]
+                      - cell "50" [ref=e267]
+                      - cell "-27" [ref=e268]:
+                        - generic [ref=e269]: "-27"
+                    - row "转角书桌-抽屉 白色 48 +16 64 150 -86" [ref=e270]:
+                      - cell "转角书桌-抽屉" [ref=e271]
+                      - cell "白色" [ref=e272]
+                      - cell "48" [ref=e273]
+                      - cell "+16" [ref=e274]:
+                        - generic [ref=e276]: "+16"
+                      - cell "64" [ref=e277]
+                      - cell "150" [ref=e278]
+                      - cell "-86" [ref=e279]:
+                        - generic [ref=e280]: "-86"
+                    - row "转角书桌-窗户 白色 36 +24 60 100 -40" [ref=e281]:
+                      - cell "转角书桌-窗户" [ref=e282]
+                      - cell "白色" [ref=e283]
+                      - cell "36" [ref=e284]
+                      - cell "+24" [ref=e285]:
+                        - generic [ref=e287]: "+24"
+                      - cell "60" [ref=e288]
+                      - cell "100" [ref=e289]
+                      - cell "-40" [ref=e290]:
+                        - generic [ref=e291]: "-40"
+                    - row "转角书桌-下桌 白色 18 +4 22 50 -28" [ref=e292]:
+                      - cell "转角书桌-下桌" [ref=e293]
+                      - cell "白色" [ref=e294]
+                      - cell "18" [ref=e295]
+                      - cell "+4" [ref=e296]:
+                        - generic [ref=e298]: "+4"
+                      - cell "22" [ref=e299]
+                      - cell "50" [ref=e300]
+                      - cell "-28" [ref=e301]:
+                        - generic [ref=e302]: "-28"
+                    - row "转角书桌-固定件 任意颜色 30 - 30 50 -20" [ref=e303]:
+                      - cell "转角书桌-固定件" [ref=e304]
+                      - cell "任意颜色" [ref=e305]
+                      - cell "30" [ref=e306]
+                      - cell "-" [ref=e307]
+                      - cell "30" [ref=e308]
+                      - cell "50" [ref=e309]
+                      - cell "-20" [ref=e310]:
+                        - generic [ref=e311]: "-20"
+                    - row "转角书桌-把手 白色 250 - 250 250 充足" [ref=e312]:
+                      - cell "转角书桌-把手" [ref=e313]
+                      - cell "白色" [ref=e314]
+                      - cell "250" [ref=e315]
+                      - cell "-" [ref=e316]
+                      - cell "250" [ref=e317]
+                      - cell "250" [ref=e318]
+                      - cell "充足" [ref=e319]:
+                        - generic [ref=e320]: 充足
+                    - row "转角书桌-下柜 白色 16 - 16 50 -34" [ref=e321]:
+                      - cell "转角书桌-下柜" [ref=e322]
+                      - cell "白色" [ref=e323]
+                      - cell "16" [ref=e324]
+                      - cell "-" [ref=e325]
+                      - cell "16" [ref=e326]
+                      - cell "50" [ref=e327]
+                      - cell "-34" [ref=e328]:
+                        - generic [ref=e329]: "-34"
+                    - row "芭蕾风鞋子 白色 0 - 0 1 -1" [ref=e330]:
+                      - cell "芭蕾风鞋子" [ref=e331]
+                      - cell "白色" [ref=e332]
+                      - cell "0" [ref=e333]
+                      - cell "-" [ref=e334]
+                      - cell "0" [ref=e335]
+                      - cell "1" [ref=e336]
+                      - cell "-1" [ref=e337]:
+                        - generic [ref=e338]: "-1"
+                    - row "芭蕾风鞋子 粉色 0 - 0 1 -1" [ref=e339]:
+                      - cell "芭蕾风鞋子" [ref=e340]
+                      - cell "粉色" [ref=e341]
+                      - cell "0" [ref=e342]
+                      - cell "-" [ref=e343]
+                      - cell "0" [ref=e344]
+                      - cell "1" [ref=e345]
+                      - cell "-1" [ref=e346]:
+                        - generic [ref=e347]: "-1"
+              - generic [ref=e348]:
+                - strong [ref=e349]: 排班后可组装：
+                - generic [ref=e350]: 转角书桌-配色1-纯白 x0
+                - generic [ref=e351]: JK制服鞋-配色1-白色 x0
+                - generic [ref=e352]: JK制服鞋-配色2-黑色 x0
+                - generic [ref=e353]: 转角书桌-配色2-纯棕 x0
+                - generic [ref=e354]: 转角书桌-配色3-白柜棕桌 x16
+                - generic [ref=e355]: 转角书桌-配色4-白柜粉桌 x0
+                - generic [ref=e356]: 芭蕾风鞋子-配色1-白色 x0
+                - generic [ref=e357]: 芭蕾风鞋子-配色2-粉色 x0
+                - generic [ref=e358]: 芭蕾风鞋子-配色3-黄色 x0
+                - generic [ref=e359]: 芭蕾风鞋子-配色4-丝绸粉 x0
+                - generic [ref=e360]: 芭蕾风鞋子-配色5-黑色 x0
+              - generic [ref=e364]:
+                - strong [ref=e366]: 打印机利用率（24小时）
+                - table [ref=e369]:
+                  - rowgroup [ref=e374]:
+                    - row "打印机 工作时长 利用率" [ref=e375]:
+                      - columnheader "打印机" [ref=e376]
+                      - columnheader "工作时长" [ref=e377]
+                      - columnheader "利用率" [ref=e378]
+                  - rowgroup [ref=e379]:
+                    - row "1号 14h1m 58%" [ref=e380]:
+                      - cell "1号" [ref=e381]
+                      - cell "14h1m" [ref=e382]
+                      - cell "58%" [ref=e383]:
+                        - generic [ref=e387]: 58%
+                    - row "2号 15h11m 63%" [ref=e388]:
+                      - cell "2号" [ref=e389]
+                      - cell "15h11m" [ref=e390]
+                      - cell "63%" [ref=e391]:
+                        - generic [ref=e395]: 63%
+                    - row "3号 14h56m 62%" [ref=e396]:
+                      - cell "3号" [ref=e397]
+                      - cell "14h56m" [ref=e398]
+                      - cell "62%" [ref=e399]:
+                        - generic [ref=e403]: 62%
+                    - row "4号 14h29m 60%" [ref=e404]:
+                      - cell "4号" [ref=e405]
+                      - cell "14h29m" [ref=e406]
+                      - cell "60%" [ref=e407]:
+                        - generic [ref=e411]: 60%
+            - generic [ref=e412]:
+              - tablist [ref=e413]:
+                - generic [ref=e415]:
+                  - tab "甘特图" [ref=e417] [cursor=pointer]
+                  - tab "列表视图" [selected] [ref=e419] [cursor=pointer]
+              - tabpanel "列表视图" [ref=e422]:
+                - generic [ref=e423]:
+                  - generic [ref=e425]:
+                    - generic [ref=e427]: 批次 1 — 00:00 启动（首批）
+                    - button "删除批次" [ref=e431] [cursor=pointer]:
+                      - generic [ref=e432]: 删除批次
+                  - table [ref=e440]:
+                    - rowgroup [ref=e447]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e448]:
+                        - columnheader "打印机" [ref=e449]
+                        - columnheader "打印内容" [ref=e450]
+                        - columnheader "开始" [ref=e451]
+                        - columnheader "结束" [ref=e452]
+                        - columnheader "操作" [ref=e453]
+                    - rowgroup [ref=e454]:
+                      - row "1号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 00:00 01:05 删 除" [ref=e455]:
+                        - cell "1号" [ref=e456]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e457]
+                        - cell "00:00" [ref=e458]
+                        - cell "01:05" [ref=e459]
+                        - cell "删 除" [ref=e460]:
+                          - button "删 除" [ref=e463] [cursor=pointer]:
+                            - generic [ref=e464]: 删 除
+                      - row "2号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 00:00 01:05 删 除" [ref=e465]:
+                        - cell "2号" [ref=e466]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e467]
+                        - cell "00:00" [ref=e468]
+                        - cell "01:05" [ref=e469]
+                        - cell "删 除" [ref=e470]:
+                          - button "删 除" [ref=e473] [cursor=pointer]:
+                            - generic [ref=e474]: 删 除
+                      - row "3号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 00:00 01:05 删 除" [ref=e475]:
+                        - cell "3号" [ref=e476]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e477]
+                        - cell "00:00" [ref=e478]
+                        - cell "01:05" [ref=e479]
+                        - cell "删 除" [ref=e480]:
+                          - button "删 除" [ref=e483] [cursor=pointer]:
+                            - generic [ref=e484]: 删 除
+                      - row "4号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 00:00 01:05 删 除" [ref=e485]:
+                        - cell "4号" [ref=e486]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e487]
+                        - cell "00:00" [ref=e488]
+                        - cell "01:05" [ref=e489]
+                        - cell "删 除" [ref=e490]:
+                          - button "删 除" [ref=e493] [cursor=pointer]:
+                            - generic [ref=e494]: 删 除
+                - generic [ref=e495]:
+                  - generic [ref=e497]:
+                    - generic [ref=e499]: 批次 2 — 07:45 收菜，08:00 启动
+                    - button "删除批次" [ref=e503] [cursor=pointer]:
+                      - generic [ref=e504]: 删除批次
+                  - table [ref=e512]:
+                    - rowgroup [ref=e519]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e520]:
+                        - columnheader "打印机" [ref=e521]
+                        - columnheader "打印内容" [ref=e522]
+                        - columnheader "开始" [ref=e523]
+                        - columnheader "结束" [ref=e524]
+                        - columnheader "操作" [ref=e525]
+                    - rowgroup [ref=e526]:
+                      - row "1号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 08:00 09:05 删 除" [ref=e527]:
+                        - cell "1号" [ref=e528]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e529]
+                        - cell "08:00" [ref=e530]
+                        - cell "09:05" [ref=e531]
+                        - cell "删 除" [ref=e532]:
+                          - button "删 除" [ref=e535] [cursor=pointer]:
+                            - generic [ref=e536]: 删 除
+                      - row "2号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 08:00 09:05 删 除" [ref=e537]:
+                        - cell "2号" [ref=e538]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e539]
+                        - cell "08:00" [ref=e540]
+                        - cell "09:05" [ref=e541]
+                        - cell "删 除" [ref=e542]:
+                          - button "删 除" [ref=e545] [cursor=pointer]:
+                            - generic [ref=e546]: 删 除
+                      - row "3号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 08:00 09:05 删 除" [ref=e547]:
+                        - cell "3号" [ref=e548]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e549]
+                        - cell "08:00" [ref=e550]
+                        - cell "09:05" [ref=e551]
+                        - cell "删 除" [ref=e552]:
+                          - button "删 除" [ref=e555] [cursor=pointer]:
+                            - generic [ref=e556]: 删 除
+                      - row "4号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 08:00 09:05 删 除" [ref=e557]:
+                        - cell "4号" [ref=e558]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e559]
+                        - cell "08:00" [ref=e560]
+                        - cell "09:05" [ref=e561]
+                        - cell "删 除" [ref=e562]:
+                          - button "删 除" [ref=e565] [cursor=pointer]:
+                            - generic [ref=e566]: 删 除
+                - generic [ref=e567]:
+                  - generic [ref=e569]:
+                    - generic [ref=e571]: 批次 3 — 09:05 收菜，09:20 启动
+                    - button "删除批次" [ref=e575] [cursor=pointer]:
+                      - generic [ref=e576]: 删除批次
+                  - table [ref=e584]:
+                    - rowgroup [ref=e591]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e592]:
+                        - columnheader "打印机" [ref=e593]
+                        - columnheader "打印内容" [ref=e594]
+                        - columnheader "开始" [ref=e595]
+                        - columnheader "结束" [ref=e596]
+                        - columnheader "操作" [ref=e597]
+                    - rowgroup [ref=e598]:
+                      - row "1号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 09:20 10:25 删 除" [ref=e599]:
+                        - cell "1号" [ref=e600]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e601]
+                        - cell "09:20" [ref=e602]
+                        - cell "10:25" [ref=e603]
+                        - cell "删 除" [ref=e604]:
+                          - button "删 除" [ref=e607] [cursor=pointer]:
+                            - generic [ref=e608]: 删 除
+                      - row "2号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 09:20 10:25 删 除" [ref=e609]:
+                        - cell "2号" [ref=e610]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e611]
+                        - cell "09:20" [ref=e612]
+                        - cell "10:25" [ref=e613]
+                        - cell "删 除" [ref=e614]:
+                          - button "删 除" [ref=e617] [cursor=pointer]:
+                            - generic [ref=e618]: 删 除
+                      - row "3号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 09:20 10:25 删 除" [ref=e619]:
+                        - cell "3号" [ref=e620]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e621]
+                        - cell "09:20" [ref=e622]
+                        - cell "10:25" [ref=e623]
+                        - cell "删 除" [ref=e624]:
+                          - button "删 除" [ref=e627] [cursor=pointer]:
+                            - generic [ref=e628]: 删 除
+                      - row "4号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 09:20 10:25 删 除" [ref=e629]:
+                        - cell "4号" [ref=e630]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e631]
+                        - cell "09:20" [ref=e632]
+                        - cell "10:25" [ref=e633]
+                        - cell "删 除" [ref=e634]:
+                          - button "删 除" [ref=e637] [cursor=pointer]:
+                            - generic [ref=e638]: 删 除
+                - generic [ref=e639]:
+                  - generic [ref=e641]:
+                    - generic [ref=e643]: 批次 4 — 10:25 收菜，10:40 启动
+                    - button "删除批次" [ref=e647] [cursor=pointer]:
+                      - generic [ref=e648]: 删除批次
+                  - table [ref=e656]:
+                    - rowgroup [ref=e663]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e664]:
+                        - columnheader "打印机" [ref=e665]
+                        - columnheader "打印内容" [ref=e666]
+                        - columnheader "开始" [ref=e667]
+                        - columnheader "结束" [ref=e668]
+                        - columnheader "操作" [ref=e669]
+                    - rowgroup [ref=e670]:
+                      - row "1号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 10:40 11:45 删 除" [ref=e671]:
+                        - cell "1号" [ref=e672]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e673]
+                        - cell "10:40" [ref=e674]
+                        - cell "11:45" [ref=e675]
+                        - cell "删 除" [ref=e676]:
+                          - button "删 除" [ref=e679] [cursor=pointer]:
+                            - generic [ref=e680]: 删 除
+                      - row "2号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 10:40 11:45 删 除" [ref=e681]:
+                        - cell "2号" [ref=e682]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e683]
+                        - cell "10:40" [ref=e684]
+                        - cell "11:45" [ref=e685]
+                        - cell "删 除" [ref=e686]:
+                          - button "删 除" [ref=e689] [cursor=pointer]:
+                            - generic [ref=e690]: 删 除
+                      - row "3号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 10:40 11:45 删 除" [ref=e691]:
+                        - cell "3号" [ref=e692]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e693]
+                        - cell "10:40" [ref=e694]
+                        - cell "11:45" [ref=e695]
+                        - cell "删 除" [ref=e696]:
+                          - button "删 除" [ref=e699] [cursor=pointer]:
+                            - generic [ref=e700]: 删 除
+                      - row "4号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 10:40 11:45 删 除" [ref=e701]:
+                        - cell "4号" [ref=e702]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e703]
+                        - cell "10:40" [ref=e704]
+                        - cell "11:45" [ref=e705]
+                        - cell "删 除" [ref=e706]:
+                          - button "删 除" [ref=e709] [cursor=pointer]:
+                            - generic [ref=e710]: 删 除
+                - generic [ref=e711]:
+                  - generic [ref=e713]:
+                    - generic [ref=e715]: 批次 5 — 11:45 收菜，12:00 启动
+                    - button "删除批次" [ref=e719] [cursor=pointer]:
+                      - generic [ref=e720]: 删除批次
+                  - table [ref=e728]:
+                    - rowgroup [ref=e735]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e736]:
+                        - columnheader "打印机" [ref=e737]
+                        - columnheader "打印内容" [ref=e738]
+                        - columnheader "开始" [ref=e739]
+                        - columnheader "结束" [ref=e740]
+                        - columnheader "操作" [ref=e741]
+                    - rowgroup [ref=e742]:
+                      - row "1号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 12:00 13:05 删 除" [ref=e743]:
+                        - cell "1号" [ref=e744]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e745]
+                        - cell "12:00" [ref=e746]
+                        - cell "13:05" [ref=e747]
+                        - cell "删 除" [ref=e748]:
+                          - button "删 除" [ref=e751] [cursor=pointer]:
+                            - generic [ref=e752]: 删 除
+                      - row "2号 转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟） 12:00 14:29 删 除" [ref=e753]:
+                        - cell "2号" [ref=e754]
+                        - cell "转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟）" [ref=e755]
+                        - cell "12:00" [ref=e756]
+                        - cell "14:29" [ref=e757]
+                        - cell "删 除" [ref=e758]:
+                          - button "删 除" [ref=e761] [cursor=pointer]:
+                            - generic [ref=e762]: 删 除
+                      - row "3号 转角书桌-7号盘（转角书桌-抽屉/白色 x16, 273分钟） 12:00 16:33 删 除" [ref=e763]:
+                        - cell "3号" [ref=e764]
+                        - cell "转角书桌-7号盘（转角书桌-抽屉/白色 x16, 273分钟）" [ref=e765]
+                        - cell "12:00" [ref=e766]
+                        - cell "16:33" [ref=e767]
+                        - cell "删 除" [ref=e768]:
+                          - button "删 除" [ref=e771] [cursor=pointer]:
+                            - generic [ref=e772]: 删 除
+                      - row "4号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 12:00 13:05 删 除" [ref=e773]:
+                        - cell "4号" [ref=e774]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e775]
+                        - cell "12:00" [ref=e776]
+                        - cell "13:05" [ref=e777]
+                        - cell "删 除" [ref=e778]:
+                          - button "删 除" [ref=e781] [cursor=pointer]:
+                            - generic [ref=e782]: 删 除
+                - generic [ref=e783]:
+                  - generic [ref=e785]:
+                    - generic [ref=e787]: 批次 6 — 13:05 收菜，13:20 启动
+                    - button "删除批次" [ref=e791] [cursor=pointer]:
+                      - generic [ref=e792]: 删除批次
+                  - table [ref=e800]:
+                    - rowgroup [ref=e807]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e808]:
+                        - columnheader "打印机" [ref=e809]
+                        - columnheader "打印内容" [ref=e810]
+                        - columnheader "开始" [ref=e811]
+                        - columnheader "结束" [ref=e812]
+                        - columnheader "操作" [ref=e813]
+                    - rowgroup [ref=e814]:
+                      - row "1号 转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟） 13:20 15:49 删 除" [ref=e815]:
+                        - cell "1号" [ref=e816]
+                        - cell "转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟）" [ref=e817]
+                        - cell "13:20" [ref=e818]
+                        - cell "15:49" [ref=e819]
+                        - cell "删 除" [ref=e820]:
+                          - button "删 除" [ref=e823] [cursor=pointer]:
+                            - generic [ref=e824]: 删 除
+                      - row "4号 转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟） 13:20 15:49 删 除" [ref=e825]:
+                        - cell "4号" [ref=e826]
+                        - cell "转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟）" [ref=e827]
+                        - cell "13:20" [ref=e828]
+                        - cell "15:49" [ref=e829]
+                        - cell "删 除" [ref=e830]:
+                          - button "删 除" [ref=e833] [cursor=pointer]:
+                            - generic [ref=e834]: 删 除
+                - generic [ref=e835]:
+                  - generic [ref=e837]:
+                    - generic [ref=e839]: 批次 7 — 14:29 收菜，14:44 启动
+                    - button "删除批次" [ref=e843] [cursor=pointer]:
+                      - generic [ref=e844]: 删除批次
+                  - table [ref=e852]:
+                    - rowgroup [ref=e859]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e860]:
+                        - columnheader "打印机" [ref=e861]
+                        - columnheader "打印内容" [ref=e862]
+                        - columnheader "开始" [ref=e863]
+                        - columnheader "结束" [ref=e864]
+                        - columnheader "操作" [ref=e865]
+                    - rowgroup [ref=e866]:
+                      - row "2号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 14:44 15:49 删 除" [ref=e867]:
+                        - cell "2号" [ref=e868]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e869]
+                        - cell "14:44" [ref=e870]
+                        - cell "15:49" [ref=e871]
+                        - cell "删 除" [ref=e872]:
+                          - button "删 除" [ref=e875] [cursor=pointer]:
+                            - generic [ref=e876]: 删 除
+                - generic [ref=e877]:
+                  - generic [ref=e879]:
+                    - generic [ref=e881]: 批次 8 — 15:49 收菜，16:04 启动
+                    - button "删除批次" [ref=e885] [cursor=pointer]:
+                      - generic [ref=e886]: 删除批次
+                  - table [ref=e894]:
+                    - rowgroup [ref=e901]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e902]:
+                        - columnheader "打印机" [ref=e903]
+                        - columnheader "打印内容" [ref=e904]
+                        - columnheader "开始" [ref=e905]
+                        - columnheader "结束" [ref=e906]
+                        - columnheader "操作" [ref=e907]
+                    - rowgroup [ref=e908]:
+                      - row "1号 转角书桌-2号盘（转角书桌-窗户/白色 x12, 88分钟） 16:04 17:32 删 除" [ref=e909]:
+                        - cell "1号" [ref=e910]
+                        - cell "转角书桌-2号盘（转角书桌-窗户/白色 x12, 88分钟）" [ref=e911]
+                        - cell "16:04" [ref=e912]
+                        - cell "17:32" [ref=e913]
+                        - cell "删 除" [ref=e914]:
+                          - button "删 除" [ref=e917] [cursor=pointer]:
+                            - generic [ref=e918]: 删 除
+                      - row "2号 转角书桌-1号盘（转角书桌-下桌/白色 x2, 200分钟） 16:04 19:24 删 除" [ref=e919]:
+                        - cell "2号" [ref=e920]
+                        - cell "转角书桌-1号盘（转角书桌-下桌/白色 x2, 200分钟）" [ref=e921]
+                        - cell "16:04" [ref=e922]
+                        - cell "19:24" [ref=e923]
+                        - cell "删 除" [ref=e924]:
+                          - button "删 除" [ref=e927] [cursor=pointer]:
+                            - generic [ref=e928]: 删 除
+                      - row "4号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 16:04 17:09 删 除" [ref=e929]:
+                        - cell "4号" [ref=e930]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e931]
+                        - cell "16:04" [ref=e932]
+                        - cell "17:09" [ref=e933]
+                        - cell "删 除" [ref=e934]:
+                          - button "删 除" [ref=e937] [cursor=pointer]:
+                            - generic [ref=e938]: 删 除
+                - generic [ref=e939]:
+                  - generic [ref=e941]:
+                    - generic [ref=e943]: 批次 9 — 16:33 收菜，16:48 启动
+                    - button "删除批次" [ref=e947] [cursor=pointer]:
+                      - generic [ref=e948]: 删除批次
+                  - table [ref=e956]:
+                    - rowgroup [ref=e963]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e964]:
+                        - columnheader "打印机" [ref=e965]
+                        - columnheader "打印内容" [ref=e966]
+                        - columnheader "开始" [ref=e967]
+                        - columnheader "结束" [ref=e968]
+                        - columnheader "操作" [ref=e969]
+                    - rowgroup [ref=e970]:
+                      - row "3号 转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟） 16:48 19:17 删 除" [ref=e971]:
+                        - cell "3号" [ref=e972]
+                        - cell "转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟）" [ref=e973]
+                        - cell "16:48" [ref=e974]
+                        - cell "19:17" [ref=e975]
+                        - cell "删 除" [ref=e976]:
+                          - button "删 除" [ref=e979] [cursor=pointer]:
+                            - generic [ref=e980]: 删 除
+                - generic [ref=e981]:
+                  - generic [ref=e983]:
+                    - generic [ref=e985]: 批次 10 — 17:09 收菜，17:24 启动
+                    - button "删除批次" [ref=e989] [cursor=pointer]:
+                      - generic [ref=e990]: 删除批次
+                  - table [ref=e998]:
+                    - rowgroup [ref=e1005]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e1006]:
+                        - columnheader "打印机" [ref=e1007]
+                        - columnheader "打印内容" [ref=e1008]
+                        - columnheader "开始" [ref=e1009]
+                        - columnheader "结束" [ref=e1010]
+                        - columnheader "操作" [ref=e1011]
+                    - rowgroup [ref=e1012]:
+                      - row "4号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 17:24 18:29 删 除" [ref=e1013]:
+                        - cell "4号" [ref=e1014]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e1015]
+                        - cell "17:24" [ref=e1016]
+                        - cell "18:29" [ref=e1017]
+                        - cell "删 除" [ref=e1018]:
+                          - button "删 除" [ref=e1021] [cursor=pointer]:
+                            - generic [ref=e1022]: 删 除
+                - generic [ref=e1023]:
+                  - generic [ref=e1025]:
+                    - generic [ref=e1027]: 批次 11 — 17:32 收菜，17:47 启动
+                    - button "删除批次" [ref=e1031] [cursor=pointer]:
+                      - generic [ref=e1032]: 删除批次
+                  - table [ref=e1040]:
+                    - rowgroup [ref=e1047]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e1048]:
+                        - columnheader "打印机" [ref=e1049]
+                        - columnheader "打印内容" [ref=e1050]
+                        - columnheader "开始" [ref=e1051]
+                        - columnheader "结束" [ref=e1052]
+                        - columnheader "操作" [ref=e1053]
+                    - rowgroup [ref=e1054]:
+                      - row "1号 转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟） 17:47 20:16 删 除" [ref=e1055]:
+                        - cell "1号" [ref=e1056]
+                        - cell "转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟）" [ref=e1057]
+                        - cell "17:47" [ref=e1058]
+                        - cell "20:16" [ref=e1059]
+                        - cell "删 除" [ref=e1060]:
+                          - button "删 除" [ref=e1063] [cursor=pointer]:
+                            - generic [ref=e1064]: 删 除
+                - generic [ref=e1065]:
+                  - generic [ref=e1067]:
+                    - generic [ref=e1069]: 批次 12 — 18:29 收菜，18:44 启动
+                    - button "删除批次" [ref=e1073] [cursor=pointer]:
+                      - generic [ref=e1074]: 删除批次
+                  - table [ref=e1082]:
+                    - rowgroup [ref=e1089]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e1090]:
+                        - columnheader "打印机" [ref=e1091]
+                        - columnheader "打印内容" [ref=e1092]
+                        - columnheader "开始" [ref=e1093]
+                        - columnheader "结束" [ref=e1094]
+                        - columnheader "操作" [ref=e1095]
+                    - rowgroup [ref=e1096]:
+                      - row "4号 转角书桌-1号盘（转角书桌-下桌/白色 x2, 200分钟） 18:44 22:04 删 除" [ref=e1097]:
+                        - cell "4号" [ref=e1098]
+                        - cell "转角书桌-1号盘（转角书桌-下桌/白色 x2, 200分钟）" [ref=e1099]
+                        - cell "18:44" [ref=e1100]
+                        - cell "22:04" [ref=e1101]
+                        - cell "删 除" [ref=e1102]:
+                          - button "删 除" [ref=e1105] [cursor=pointer]:
+                            - generic [ref=e1106]: 删 除
+                - generic [ref=e1107]:
+                  - generic [ref=e1109]:
+                    - generic [ref=e1111]: 批次 13 — 19:17 收菜，19:32 启动
+                    - button "删除批次" [ref=e1115] [cursor=pointer]:
+                      - generic [ref=e1116]: 删除批次
+                  - table [ref=e1124]:
+                    - rowgroup [ref=e1131]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e1132]:
+                        - columnheader "打印机" [ref=e1133]
+                        - columnheader "打印内容" [ref=e1134]
+                        - columnheader "开始" [ref=e1135]
+                        - columnheader "结束" [ref=e1136]
+                        - columnheader "操作" [ref=e1137]
+                    - rowgroup [ref=e1138]:
+                      - row "3号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 19:32 20:37 删 除" [ref=e1139]:
+                        - cell "3号" [ref=e1140]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e1141]
+                        - cell "19:32" [ref=e1142]
+                        - cell "20:37" [ref=e1143]
+                        - cell "删 除" [ref=e1144]:
+                          - button "删 除" [ref=e1147] [cursor=pointer]:
+                            - generic [ref=e1148]: 删 除
+                - generic [ref=e1149]:
+                  - generic [ref=e1151]:
+                    - generic [ref=e1153]: 批次 14 — 19:24 收菜，19:39 启动
+                    - button "删除批次" [ref=e1157] [cursor=pointer]:
+                      - generic [ref=e1158]: 删除批次
+                  - table [ref=e1166]:
+                    - rowgroup [ref=e1173]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e1174]:
+                        - columnheader "打印机" [ref=e1175]
+                        - columnheader "打印内容" [ref=e1176]
+                        - columnheader "开始" [ref=e1177]
+                        - columnheader "结束" [ref=e1178]
+                        - columnheader "操作" [ref=e1179]
+                    - rowgroup [ref=e1180]:
+                      - row "2号 转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟） 19:39 22:08 删 除" [ref=e1181]:
+                        - cell "2号" [ref=e1182]
+                        - cell "转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟）" [ref=e1183]
+                        - cell "19:39" [ref=e1184]
+                        - cell "22:08" [ref=e1185]
+                        - cell "删 除" [ref=e1186]:
+                          - button "删 除" [ref=e1189] [cursor=pointer]:
+                            - generic [ref=e1190]: 删 除
+                - generic [ref=e1191]:
+                  - generic [ref=e1193]:
+                    - generic [ref=e1195]: 批次 15 — 20:16 收菜，20:31 启动
+                    - button "删除批次" [ref=e1199] [cursor=pointer]:
+                      - generic [ref=e1200]: 删除批次
+                  - table [ref=e1208]:
+                    - rowgroup [ref=e1215]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e1216]:
+                        - columnheader "打印机" [ref=e1217]
+                        - columnheader "打印内容" [ref=e1218]
+                        - columnheader "开始" [ref=e1219]
+                        - columnheader "结束" [ref=e1220]
+                        - columnheader "操作" [ref=e1221]
+                    - rowgroup [ref=e1222]:
+                      - row "1号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 20:31 21:36 删 除" [ref=e1223]:
+                        - cell "1号" [ref=e1224]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e1225]
+                        - cell "20:31" [ref=e1226]
+                        - cell "21:36" [ref=e1227]
+                        - cell "删 除" [ref=e1228]:
+                          - button "删 除" [ref=e1231] [cursor=pointer]:
+                            - generic [ref=e1232]: 删 除
+                - generic [ref=e1233]:
+                  - generic [ref=e1235]:
+                    - generic [ref=e1237]: 批次 16 — 20:37 收菜，20:52 启动
+                    - button "删除批次" [ref=e1241] [cursor=pointer]:
+                      - generic [ref=e1242]: 删除批次
+                  - table [ref=e1250]:
+                    - rowgroup [ref=e1257]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e1258]:
+                        - columnheader "打印机" [ref=e1259]
+                        - columnheader "打印内容" [ref=e1260]
+                        - columnheader "开始" [ref=e1261]
+                        - columnheader "结束" [ref=e1262]
+                        - columnheader "操作" [ref=e1263]
+                    - rowgroup [ref=e1264]:
+                      - row "3号 转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟） 20:52 23:21 删 除" [ref=e1265]:
+                        - cell "3号" [ref=e1266]
+                        - cell "转角书桌-4号盘（转角书桌-上柜/白色 x1, 149分钟）" [ref=e1267]
+                        - cell "20:52" [ref=e1268]
+                        - cell "23:21" [ref=e1269]
+                        - cell "删 除" [ref=e1270]:
+                          - button "删 除" [ref=e1273] [cursor=pointer]:
+                            - generic [ref=e1274]: 删 除
+                - generic [ref=e1275]:
+                  - generic [ref=e1277]:
+                    - generic [ref=e1279]: 批次 17 — 21:36 收菜，21:51 启动
+                    - button "删除批次" [ref=e1283] [cursor=pointer]:
+                      - generic [ref=e1284]: 删除批次
+                  - table [ref=e1292]:
+                    - rowgroup [ref=e1299]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e1300]:
+                        - columnheader "打印机" [ref=e1301]
+                        - columnheader "打印内容" [ref=e1302]
+                        - columnheader "开始" [ref=e1303]
+                        - columnheader "结束" [ref=e1304]
+                        - columnheader "操作" [ref=e1305]
+                    - rowgroup [ref=e1306]:
+                      - row "1号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 21:51 22:56 删 除" [ref=e1307]:
+                        - cell "1号" [ref=e1308]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e1309]
+                        - cell "21:51" [ref=e1310]
+                        - cell "22:56" [ref=e1311]
+                        - cell "删 除" [ref=e1312]:
+                          - button "删 除" [ref=e1315] [cursor=pointer]:
+                            - generic [ref=e1316]: 删 除
+                - generic [ref=e1317]:
+                  - generic [ref=e1319]:
+                    - generic [ref=e1321]: 批次 18 — 22:04 收菜，22:19 启动
+                    - button "删除批次" [ref=e1325] [cursor=pointer]:
+                      - generic [ref=e1326]: 删除批次
+                  - table [ref=e1334]:
+                    - rowgroup [ref=e1341]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e1342]:
+                        - columnheader "打印机" [ref=e1343]
+                        - columnheader "打印内容" [ref=e1344]
+                        - columnheader "开始" [ref=e1345]
+                        - columnheader "结束" [ref=e1346]
+                        - columnheader "操作" [ref=e1347]
+                    - rowgroup [ref=e1348]:
+                      - row "4号 转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟） 22:19 23:24 删 除" [ref=e1349]:
+                        - cell "4号" [ref=e1350]
+                        - cell "转角书桌-5号盘（转角书桌-桌板/棕色 x1, 65分钟）" [ref=e1351]
+                        - cell "22:19" [ref=e1352]
+                        - cell "23:24" [ref=e1353]
+                        - cell "删 除" [ref=e1354]:
+                          - button "删 除" [ref=e1357] [cursor=pointer]:
+                            - generic [ref=e1358]: 删 除
+                - generic [ref=e1359]:
+                  - generic [ref=e1361]:
+                    - generic [ref=e1363]: 批次 19 — 22:08 收菜，22:23 启动
+                    - button "删除批次" [ref=e1367] [cursor=pointer]:
+                      - generic [ref=e1368]: 删除批次
+                  - table [ref=e1376]:
+                    - rowgroup [ref=e1383]:
+                      - row "打印机 打印内容 开始 结束 操作" [ref=e1384]:
+                        - columnheader "打印机" [ref=e1385]
+                        - columnheader "打印内容" [ref=e1386]
+                        - columnheader "开始" [ref=e1387]
+                        - columnheader "结束" [ref=e1388]
+                        - columnheader "操作" [ref=e1389]
+                    - rowgroup [ref=e1390]:
+                      - row "2号 转角书桌-2号盘（转角书桌-窗户/白色 x12, 88分钟） 22:23 23:51 删 除" [ref=e1391]:
+                        - cell "2号" [ref=e1392]
+                        - cell "转角书桌-2号盘（转角书桌-窗户/白色 x12, 88分钟）" [ref=e1393]
+                        - cell "22:23" [ref=e1394]
+                        - cell "23:51" [ref=e1395]
+                        - cell "删 除" [ref=e1396]:
+                          - button "删 除" [ref=e1399] [cursor=pointer]:
+                            - generic [ref=e1400]: 删 除
+  - generic [ref=e1402]:
+    - img "check-circle" [ref=e1403]:
+      - img [ref=e1404]
+    - generic [ref=e1406]: 排班表已生成
