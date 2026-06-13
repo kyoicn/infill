@@ -2,22 +2,37 @@ import { useEffect, useState } from 'react';
 import { Steps, Typography } from 'antd';
 import { api } from '../api/client';
 import UploadMode from './intake/Upload';
+import RecognizingMode from './intake/Recognizing';
+import IntakeError from './intake/IntakeError';
 
 type IntakeMode =
   | { kind: 'upload' }
   | {
       kind: 'recognizing';
-      abortController: AbortController;
       sessionId: string;
       assemblyImageIds: string[];
       produceImageIds: string[];
+      productBaseName: string;
     }
   | { kind: 'draft'; draft: any; conflicts: any[] }
   | { kind: 'color'; draft: any; variants: any[] }
   | { kind: 'previewing'; finalDraft: any }
   | { kind: 'merging' }
   | { kind: 'success'; stats: any; backupPath: string; timingMs: Record<string, number> }
-  | { kind: 'error'; variant: 'recognize' | 'merge'; errorKind: string; error: string; rawPreview?: string };
+  | {
+      kind: 'error';
+      variant: 'recognize' | 'merge';
+      errorKind: string;
+      error: string;
+      rawPreview?: string;
+      // 失败前的上下文：用于「重试」回到上一步重新触发
+      recognizeContext?: {
+        sessionId: string;
+        assemblyImageIds: string[];
+        produceImageIds: string[];
+        productBaseName: string;
+      };
+    };
 
 const STEP_ITEMS = [
   { title: '上传截图' },
@@ -106,16 +121,40 @@ export default function Intake() {
           onProceedToRecognize={(sessionId, assemblyImageIds, produceImageIds) =>
             setMode({
               kind: 'recognizing',
-              abortController: new AbortController(),
               sessionId,
               assemblyImageIds,
               produceImageIds,
+              productBaseName,
             })
           }
         />
       )}
       {mode.kind === 'recognizing' && (
-        <div>recognizing mode placeholder — to be implemented by subsequent tasks</div>
+        <RecognizingMode
+          assemblyCount={mode.assemblyImageIds.length}
+          produceCount={mode.produceImageIds.length}
+          productBaseName={mode.productBaseName}
+          sessionId={mode.sessionId}
+          assemblyImageIds={mode.assemblyImageIds}
+          produceImageIds={mode.produceImageIds}
+          onCancel={() => setMode({ kind: 'upload' })}
+          onSuccess={(draft, conflicts) => setMode({ kind: 'draft', draft, conflicts })}
+          onError={(errorKind, error, rawPreview) =>
+            setMode({
+              kind: 'error',
+              variant: 'recognize',
+              errorKind,
+              error,
+              rawPreview,
+              recognizeContext: {
+                sessionId: mode.sessionId,
+                assemblyImageIds: mode.assemblyImageIds,
+                produceImageIds: mode.produceImageIds,
+                productBaseName: mode.productBaseName,
+              },
+            })
+          }
+        />
       )}
       {mode.kind === 'draft' && (
         <div>draft mode placeholder — to be implemented by subsequent tasks</div>
@@ -133,7 +172,32 @@ export default function Intake() {
         <div>success mode placeholder — to be implemented by subsequent tasks</div>
       )}
       {mode.kind === 'error' && (
-        <div>error mode placeholder — to be implemented by subsequent tasks</div>
+        <IntakeError
+          variant={mode.variant}
+          errorKind={mode.errorKind}
+          error={mode.error}
+          rawPreview={mode.rawPreview}
+          onRetry={() => {
+            if (mode.variant === 'recognize') {
+              if (mode.recognizeContext) {
+                setMode({ kind: 'recognizing', ...mode.recognizeContext });
+              } else {
+                setMode({ kind: 'upload' });
+              }
+            } else {
+              // merge 失败重试：回到 color 步骤（T10 实现细化）。
+              setMode({ kind: 'upload' });
+            }
+          }}
+          onBack={() => {
+            if (mode.variant === 'recognize') {
+              setMode({ kind: 'upload' });
+            } else {
+              // merge 失败返回：回到 color 步骤（T10 实现细化）。
+              setMode({ kind: 'upload' });
+            }
+          }}
+        />
       )}
     </div>
   );
