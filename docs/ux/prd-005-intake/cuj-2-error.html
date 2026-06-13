@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CUJ-2 LLM 识别失败（error）</title>
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .recognize-card { display: flex; flex-direction: column; align-items: center; padding: 64px 40px; }
+  .err-icon { width: 56px; height: 56px; border-radius: 50%; background: var(--red-soft); color: var(--red); display: flex; align-items: center; justify-content: center; font-size: 28px; margin-bottom: 16px; border: 1px solid #ffccc7; }
+  .err-title { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+  .err-sub { font-size: 13px; color: var(--text-2); margin-bottom: 28px; text-align: center; max-width: 480px; }
+  .err-detail { background: #fafafa; border: 1px solid var(--border-light); border-radius: 6px; padding: 12px 16px; font-family: "SF Mono", Menlo, monospace; font-size: 12px; color: var(--text-2); margin-bottom: 28px; max-width: 600px; width: 100%; }
+  .err-detail-label { font-size: 11px; color: var(--text-3); margin-bottom: 4px; font-family: -apple-system, sans-serif; }
+  .err-actions { display: flex; gap: 12px; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="sider">
+    <div class="sider-logo">打印排班</div>
+    <ul class="menu">
+      <li>仪表盘</li>
+      <li>产品目录</li>
+      <li class="active">
+        <svg viewBox="64 64 896 896"><path d="M136 384h56c4.4 0 8-3.6 8-8V200h176c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H149.6c-12 0-21.6 9.6-21.6 21.6V376c0 4.4 3.6 8 8 8zm56 256h-56c-4.4 0-8 3.6-8 8v234.4c0 12 9.6 21.6 21.6 21.6H376c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H200V648c0-4.4-3.6-8-8-8zM896 128H637.6c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8H824v176c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V149.6c0-12-9.6-21.6-21.6-21.6zM888 640h-56c-4.4 0-8 3.6-8 8v176H648c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h238.4c12 0 21.6-9.6 21.6-21.6V648c0-4.4-3.6-8-8-8zm-94-294H230c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h564c4.4 0 8-3.6 8-8v-60c0-4.4-3.6-8-8-8z"/></svg>产品录入
+      </li>
+      <li>订单管理</li>
+      <li>库存管理</li>
+      <li>排班中心</li>
+      <li>系统设置</li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <h1 class="page-title">产品录入 · 识别失败</h1>
+
+    <div class="card recognize-card">
+      <div class="err-icon">!</div>
+      <div class="err-title">LLM 识别失败</div>
+      <div class="err-sub">已上传的图片仍保留在上一步，可调整后重试。如反复失败，先查看后端日志。</div>
+
+      <div class="err-detail">
+        <div class="err-detail-label">错误信息</div>
+        HTTP 401 Unauthorized — DeepSeek 拒绝请求，可能是 API key 无效或已用尽额度。
+      </div>
+
+      <div class="err-actions">
+        <button class="btn-secondary">返回上一步</button>
+        <button class="btn-primary">重试</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

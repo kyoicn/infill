@@ -1,7 +1,7 @@
 # 项目状态
 
 > 自动生成的项目状态摘要。
-> 最后更新：2026-06-13 14:22:22 (UTC+8)
+> 最后更新：2026-06-14 01:26:08 (UTC+8)
 
 ## 概述
 
@@ -57,6 +57,11 @@
 | CUJ-2：配置操作时间窗口 | prd-004 | P0 | merged | — | — |
 | CUJ-3：配置换版时间 | prd-004 | P0 | merged | — | — |
 | CUJ-4：重置数据库 | prd-004 | P1 | merged | — | — |
+| CUJ-1：上传截图 + 自动分类 | prd-005 | P0 | not started | — | — |
+| CUJ-2：触发 LLM 识别 | prd-005 | P0 | not started | — | — |
+| CUJ-3：草稿校对 BOM + 打印盘 | prd-005 | P0 | not started | — | — |
+| CUJ-4：颜色矩阵 + 多配色变体 | prd-005 | P0 | not started | — | — |
+| CUJ-5：合并到 catalog.yaml | prd-005 | P0 | not started | — | — |
 
 **列值说明：**
 - `Impl`：`not started`（无代码）| `in progress`（部分代码）| `merged`（代码已存在并可构建）

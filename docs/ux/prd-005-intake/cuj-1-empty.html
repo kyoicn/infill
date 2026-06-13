@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CUJ-1 空态（empty）</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="sider">
+    <div class="sider-logo">打印排班</div>
+    <ul class="menu">
+      <li>仪表盘</li>
+      <li>产品目录</li>
+      <li class="active">
+        <svg viewBox="64 64 896 896"><path d="M136 384h56c4.4 0 8-3.6 8-8V200h176c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H149.6c-12 0-21.6 9.6-21.6 21.6V376c0 4.4 3.6 8 8 8zm56 256h-56c-4.4 0-8 3.6-8 8v234.4c0 12 9.6 21.6 21.6 21.6H376c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H200V648c0-4.4-3.6-8-8-8zM896 128H637.6c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8H824v176c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V149.6c0-12-9.6-21.6-21.6-21.6zM888 640h-56c-4.4 0-8 3.6-8 8v176H648c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h238.4c12 0 21.6-9.6 21.6-21.6V648c0-4.4-3.6-8-8-8zm-94-294H230c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h564c4.4 0 8-3.6 8-8v-60c0-4.4-3.6-8-8-8z"/></svg>产品录入
+      </li>
+      <li>订单管理</li>
+      <li>库存管理</li>
+      <li>排班中心</li>
+      <li>系统设置</li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <h1 class="page-title">产品录入</h1>
+
+    <div class="card">
+      <div class="form-row">
+        <label>产品基名</label>
+        <input type="text" class="ant-input fixed-w" placeholder="拖入图片后自动填入，也可手动输入" />
+        <span class="hint">系统会从图像和文件名推断，可改</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="dropzone-big">
+        <div class="icon">⤓</div>
+        <div class="main">拖入产品的所有切片截图</div>
+        <div class="sub">多张组装图（多角度） + 各个打印盘截图，系统会自动归类</div>
+        <div style="margin-top: 18px;"><button class="btn-secondary">选择文件…</button></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span class="tooltip-on-disabled">至少需要 1 张组装图 + 1 张打印盘截图</span>
+      <button class="btn-primary" disabled>
+        开始识别
+        <svg viewBox="64 64 896 896"><path d="M869 487.8L491.2 159.9c-2.9-2.5-6.6-3.9-10.5-3.9h-88.5c-7.4 0-10.8 9.2-5.2 14l350.2 304H152c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h585.1L386.9 854c-5.6 4.9-2.2 14 5.2 14h91.5c1.9 0 3.8-.7 5.2-2L869 536.2a32.07 32.07 0 0 0 0-48.4z"/></svg>
+      </button>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

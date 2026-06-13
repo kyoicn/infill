@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CUJ-1 超多文件（overflow）</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="sider">
+    <div class="sider-logo">打印排班</div>
+    <ul class="menu">
+      <li>仪表盘</li>
+      <li>产品目录</li>
+      <li class="active">
+        <svg viewBox="64 64 896 896"><path d="M136 384h56c4.4 0 8-3.6 8-8V200h176c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H149.6c-12 0-21.6 9.6-21.6 21.6V376c0 4.4 3.6 8 8 8zm56 256h-56c-4.4 0-8 3.6-8 8v234.4c0 12 9.6 21.6 21.6 21.6H376c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H200V648c0-4.4-3.6-8-8-8zM896 128H637.6c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8H824v176c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V149.6c0-12-9.6-21.6-21.6-21.6zM888 640h-56c-4.4 0-8 3.6-8 8v176H648c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h238.4c12 0 21.6-9.6 21.6-21.6V648c0-4.4-3.6-8-8-8zm-94-294H230c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h564c4.4 0 8-3.6 8-8v-60c0-4.4-3.6-8-8-8z"/></svg>产品录入
+      </li>
+      <li>订单管理</li>
+      <li>库存管理</li>
+      <li>排班中心</li>
+      <li>系统设置</li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <h1 class="page-title">产品录入</h1>
+
+    <div class="card">
+      <div class="form-row">
+        <label>产品基名</label>
+        <input type="text" class="ant-input fixed-w" value="复杂模型套件 v2" />
+        <span class="hint">系统会从图像和文件名推断后填入，可改</span>
+      </div>
+      <div class="dropzone-mini">
+        <b>+ 继续拖入截图</b>，或点击选择文件
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="split">
+        <div class="col assembly">
+          <div class="col-header">
+            <span class="badge-dot dot-assembly"></span>
+            <span class="badge-text assembly">组装图</span>
+            <span class="count">12 张</span>
+            <span class="col-hint">用于推断 BOM 件数</span>
+          </div>
+          <div class="thumb-grid scrollable">
+            <div class="thumb"><div class="thumb-img">[俯视]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_01.png</div></div>
+            <div class="thumb"><div class="thumb-img">[侧视]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_02.png</div></div>
+            <div class="thumb"><div class="thumb-img">[45°]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_03.png</div></div>
+            <div class="thumb"><div class="thumb-img">[背视]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_04.png</div></div>
+            <div class="thumb"><div class="thumb-img">[底视]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_05.png</div></div>
+            <div class="thumb"><div class="thumb-img">[爆炸]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_06.png</div></div>
+            <div class="thumb"><div class="thumb-img">[细节A]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_07.png</div></div>
+            <div class="thumb"><div class="thumb-img">[细节B]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_08.png</div></div>
+            <div class="thumb"><div class="thumb-img">[细节C]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_09.png</div></div>
+            <div class="thumb"><div class="thumb-img">[侧 b]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_10.png</div></div>
+            <div class="thumb"><div class="thumb-img">[爆炸 b]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_11.png</div></div>
+            <div class="thumb"><div class="thumb-img">[全貌]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">view_12.png</div></div>
+          </div>
+        </div>
+
+        <div class="col produce">
+          <div class="col-header">
+            <span class="badge-dot dot-produce"></span>
+            <span class="badge-text produce">打印盘</span>
+            <span class="count">32 张</span>
+            <span class="col-hint">用于推断各盘的耗时与件数</span>
+          </div>
+          <div class="thumb-grid scrollable">
+            <div class="thumb"><div class="thumb-img has-panel">盘 01<br>2h43m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_01.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 02<br>3h36m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_02.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 03<br>1h51m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_03.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 04<br>2h18m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_04.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 05<br>3h24m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_05.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 06<br>1h35m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_06.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 07<br>17m45s</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_07.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 08<br>1h12m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_08.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 09<br>2h32m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_09.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 10<br>1h08m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_10.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 11<br>4h20m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_11.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 12<br>2h15m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_12.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 13<br>55m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_13.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 14<br>1h44m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_14.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 15<br>3h02m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_15.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 16<br>2h50m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_16.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 17<br>1h19m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_17.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 18<br>30m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_18.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 19<br>2h05m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_19.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 20<br>3h12m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_20.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 21<br>1h28m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_21.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 22<br>2h47m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_22.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 23<br>4h05m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_23.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 24<br>1h33m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_24.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 25<br>2h22m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_25.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 26<br>50m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_26.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 27<br>2h00m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_27.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 28<br>1h22m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_28.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 29<br>3h41m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_29.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 30<br>1h57m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_30.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 31<br>2h11m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_31.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">盘 32<br>1h45m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_32.png</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="drag-hint"><span class="icon">⇄</span> 分类错了？把任意缩略图拖到另一栏即可调整</div>
+    </div>
+
+    <div class="footer">
+      <button class="btn-primary">
+        开始识别 44 张
+        <svg viewBox="64 64 896 896"><path d="M869 487.8L491.2 159.9c-2.9-2.5-6.6-3.9-10.5-3.9h-88.5c-7.4 0-10.8 9.2-5.2 14l350.2 304H152c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h585.1L386.9 854c-5.6 4.9-2.2 14 5.2 14h91.5c1.9 0 3.8-.7 5.2-2L869 536.2a32.07 32.07 0 0 0 0-48.4z"/></svg>
+      </button>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

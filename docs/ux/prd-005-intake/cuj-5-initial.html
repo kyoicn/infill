@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CUJ-5 合并预览（initial）</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="sider">
+    <div class="sider-logo">打印排班</div>
+    <ul class="menu">
+      <li>仪表盘</li>
+      <li>产品目录</li>
+      <li class="active">
+        <svg viewBox="64 64 896 896"><path d="M136 384h56c4.4 0 8-3.6 8-8V200h176c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H149.6c-12 0-21.6 9.6-21.6 21.6V376c0 4.4 3.6 8 8 8zm56 256h-56c-4.4 0-8 3.6-8 8v234.4c0 12 9.6 21.6 21.6 21.6H376c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H200V648c0-4.4-3.6-8-8-8zM896 128H637.6c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8H824v176c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V149.6c0-12-9.6-21.6-21.6-21.6zM888 640h-56c-4.4 0-8 3.6-8 8v176H648c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h238.4c12 0 21.6-9.6 21.6-21.6V648c0-4.4-3.6-8-8-8zm-94-294H230c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h564c4.4 0 8-3.6 8-8v-60c0-4.4-3.6-8-8-8z"/></svg>产品录入
+      </li>
+      <li>订单管理</li>
+      <li>库存管理</li>
+      <li>排班中心</li>
+      <li>系统设置</li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <h1 class="page-title">产品录入 · 合并到 catalog</h1>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>合并摘要</h2>
+        <span class="desc">即将向 <code>data/catalog.yaml</code> 追加以下内容</span>
+      </div>
+      <ul class="summary-list">
+        <li><span class="icon comp">组</span><span><b>6</b> 个新组件</span><span class="detail">床头柜-侧板 / 抽屉 / 隔板大 / 隔板小 / 把手 / 装饰球</span></li>
+        <li><span class="icon plate">盘</span><span><b>8</b> 张新打印盘</span><span class="detail">总耗时约 16h26m</span></li>
+        <li><span class="icon prod">品</span><span><b>3</b> 个新产品变体</span><span class="detail">床头柜 - 灰白 / 黑白 / 黑粉</span></li>
+      </ul>
+      <div class="summary-note">
+        合并前会自动备份到 <code>catalog.yaml.bak.&lt;时间戳&gt;</code>，合并成功后会自动触发「重新加载目录」 — 写入失败时会自动回滚到备份。
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="yaml-preview-label">
+        <span>追加到 <code>data/catalog.yaml</code> 末尾的内容预览</span>
+        <span>YAML</span>
+      </div>
+<pre class="yaml-preview"><span class="yc"># --- 床头柜 系列，由产品录入工具于 2026-06-14 18:05:23 追加 ---</span>
+
+<span class="yk">组件:</span>
+  <span class="yp">-</span> <span class="yk">名称:</span> <span class="ys">床头柜-侧板</span>
+    <span class="yk">可选颜色:</span> <span class="yp">[</span><span class="ys">灰色</span><span class="yp">,</span> <span class="ys">黑色</span><span class="yp">]</span>
+  <span class="yp">-</span> <span class="yk">名称:</span> <span class="ys">床头柜-抽屉</span>
+    <span class="yk">可选颜色:</span> <span class="yp">[</span><span class="ys">灰色</span><span class="yp">,</span> <span class="ys">黑色</span><span class="yp">]</span>
+  <span class="yp">-</span> <span class="yk">名称:</span> <span class="ys">床头柜-隔板大</span>
+    <span class="yk">可选颜色:</span> <span class="yp">[</span><span class="ys">白色</span><span class="yp">,</span> <span class="ys">黑色</span><span class="yp">,</span> <span class="ys">粉色</span><span class="yp">]</span>
+  <span class="yp">-</span> <span class="yk">名称:</span> <span class="ys">床头柜-隔板小</span>
+    <span class="yk">可选颜色:</span> <span class="yp">[</span><span class="ys">白色</span><span class="yp">,</span> <span class="ys">黑色</span><span class="yp">,</span> <span class="ys">粉色</span><span class="yp">]</span>
+  <span class="yp">-</span> <span class="yk">名称:</span> <span class="ys">床头柜-把手</span>
+    <span class="yk">可选颜色:</span> <span class="yp">[</span><span class="ys">白色</span><span class="yp">,</span> <span class="ys">粉色</span><span class="yp">]</span>
+  <span class="yp">-</span> <span class="yk">名称:</span> <span class="ys">床头柜-装饰球</span>
+    <span class="yk">可选颜色:</span> <span class="yp">[</span><span class="ys">白色</span><span class="yp">,</span> <span class="ys">粉色</span><span class="yp">]</span>
+
+<span class="yk">打印盘:</span>
+  <span class="yp">-</span> <span class="yk">盘号:</span> <span class="ys">床头柜-抽屉-3</span>
+    <span class="yk">组件:</span> <span class="ys">床头柜-抽屉</span>
+    <span class="yk">数量:</span> <span class="yn">3</span>
+    <span class="yk">耗时分钟:</span> <span class="yn">163</span>
+  <span class="yp">-</span> <span class="yk">盘号:</span> <span class="ys">床头柜-隔板小-4</span>
+    <span class="yk">组件:</span> <span class="ys">床头柜-隔板小</span>
+    <span class="yk">数量:</span> <span class="yn">4</span>
+    <span class="yk">耗时分钟:</span> <span class="yn">216</span>
+  <span class="yp">-</span> <span class="yk">盘号:</span> <span class="ys">床头柜-侧板-2</span>
+    <span class="yk">组件:</span> <span class="ys">床头柜-侧板</span>
+    <span class="yk">数量:</span> <span class="yn">2</span>
+    <span class="yk">耗时分钟:</span> <span class="yn">111</span>
+  <span class="yp">-</span> <span class="yk">盘号:</span> <span class="ys">床头柜-隔板大-9</span>
+    <span class="yk">组件:</span> <span class="ys">床头柜-隔板大</span>
+    <span class="yk">数量:</span> <span class="yn">9</span>
+    <span class="yk">耗时分钟:</span> <span class="yn">138</span>
+  <span class="yp">-</span> <span class="yk">盘号:</span> <span class="ys">床头柜-隔板大-12</span>
+    <span class="yk">组件:</span> <span class="ys">床头柜-隔板大</span>
+    <span class="yk">数量:</span> <span class="yn">12</span>
+    <span class="yk">耗时分钟:</span> <span class="yn">204</span>
+  <span class="yp">-</span> <span class="yk">盘号:</span> <span class="ys">床头柜-抽屉-1</span>
+    <span class="yk">组件:</span> <span class="ys">床头柜-抽屉</span>
+    <span class="yk">数量:</span> <span class="yn">1</span>
+    <span class="yk">耗时分钟:</span> <span class="yn">95</span>
+  <span class="yp">-</span> <span class="yk">盘号:</span> <span class="ys">床头柜-把手-40</span>
+    <span class="yk">组件:</span> <span class="ys">床头柜-把手</span>
+    <span class="yk">数量:</span> <span class="yn">40</span>
+    <span class="yk">耗时分钟:</span> <span class="yn">18</span>
+  <span class="yp">-</span> <span class="yk">盘号:</span> <span class="ys">床头柜-装饰球-80</span>
+    <span class="yk">组件:</span> <span class="ys">床头柜-装饰球</span>
+    <span class="yk">数量:</span> <span class="yn">80</span>
+    <span class="yk">耗时分钟:</span> <span class="yn">72</span>
+
+<span class="yk">产品:</span>
+  <span class="yp">-</span> <span class="yk">名称:</span> <span class="ys">床头柜 - 灰白</span>
+    <span class="yk">BOM:</span>
+      <span class="yp">-</span> <span class="yk">组件:</span> <span class="ys">床头柜-侧板</span>
+        <span class="yk">颜色:</span> <span class="ys">灰色</span>
+        <span class="yk">数量:</span> <span class="yn">2</span>
+      <span class="yp">-</span> <span class="yk">组件:</span> <span class="ys">床头柜-抽屉</span>
+        <span class="yk">颜色:</span> <span class="ys">灰色</span>
+        <span class="yk">数量:</span> <span class="yn">4</span>
+      <span class="yp">-</span> <span class="yk">组件:</span> <span class="ys">床头柜-隔板大</span>
+        <span class="yk">颜色:</span> <span class="ys">白色</span>
+        <span class="yk">数量:</span> <span class="yn">1</span>
+      <span class="yp">-</span> <span class="yk">组件:</span> <span class="ys">床头柜-隔板小</span>
+        <span class="yk">颜色:</span> <span class="ys">白色</span>
+        <span class="yk">数量:</span> <span class="yn">2</span>
+      <span class="yp">-</span> <span class="yk">组件:</span> <span class="ys">床头柜-把手</span>
+        <span class="yk">颜色:</span> <span class="ys">白色</span>
+        <span class="yk">数量:</span> <span class="yn">4</span>
+      <span class="yp">-</span> <span class="yk">组件:</span> <span class="ys">床头柜-装饰球</span>
+        <span class="yk">颜色:</span> <span class="ys">白色</span>
+        <span class="yk">数量:</span> <span class="yn">12</span>
+  <span class="yp">-</span> <span class="yk">名称:</span> <span class="ys">床头柜 - 黑白</span>
+    <span class="yk">BOM:</span>
+      <span class="yp">-</span> <span class="yk">组件:</span> <span class="ys">床头柜-侧板</span>
+        <span class="yk">颜色:</span> <span class="ys">灰色</span>
+        <span class="yk">数量:</span> <span class="yn">2</span>
+      <span class="yc"># ... 其余字段省略 ...</span>
+  <span class="yp">-</span> <span class="yk">名称:</span> <span class="ys">床头柜 - 黑粉</span>
+    <span class="yk">BOM:</span>
+      <span class="yc"># ... 字段省略 ...</span>
+</pre>
+    </div>
+
+    <div class="footer-prev-next">
+      <button class="btn-secondary">← 上一步：填写颜色</button>
+      <button class="btn-primary">
+        确认合并并重新加载
+        <svg viewBox="64 64 896 896"><path d="M912 190h-69.9c-9.8 0-19.1 4.5-25.1 12.2L404.7 724.5 207 474a32 32 0 0 0-25.1-12.2H112c-6.7 0-10.4 7.7-6.3 12.9l273.9 347c12.8 16.2 37.4 16.2 50.3 0l488.4-618.9c4.1-5.1.4-12.8-6.3-12.8z"/></svg>
+      </button>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

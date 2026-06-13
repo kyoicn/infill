@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CUJ-1 上传截图 + 自动分类（initial）</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="sider">
+    <div class="sider-logo">打印排班</div>
+    <ul class="menu">
+      <li>
+        <svg viewBox="64 64 896 896"><path d="M924.8 385.6a446.7 446.7 0 0 0-96-142.4 446.7 446.7 0 0 0-142.4-96C631.1 123.8 572.5 112 512 112s-119.1 11.8-174.4 35.2a446.7 446.7 0 0 0-142.4 96 446.7 446.7 0 0 0-96 142.4C75.8 440.9 64 499.5 64 560c0 132.7 58.3 257.7 159.9 343.1l1.7 1.4c5.8 4.8 13.1 7.5 20.6 7.5h531.7c7.5 0 14.8-2.7 20.6-7.5l1.7-1.4C901.7 817.7 960 692.7 960 560c0-60.5-11.9-119.1-35.2-174.4zM761.4 836H262.6A371.12 371.12 0 0 1 140 560c0-99.4 38.7-192.8 109-263 70.3-70.3 163.7-109 263-109 99.4 0 192.8 38.7 263 109 70.3 70.3 109 163.7 109 263 0 105.6-44.5 205.5-122.6 276z"/></svg>仪表盘
+      </li>
+      <li>
+        <svg viewBox="64 64 896 896"><path d="M464 144H160c-8.8 0-16 7.2-16 16v304c0 8.8 7.2 16 16 16h304c8.8 0 16-7.2 16-16V160c0-8.8-7.2-16-16-16zm-52 268H212V212h200v200zm452-268H560c-8.8 0-16 7.2-16 16v304c0 8.8 7.2 16 16 16h304c8.8 0 16-7.2 16-16V160c0-8.8-7.2-16-16-16zm-52 268H612V212h200v200zM464 544H160c-8.8 0-16 7.2-16 16v304c0 8.8 7.2 16 16 16h304c8.8 0 16-7.2 16-16V560c0-8.8-7.2-16-16-16zm-52 268H212V612h200v200zm452-268H560c-8.8 0-16 7.2-16 16v304c0 8.8 7.2 16 16 16h304c8.8 0 16-7.2 16-16V560c0-8.8-7.2-16-16-16zm-52 268H612V612h200v200z"/></svg>产品目录
+      </li>
+      <li class="active">
+        <svg viewBox="64 64 896 896"><path d="M136 384h56c4.4 0 8-3.6 8-8V200h176c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H149.6c-12 0-21.6 9.6-21.6 21.6V376c0 4.4 3.6 8 8 8zm56 256h-56c-4.4 0-8 3.6-8 8v234.4c0 12 9.6 21.6 21.6 21.6H376c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H200V648c0-4.4-3.6-8-8-8zM896 128H637.6c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8H824v176c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V149.6c0-12-9.6-21.6-21.6-21.6zM888 640h-56c-4.4 0-8 3.6-8 8v176H648c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h238.4c12 0 21.6-9.6 21.6-21.6V648c0-4.4-3.6-8-8-8zm-94-294H230c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h564c4.4 0 8-3.6 8-8v-60c0-4.4-3.6-8-8-8z"/></svg>产品录入
+      </li>
+      <li>订单管理</li>
+      <li>库存管理</li>
+      <li>排班中心</li>
+      <li>系统设置</li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <h1 class="page-title">产品录入</h1>
+
+    <div class="card">
+      <div class="form-row">
+        <label>产品基名</label>
+        <input type="text" class="ant-input fixed-w" value="床头柜" />
+        <span class="hint">系统会从图像和文件名推断后填入，可改</span>
+      </div>
+      <div class="dropzone-mini">
+        <b>+ 继续拖入截图</b>，或点击选择文件
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="split">
+        <div class="col assembly">
+          <div class="col-header">
+            <span class="badge-dot dot-assembly"></span>
+            <span class="badge-text assembly">组装图</span>
+            <span class="count">3 张</span>
+            <span class="col-hint">用于推断 BOM 件数</span>
+          </div>
+          <div class="thumb-grid">
+            <div class="thumb"><div class="thumb-img">[俯视图<br>3 种组件可见]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">assembly.png</div></div>
+            <div class="thumb"><div class="thumb-img">[侧视图<br>展示堆叠]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">side_view.png</div></div>
+            <div class="thumb"><div class="thumb-img">[45° 视图<br>把手细节]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">angle_45.png</div></div>
+          </div>
+        </div>
+
+        <div class="col produce">
+          <div class="col-header">
+            <span class="badge-dot dot-produce"></span>
+            <span class="badge-text produce">打印盘</span>
+            <span class="count">8 张</span>
+            <span class="col-hint">用于推断各盘的耗时与件数</span>
+          </div>
+          <div class="thumb-grid">
+            <div class="thumb"><div class="thumb-img has-panel">3 个高方盒<br>2h43m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002113.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">4 个矮方盒<br>3h36m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002257.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">2 个中方盒<br>1h51m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002356.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">9 个浅框小<br>2h18m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002440.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">12 个浅框大<br>3h24m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002547.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">3 堆叠件<br>1h35m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002637.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">40 把手<br>17m45s</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002713.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">~80 圆球<br>1h12m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002841.png</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="drag-hint"><span class="icon">⇄</span> 分类错了？把任意缩略图拖到另一栏即可调整</div>
+    </div>
+
+    <div class="footer">
+      <button class="btn-primary">
+        开始识别
+        <svg viewBox="64 64 896 896"><path d="M869 487.8L491.2 159.9c-2.9-2.5-6.6-3.9-10.5-3.9h-88.5c-7.4 0-10.8 9.2-5.2 14l350.2 304H152c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h585.1L386.9 854c-5.6 4.9-2.2 14 5.2 14h91.5c1.9 0 3.8-.7 5.2-2L869 536.2a32.07 32.07 0 0 0 0-48.4z"/></svg>
+      </button>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>
