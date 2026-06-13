@@ -29,7 +29,6 @@ from .scheduler_core import (
     DEFAULT_CHANGEOVER_MINUTES,
     SURPLUS_TARGET_PRODUCTS,
     try_assemble as _try_assemble,
-    compute_effective_capacity,
     plan_two_phase as _plan_two_phase_core,
     schedule_tasks as _schedule_tasks_core,
     schedule_greedy as _schedule_greedy_core,
@@ -435,7 +434,7 @@ def _plan_two_phase(
 
 
 def _persist_scheduled(
-    db: Session, plan: PrintPlan, scheduled: list[ScheduledTask], printers: list,
+    db: Session, plan: PrintPlan, scheduled: list[ScheduledTask], printers: list[Printer],
 ) -> None:
     """将 ScheduledTask 列表写回为 PrintBatch / PrintTask。
 
