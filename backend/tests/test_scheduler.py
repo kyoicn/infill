@@ -2024,3 +2024,543 @@ class TestInvariantsAcrossScenarios:
             initial_supply={}, bom_cache={}, product_units=[],
         )
         _assert_batch_quantity_conservation(scheduled, DESK_CONFIG_BY_ID)
+
+
+# =====================================================================
+# T3. P1 行为广度补强：跨天 schedule_tasks、防御兜底、sync 边界值、策略偏序
+# =====================================================================
+
+# 注：T3 原本定义了本地 _sync_penalty 作为公式复刻。
+# iter1 之后 scheduler_core 已暴露真函数 _sync_penalty，下面的 boundary
+# 测试已替换为直接调用生产代码的 _sync_penalty（已在文件顶部 import）。
+
+
+class TestScheduleGreedyCrossDay:
+    """跨天窗口下 schedule_tasks 的贪心拼接（覆盖 batch_index 与 deadline 单调性）。"""
+
+    def test_tasks_spread_across_two_days(self):
+        """跨天窗口 + 48h deadline + 足够多任务 → 至少 1 个任务落在第二天 (start ≥ 1440)。"""
+        # 桌腿 90min × 80 盘，4 台打印机：第一天容量 ~4 × 24h × 60 / (90+15) = ~55，
+        # 80 个任务必须溢出到第二天
+        tasks = [(102, "白色", False)] * 80
+        result = schedule_tasks(
+            tasks, DESK_CONFIG_BY_ID, 4, TWO_DAY_WINDOWS,
+            custom_start=0, deadline=2880, changeover=CHANGEOVER,
+            sync_strength=0,
+        )
+        assert len(result) > 0
+        day2 = [t for t in result if t.start_min >= 1440]
+        assert len(day2) >= 1, \
+            f"expected at least one task on day 2 (start≥1440), got starts={[t.start_min for t in result]}"
+
+    def test_task_starts_late_first_day(self):
+        """custom_start=1300（第一天最后窗口尾段）的 60min 任务 → 落在尾段或推到第二天。
+
+        第一天最后窗口是 (1110, 1380)。custom_start=1300，任务时长 60min →
+        batch_0 在 1300 启动，结束 1360 仍在窗口内。后续 batch 必须等到次日 1920。
+        """
+        tasks = [(104, "白色", False)] * 8  # 螺丝 60min
+        result = schedule_tasks(
+            tasks, DESK_CONFIG_BY_ID, 4, TWO_DAY_WINDOWS,
+            custom_start=1300, deadline=2880, changeover=CHANGEOVER,
+            sync_strength=0,
+        )
+        # batch_0 应在 custom_start=1300 启动
+        batch0 = [t for t in result if t.batch_index == 0]
+        assert all(t.start_min == 1300 for t in batch0)
+        # 后续批次应该或在第一天的尾窗口剩余时间内（仍 < 1380），或跳到第二天 (≥ 1920)
+        for t in result:
+            if t.batch_index >= 1:
+                in_day1_tail = 1300 <= t.start_min <= 1380
+                in_day2 = t.start_min >= 1920
+                assert in_day1_tail or in_day2, \
+                    f"batch>=1 start={t.start_min} not in day1-tail or day2 window"
+
+    def test_72h_deadline_completes_more_products(self):
+        """deadline 单调性不变量：同输入下 deadline=72h 完整产品数 ≥ deadline=24h。"""
+        # 3 天窗口（用 TWO_DAY_WINDOWS 加上 Day 2 即可，但 deadline=72h 时 schedule_tasks
+        # 会因为 TWO_DAY_WINDOWS 末窗在 2820 而无法在 2880~4320 之间启动新批次。
+        # 因此手工拼一个 3 天窗口。
+        three_day_windows = TWO_DAY_WINDOWS + [
+            (480 + 2880, 720 + 2880),
+            (750 + 2880, 1080 + 2880),
+            (1110 + 2880, 1380 + 2880),
+        ]
+        # 构造 20 个产品的完整 BOM 任务（plan_two_phase 输出）
+        queue = [(0, 10)] * 20
+        tasks = plan_two_phase(
+            num_printers=4, duration_hours=72, changeover=CHANGEOVER,
+            surplus_enabled=False, windows=three_day_windows,
+            custom_start=0, deadline=72 * 60,
+            product_queue=queue, bom_map={10: DESK_BOM},
+            config_map=DESK_CONFIGS, initial_supply={},
+        )
+
+        sched_24 = schedule_tasks(
+            list(tasks), DESK_CONFIG_BY_ID, 4, three_day_windows,
+            custom_start=0, deadline=1440, changeover=CHANGEOVER,
+            sync_strength=0,
+        )
+        sched_72 = schedule_tasks(
+            list(tasks), DESK_CONFIG_BY_ID, 4, three_day_windows,
+            custom_start=0, deadline=72 * 60, changeover=CHANGEOVER,
+            sync_strength=0,
+        )
+        prod_24 = count_complete_products(sched_24, DESK_CONFIG_BY_ID, {10: DESK_BOM})
+        prod_72 = count_complete_products(sched_72, DESK_CONFIG_BY_ID, {10: DESK_BOM})
+        assert prod_72.get(10, 0) >= prod_24.get(10, 0), \
+            f"72h={prod_72.get(10,0)} should be >= 24h={prod_24.get(10,0)}"
+
+
+class TestSurplusPoolClearance:
+    """防御兜底：任务全部超 deadline 时 schedule_tasks/schedule_greedy 返回空 / 仅排能容纳的。
+
+    iter1 之后 surplus 池清空兜底由 scheduler_core.schedule_greedy 内部维护
+    （`remaining_surplus.clear()`，避免死循环）。下面 test_greedy_* 直接覆盖该路径。
+    其它测试覆盖 schedule_tasks 中的等价防御。
+    """
+
+    def test_greedy_surplus_all_over_deadline_returns_only_demand(self):
+        """schedule_greedy 路径：demand 能排、surplus 全部超 deadline → 只返回 demand，无死循环。
+
+        直接触发 scheduler_core.schedule_greedy 第 547 行 `remaining_surplus.clear()`。
+        """
+        configs = {
+            104: make_config(104, 4, "螺丝", qty=20, dur=60),   # demand: fit
+            901: make_config(901, 91, "超长", qty=1, dur=500),   # surplus: 全部超 deadline
+        }
+        demand = [(104, "白色", 0)]                # (config_id, color, order_priority)
+        surplus = [(901, "白色")] * 3
+        result = schedule_greedy(
+            demand_tasks=demand,
+            surplus_tasks=surplus,
+            configs=configs,
+            num_printers=1,
+            windows=DEFAULT_WINDOWS,
+            custom_start=0,
+            deadline=200,
+            changeover=CHANGEOVER,
+            sync_strength=0,
+            use_product_first=False,
+        )
+        config_ids = {t.config_id for t in result}
+        assert 104 in config_ids
+        assert 901 not in config_ids
+        assert len(result) >= 1  # 至少 demand 那一个排上了
+
+    def test_greedy_demand_and_surplus_all_over_deadline_returns_empty(self):
+        """schedule_greedy 路径：demand 和 surplus 都全部超 deadline → 返回空列表，不死循环。"""
+        configs = {901: make_config(901, 91, "超长", qty=1, dur=500)}
+        result = schedule_greedy(
+            demand_tasks=[(901, "白色", 0)] * 3,
+            surplus_tasks=[(901, "白色")] * 3,
+            configs=configs,
+            num_printers=2,
+            windows=DEFAULT_WINDOWS,
+            custom_start=0,
+            deadline=200,
+            changeover=CHANGEOVER,
+            sync_strength=0,
+            use_product_first=False,
+        )
+        assert result == []
+
+    def test_demand_empty_all_surplus_over_deadline(self):
+        """所有任务 dur > deadline → schedule_tasks 返回空列表，无死循环。"""
+        # 任务时长 200min，deadline=100min → 全部排不下
+        long_cfg = {901: make_config(901, 91, "超长", qty=1, dur=200)}
+        tasks = [(901, "白色", False)] * 5
+        result = schedule_tasks(
+            tasks, long_cfg, 4, DEFAULT_WINDOWS,
+            custom_start=0, deadline=100, changeover=CHANGEOVER,
+            sync_strength=0,
+        )
+        assert result == []
+
+    def test_demand_done_then_no_more_surplus_fits(self):
+        """部分任务能排，剩余产能不足以容纳剩下的（dur > 剩余 deadline）→ 只返回能排的，无死循环。"""
+        # 1 个 60min 任务 + 5 个 200min 任务，deadline=100min
+        # 60min 能排，200min 都不能排
+        configs = {
+            104: make_config(104, 4, "螺丝", qty=20, dur=60),
+            901: make_config(901, 91, "超长", qty=1, dur=200),
+        }
+        tasks = [(104, "白色", False)] + [(901, "白色", False)] * 5
+        result = schedule_tasks(
+            tasks, configs, 1, DEFAULT_WINDOWS,
+            custom_start=0, deadline=100, changeover=CHANGEOVER,
+            sync_strength=0,
+        )
+        # 只有 60min 那个任务能排上
+        assert len(result) == 1
+        assert result[0].config_id == 104
+
+    def test_surplus_partial_fit(self):
+        """混合：部分任务 fit、部分不 fit → fit 的被排上、不 fit 的不出现（按 config_id 校验）。
+
+        2 台打印机并行排在 batch_0，60min 和 120min 各排一个；500/600min 超 deadline=200。
+        """
+        configs = {
+            104: make_config(104, 4, "螺丝", qty=20, dur=60),   # fit
+            101: make_config(101, 1, "桌板", qty=1, dur=120),   # fit
+            902: make_config(902, 92, "超长 A", qty=1, dur=500),  # not fit
+            903: make_config(903, 93, "超长 B", qty=1, dur=600),  # not fit
+        }
+        tasks = [
+            (104, "白色", False),
+            (101, "白色", False),
+            (902, "白色", False),
+            (903, "白色", False),
+        ]
+        # deadline=200min：60 / 120 能排（batch_0 并行），500 / 600 不能
+        result = schedule_tasks(
+            tasks, configs, 2, DEFAULT_WINDOWS,
+            custom_start=0, deadline=200, changeover=CHANGEOVER,
+            sync_strength=0,
+        )
+        config_ids = {t.config_id for t in result}
+        assert 104 in config_ids
+        assert 101 in config_ids
+        assert 902 not in config_ids
+        assert 903 not in config_ids
+
+
+class TestBoundarySync:
+    """sync_strength 边界值 + 公式数学性质（现有套件只测了 0/25/50/75/100）。"""
+
+    def test_sync_1_close_to_sync_0(self):
+        """sync=0 vs sync=1：penalty 二次方系数 (1/100)²=0.0001 ≈ 0，输出应几乎一致。
+
+        断言完整产品数相同（schedule_tasks 选任务的相对顺序可能微小变化，
+        但完整产品维度应不变）。
+        """
+        queue = [(0, 10)] * 4
+        tasks = plan_two_phase(
+            num_printers=4, duration_hours=24, changeover=CHANGEOVER,
+            surplus_enabled=False, windows=DEFAULT_WINDOWS,
+            custom_start=0, deadline=1440,
+            product_queue=queue, bom_map={10: DESK_BOM},
+            config_map=DESK_CONFIGS, initial_supply={},
+        )
+        r0 = schedule_tasks(
+            list(tasks), DESK_CONFIG_BY_ID, 4, DEFAULT_WINDOWS,
+            custom_start=0, deadline=1440, changeover=CHANGEOVER,
+            sync_strength=0,
+        )
+        r1 = schedule_tasks(
+            list(tasks), DESK_CONFIG_BY_ID, 4, DEFAULT_WINDOWS,
+            custom_start=0, deadline=1440, changeover=CHANGEOVER,
+            sync_strength=1,
+        )
+        p0 = count_complete_products(r0, DESK_CONFIG_BY_ID, {10: DESK_BOM})
+        p1 = count_complete_products(r1, DESK_CONFIG_BY_ID, {10: DESK_BOM})
+        assert p0.get(10, 0) == p1.get(10, 0), \
+            f"sync=0 -> {p0.get(10,0)} but sync=1 -> {p1.get(10,0)}"
+
+    def test_sync_99_close_to_sync_100(self):
+        """sync=99 vs sync=100：行为接近，批次数差异 ≤ 1。
+
+        (99/100)² = 0.9801 vs (100/100)² = 1.0；差异在尾端微小。
+        """
+        configs = {
+            401: make_config(401, 41, "短", qty=1, dur=60),
+            402: make_config(402, 42, "中", qty=1, dur=120),
+            403: make_config(403, 43, "长", qty=1, dur=240),
+        }
+        tasks = (
+            [(401, "白色", False)] * 4 +
+            [(402, "白色", False)] * 4 +
+            [(403, "白色", False)] * 4
+        )
+        r99 = schedule_tasks(
+            list(tasks), configs, 4, DEFAULT_WINDOWS,
+            custom_start=480, deadline=1440, changeover=CHANGEOVER,
+            sync_strength=99,
+        )
+        r100 = schedule_tasks(
+            list(tasks), configs, 4, DEFAULT_WINDOWS,
+            custom_start=480, deadline=1440, changeover=CHANGEOVER,
+            sync_strength=100,
+        )
+        b99 = max((t.batch_index for t in r99), default=-1) + 1
+        b100 = max((t.batch_index for t in r100), default=-1) + 1
+        assert abs(b99 - b100) <= 1, \
+            f"sync=99 batches={b99} vs sync=100 batches={b100} differ too much"
+
+    def test_sync_30_vs_70_quadratic_gap(self):
+        """直接调公式：sync=70 的 penalty ≈ sync=30 的 (70/30)² ≈ 5.444 倍。
+
+        公式：penalty = |dur - anchor|/anchor * (sync/100)² * changeover * 4
+        固定其他变量，penalty 关于 sync 是二次比例。
+        """
+        p30 = _sync_penalty(150, 100, 30, 15)
+        p70 = _sync_penalty(150, 100, 70, 15)
+        ratio_expected = (70 / 30) ** 2  # ≈ 5.444
+        assert abs(p70 / p30 - ratio_expected) < 1e-9, \
+            f"p70/p30={p70/p30} expected≈{ratio_expected}"
+
+    def test_anchor_one_no_exception(self):
+        """anchor_duration=1 不抛异常，返回有限值，且因为 |100-1|/1=99 倍放大而很大。"""
+        v = _sync_penalty(100, 1, 50, 15)
+        # 不应是 inf / nan
+        assert v == v  # not nan
+        assert v != float('inf')
+        # 公式：99 * (0.5)² * 15 * 4 = 99 * 0.25 * 60 = 1485
+        assert abs(v - 1485.0) < 1e-9, f"got {v}"
+
+
+class TestStrategyOrdering:
+    """三策略本质偏序断言。
+
+    策略映射到 scheduler_core API：
+    - product_first: 用 pick_task 时传入 sim_supply/product_units/bom_cache/assembled
+    - utilization: 用 pick_task 时不传产品上下文（按 priority + idle 选）
+    - two_phase: plan_two_phase + schedule_tasks（schedule_tasks 本身已是 utilization 风格的批次填充）
+
+    构造场景：多产品共享瓶颈组件 + 紧张产能，让 utilization 容易输给 product_first。
+    """
+
+    @staticmethod
+    def _simulate_strategy(strategy: str, *, configs: dict[int, ConfigInfo],
+                          bom_map: dict[int, dict[DemandKey, int]],
+                          product_queue: list[tuple[int, int]],
+                          task_pool: list[tuple[int, str, int]],
+                          num_printers: int, deadline: int,
+                          windows: list[tuple[int, int]], custom_start: int,
+                          changeover: int = CHANGEOVER) -> list[ScheduledTask]:
+        """共享调度循环。task_pool 元素 (config_id, color, priority)。"""
+        configs_by_id = {c.id: c for c in configs.values()}
+
+        if strategy == "two_phase":
+            tasks = plan_two_phase(
+                num_printers=num_printers, duration_hours=deadline // 60,
+                changeover=changeover, surplus_enabled=False, windows=windows,
+                custom_start=custom_start, deadline=deadline,
+                product_queue=product_queue, bom_map=bom_map,
+                config_map=configs, initial_supply={},
+            )
+            return schedule_tasks(
+                tasks, configs_by_id, num_printers, windows,
+                custom_start=custom_start, deadline=deadline,
+                changeover=changeover, sync_strength=0,
+            )
+
+        # product_first / utilization：循环调用 pick_task 模拟分批调度
+        sim_supply: dict[DemandKey, int] = {}
+        assembled: set[int] = set()
+        bom_cache = dict(bom_map)
+        use_completion = strategy == "product_first"
+
+        remaining = list(task_pool)
+        printer_available = {i: custom_start for i in range(num_printers)}
+        result: list[ScheduledTask] = []
+        batch_order = 0
+
+        while remaining:
+            sorted_times = sorted(printer_available.values())
+            if batch_order == 0:
+                start = custom_start
+            else:
+                start = find_next_start(sorted_times[0], windows)
+                if start is None or start >= deadline:
+                    break
+            if start >= deadline:
+                break
+
+            available_printers = [p for p in range(num_printers)
+                                  if printer_available[p] <= start]
+            if not available_printers:
+                next_start = find_next_start(sorted_times[0] + 1, windows)
+                if next_start is None or next_start >= deadline:
+                    break
+                for pid in printer_available:
+                    if printer_available[pid] <= sorted_times[0]:
+                        printer_available[pid] = next_start
+                        break
+                continue
+
+            added = 0
+            for printer in available_printers:
+                if use_completion:
+                    picked = pick_task(
+                        remaining, configs_by_id, start, changeover, windows, deadline,
+                        sim_supply=sim_supply, product_units=product_queue,
+                        bom_cache=bom_cache, assembled=assembled,
+                    )
+                else:
+                    picked = pick_task(
+                        remaining, configs_by_id, start, changeover, windows, deadline,
+                    )
+                if picked is None:
+                    break
+                cid = picked[0]
+                color = picked[1]
+                cfg = configs_by_id[cid]
+                end_min = start + cfg.duration_minutes
+                result.append(ScheduledTask(
+                    printer_index=printer, config_id=cid, color=color,
+                    is_surplus=False, start_min=start, end_min=end_min,
+                    batch_index=batch_order,
+                ))
+                printer_available[printer] = end_min + changeover
+                added += 1
+
+                if use_completion:
+                    key = (cfg.component_id, color)
+                    sim_supply[key] = sim_supply.get(key, 0) + cfg.quantity
+                    try_assemble(sim_supply, product_queue, bom_cache, assembled)
+
+            if added == 0:
+                break
+            batch_order += 1
+
+        return result
+
+    def _build_shared_bottleneck_scenario(self):
+        """构造场景：3 个产品共享同一个瓶颈组件 (1:1 产出) + 各有 1 个差异组件。
+
+        - product 10/11/12 都需要 1 个瓶颈件 (comp 1, "白色", 1/盘, 100min)
+          和 1 个各自的差异件 (60min, 1/盘)
+        - 6 个产品单元（每产品 2 个）共需 6 个瓶颈件 + 6 个差异件
+        - 4 台打印机 × 6h = 1440min，节奏紧张
+        - utilization 按 FIFO 优先级会顺次塞同 priority 组件；
+          product_first 会优先凑齐（瓶颈+差异 一对一）
+        """
+        configs = {
+            (1, "白色"): make_config(1001, 1, "瓶颈", qty=1, dur=100),
+            (2, "白色"): make_config(1002, 2, "差异A", qty=1, dur=60),
+            (3, "白色"): make_config(1003, 3, "差异B", qty=1, dur=60),
+            (4, "白色"): make_config(1004, 4, "差异C", qty=1, dur=60),
+        }
+        bom_map = {
+            10: {(1, "白色"): 1, (2, "白色"): 1},
+            11: {(1, "白色"): 1, (3, "白色"): 1},
+            12: {(1, "白色"): 1, (4, "白色"): 1},
+        }
+        # 产品单元：每产品 2 个，priority 按产品错开（utilization 会按 priority 排序）
+        product_queue = [
+            (0, 10), (0, 10),
+            (1, 11), (1, 11),
+            (2, 12), (2, 12),
+        ]
+        # 任务池：每个 BOM 项展开为一个任务
+        # utilization 模式下按 priority 顺序选 → 会先把 10 的 2 套排上，再 11 的，再 12 的
+        task_pool: list[tuple[int, str, int]] = []
+        for pri, pid in product_queue:
+            for comp_key in bom_map[pid]:
+                cfg = configs[comp_key]
+                task_pool.append((cfg.id, comp_key[1], pri))
+        return configs, bom_map, product_queue, task_pool
+
+    def test_product_first_geq_utilization_complete_products(self):
+        """构造多产品共享瓶颈场景 → product_first 完整产品数 ≥ utilization。
+
+        场景为何能区分：
+        - utilization 按 priority FIFO 选，瓶颈件 100min × 6 + 差异件 60min × 6
+          会按 priority 顺序排，整体能凑齐但可能在 deadline 截断时刚好少 1 套。
+        - product_first 用 product_completion_score 衡量"凑齐到哪步"，
+          优先生产能立刻把 sim_supply 凑齐的组件，整体完整产品数 ≥ utilization。
+        """
+        configs, bom_map, queue, task_pool = self._build_shared_bottleneck_scenario()
+        configs_by_id = {c.id: c for c in configs.values()}
+
+        # deadline 紧张：只够排 9~10 个任务（< 12 个总需求）
+        deadline = 600  # 10h
+        pf = self._simulate_strategy(
+            "product_first", configs=configs, bom_map=bom_map,
+            product_queue=list(queue), task_pool=list(task_pool),
+            num_printers=2, deadline=deadline, windows=DEFAULT_WINDOWS,
+            custom_start=480,
+        )
+        ut = self._simulate_strategy(
+            "utilization", configs=configs, bom_map=bom_map,
+            product_queue=list(queue), task_pool=list(task_pool),
+            num_printers=2, deadline=deadline, windows=DEFAULT_WINDOWS,
+            custom_start=480,
+        )
+
+        pf_complete = count_complete_products(pf, configs_by_id, bom_map)
+        ut_complete = count_complete_products(ut, configs_by_id, bom_map)
+        pf_total = sum(pf_complete.values())
+        ut_total = sum(ut_complete.values())
+        assert pf_total >= ut_total, \
+            f"product_first total={pf_total} should be >= utilization total={ut_total}; " \
+            f"pf={pf_complete} ut={ut_complete}"
+
+    def test_two_phase_geq_utilization_complete_products(self):
+        """同一场景：two_phase ≥ utilization。
+
+        two_phase 阶段 1 用 plan_two_phase 全局规划 BOM 配比 + 溢出复用，
+        不应劣于直接 FIFO 的 utilization。
+        """
+        configs, bom_map, queue, task_pool = self._build_shared_bottleneck_scenario()
+        configs_by_id = {c.id: c for c in configs.values()}
+
+        deadline = 600
+        tp = self._simulate_strategy(
+            "two_phase", configs=configs, bom_map=bom_map,
+            product_queue=list(queue), task_pool=list(task_pool),
+            num_printers=2, deadline=deadline, windows=DEFAULT_WINDOWS,
+            custom_start=480,
+        )
+        ut = self._simulate_strategy(
+            "utilization", configs=configs, bom_map=bom_map,
+            product_queue=list(queue), task_pool=list(task_pool),
+            num_printers=2, deadline=deadline, windows=DEFAULT_WINDOWS,
+            custom_start=480,
+        )
+
+        tp_complete = count_complete_products(tp, configs_by_id, bom_map)
+        ut_complete = count_complete_products(ut, configs_by_id, bom_map)
+        tp_total = sum(tp_complete.values())
+        ut_total = sum(ut_complete.values())
+        assert tp_total >= ut_total, \
+            f"two_phase total={tp_total} should be >= utilization total={ut_total}; " \
+            f"tp={tp_complete} ut={ut_complete}"
+
+    def test_all_strategies_within_total_duration_bound(self):
+        """同一输入下三策略输出，所有任务总时长 ≤ num_printers × (deadline - custom_start)。
+
+        这是基本守约（产能不可能凭空多出来），三策略都应满足。
+        """
+        configs, bom_map, queue, task_pool = self._build_shared_bottleneck_scenario()
+        deadline = 720
+        custom_start = 0
+        num_printers = 2
+        capacity_bound = num_printers * (deadline - custom_start)
+
+        for strat in ("product_first", "utilization", "two_phase"):
+            res = self._simulate_strategy(
+                strat, configs=configs, bom_map=bom_map,
+                product_queue=list(queue), task_pool=list(task_pool),
+                num_printers=num_printers, deadline=deadline,
+                windows=DEFAULT_WINDOWS, custom_start=custom_start,
+            )
+            total_dur = sum(t.end_min - t.start_min for t in res)
+            assert total_dur <= capacity_bound, \
+                f"strategy={strat} total_dur={total_dur} > capacity_bound={capacity_bound}"
+
+    def test_product_first_no_worse_at_sync_zero(self):
+        """sync=0 时（同步惩罚=0）product_first 在完整产品维度不劣于 utilization。
+
+        sync=0 排除掉同步策略对 pick_task 的影响，纯测产品凑齐评分的价值。
+        """
+        configs, bom_map, queue, task_pool = self._build_shared_bottleneck_scenario()
+        configs_by_id = {c.id: c for c in configs.values()}
+        deadline = 600
+        pf = self._simulate_strategy(
+            "product_first", configs=configs, bom_map=bom_map,
+            product_queue=list(queue), task_pool=list(task_pool),
+            num_printers=2, deadline=deadline, windows=DEFAULT_WINDOWS,
+            custom_start=480,
+        )
+        ut = self._simulate_strategy(
+            "utilization", configs=configs, bom_map=bom_map,
+            product_queue=list(queue), task_pool=list(task_pool),
+            num_printers=2, deadline=deadline, windows=DEFAULT_WINDOWS,
+            custom_start=480,
+        )
+        pf_complete = count_complete_products(pf, configs_by_id, bom_map)
+        ut_complete = count_complete_products(ut, configs_by_id, bom_map)
+        assert sum(pf_complete.values()) >= sum(ut_complete.values()), \
+            f"product_first complete={pf_complete} < utilization complete={ut_complete}"
