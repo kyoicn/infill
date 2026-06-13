@@ -26,6 +26,8 @@ from ..models import (
 )
 from .scheduler_core import (
     ConfigInfo, ScheduledTask, DemandKey,
+    DEFAULT_CHANGEOVER_MINUTES,
+    SURPLUS_TARGET_PRODUCTS,
     find_next_start as _find_next_start,
     idle_after as _idle_after,
     product_completion_score as _product_completion_score,
@@ -36,13 +38,10 @@ from .scheduler_core import (
     schedule_tasks as _schedule_tasks_core,
 )
 
-# 富余生产：目标额外完整产品数量上限
-SURPLUS_TARGET_PRODUCTS = 20
-
 
 def _get_changeover_minutes(db: Session) -> int:
     cfg = db.query(SystemConfig).filter(SystemConfig.key == "changeover_minutes").first()
-    return int(cfg.value) if cfg else 15
+    return int(cfg.value) if cfg else DEFAULT_CHANGEOVER_MINUTES
 
 
 def _get_day_windows(db: Session, d: date) -> list[tuple[int, int]]:
