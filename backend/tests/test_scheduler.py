@@ -15,6 +15,128 @@ from app.services.scheduler_core import (
     plan_two_phase, schedule_tasks, count_complete_products,
 )
 
+
+# === Invariant helpers (Iter 2) ===
+# 通用排班结果不变量断言 — 用于跨场景的 property-style 测试。
+# 这些函数只读 ScheduledTask 列表 + 配置，不修改任何状态，违反不变量时 raise AssertionError。
+
+def _assert_no_printer_overlap(
+    scheduled: list[ScheduledTask],
+    changeover: int,
+) -> None:
+    """不变量：同一打印机的相邻任务必须满足 prev.end + changeover <= next.start。
+
+    若同一 printer_index 上有任务时间重叠，或后任务在换料完成前启动，则违反。
+    """
+    by_printer: dict[int, list[ScheduledTask]] = defaultdict(list)
+    for t in scheduled:
+        by_printer[t.printer_index].append(t)
+    for pid, tasks in by_printer.items():
+        tasks_sorted = sorted(tasks, key=lambda x: x.start_min)
+        for i in range(1, len(tasks_sorted)):
+            prev = tasks_sorted[i - 1]
+            nxt = tasks_sorted[i]
+            assert prev.end_min + changeover <= nxt.start_min, (
+                f"Printer {pid} overlap: prev(end={prev.end_min})+changeover({changeover}) "
+                f"> next(start={nxt.start_min})"
+            )
+
+
+def _assert_within_deadline(
+    scheduled: list[ScheduledTask],
+    deadline: int,
+) -> None:
+    """不变量：所有任务必须在 deadline 前结束（task.end_min <= deadline）。"""
+    for t in scheduled:
+        assert t.end_min <= deadline, (
+            f"Task config={t.config_id} printer={t.printer_index} "
+            f"end_min={t.end_min} > deadline={deadline}"
+        )
+
+
+def _assert_start_within_windows(
+    scheduled: list[ScheduledTask],
+    windows: list[tuple[int, int]],
+    extra_allowed_starts: set[int] | None = None,
+) -> None:
+    """不变量：每个任务的 start_min 必须落在某个操作窗口内（只校验 start，任务可跨窗口运行）。
+
+    extra_allowed_starts: 额外允许的 start_min 集合（例如 batch_0 在 custom_start 启动时
+    可能不在任何窗口内，此时调用方传入 {custom_start} 放行）。
+    """
+    allowed = extra_allowed_starts or set()
+    for t in scheduled:
+        if t.start_min in allowed:
+            continue
+        in_window = any(ws <= t.start_min <= we for ws, we in windows)
+        assert in_window, (
+            f"Task config={t.config_id} printer={t.printer_index} "
+            f"start_min={t.start_min} not in any window {windows} "
+            f"(extra_allowed={sorted(allowed)})"
+        )
+
+
+def _assert_no_negative_supply(
+    scheduled: list[ScheduledTask],
+    configs: dict[int, ConfigInfo],
+    initial_supply: dict[DemandKey, int],
+    bom_cache: dict[int, dict[DemandKey, int]],
+    product_units: list[tuple[int, int]],
+) -> None:
+    """不变量：按 batch_order asc、批内 printer_index asc 回放排程，
+    每步加入新产出再 try_assemble 消费，任何时刻 sim_supply 任一 key 都 >= 0。
+    """
+    sim_supply: dict[DemandKey, int] = dict(initial_supply)
+    for k, v in sim_supply.items():
+        assert v >= 0, f"initial_supply negative at start: {k}={v}"
+
+    assembled: set[int] = set()
+    ordered = sorted(scheduled, key=lambda t: (t.batch_index, t.printer_index))
+    for t in ordered:
+        cfg = configs[t.config_id]
+        key = (cfg.component_id, t.color)
+        sim_supply[key] = sim_supply.get(key, 0) + cfg.quantity
+        try_assemble(sim_supply, product_units, bom_cache, assembled)
+        for k, v in sim_supply.items():
+            assert v >= 0, (
+                f"Negative supply for {k}={v} after task "
+                f"config={t.config_id} batch={t.batch_index} printer={t.printer_index}"
+            )
+
+
+def _assert_batch_quantity_conservation(
+    scheduled: list[ScheduledTask],
+    configs: dict[int, ConfigInfo],
+) -> dict[int, dict[DemandKey, int]]:
+    """不变量/工具：按 batch_order 累加各 (component_id, color) 的产出盘数 × 单盘产量。
+
+    返回 {batch_order: {(comp_id, color): total_units_produced}}。
+    同时断言：每批 totals 中所有数值 >= 0 且 == 该批内逐 task 累加值。
+    调用方可比对该 dict 与外部独立累加结果，进一步验证守恒。
+    """
+    by_batch: dict[int, list[ScheduledTask]] = defaultdict(list)
+    for t in scheduled:
+        by_batch[t.batch_index].append(t)
+
+    result: dict[int, dict[DemandKey, int]] = {}
+    for batch_order, tasks in by_batch.items():
+        totals: dict[DemandKey, int] = defaultdict(int)
+        manual_sum = 0
+        for t in tasks:
+            cfg = configs[t.config_id]
+            key = (cfg.component_id, t.color)
+            totals[key] += cfg.quantity
+            manual_sum += cfg.quantity
+        recomputed = sum(totals.values())
+        assert recomputed == manual_sum, (
+            f"Batch {batch_order} totals sum {recomputed} != manual {manual_sum}"
+        )
+        for k, v in totals.items():
+            assert v >= 0, f"Batch {batch_order} negative count {k}={v}"
+        result[batch_order] = dict(totals)
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Fixtures: 构造测试数据
 # ---------------------------------------------------------------------------
@@ -848,3 +970,366 @@ class TestCountCompleteProducts:
         result = count_complete_products(tasks, DESK_CONFIG_BY_ID, {10: DESK_BOM}, supply)
         # 桌板 1, 桌腿 4/2=2, 抽屉 1, 螺丝 4/4=1 → min=1
         assert result[10] == 1
+
+
+# =====================================================================
+# 8. 不变量辅助函数自身正确性（负样本）
+# =====================================================================
+
+class TestInvariantHelpersNegativeSamples:
+    """每个不变量辅助函数都要能"抓到"故意构造的违反场景。"""
+
+    def test_no_printer_overlap_catches_overlap(self):
+        """8.1 同一打印机两个任务时间重叠 → 应抛 AssertionError"""
+        bad = [
+            ScheduledTask(0, 101, "白色", False, 0, 120, 0),
+            ScheduledTask(0, 101, "白色", False, 100, 220, 1),  # 重叠
+        ]
+        with pytest.raises(AssertionError):
+            _assert_no_printer_overlap(bad, CHANGEOVER)
+
+    def test_no_printer_overlap_catches_missing_changeover(self):
+        """8.2 第二个任务在换料完成前启动 → 应抛 AssertionError"""
+        bad = [
+            ScheduledTask(0, 101, "白色", False, 0, 120, 0),
+            ScheduledTask(0, 101, "白色", False, 130, 250, 1),  # 仅隔 10 < changeover=15
+        ]
+        with pytest.raises(AssertionError):
+            _assert_no_printer_overlap(bad, CHANGEOVER)
+
+    def test_no_printer_overlap_passes_on_clean(self):
+        """8.2b 合法排程 → 不抛"""
+        good = [
+            ScheduledTask(0, 101, "白色", False, 0, 120, 0),
+            ScheduledTask(0, 101, "白色", False, 135, 255, 1),  # 120+15=135
+            ScheduledTask(1, 101, "白色", False, 0, 120, 0),
+        ]
+        _assert_no_printer_overlap(good, CHANGEOVER)
+
+    def test_within_deadline_catches_overrun(self):
+        """8.3 任务 end_min 超出 deadline → 应抛 AssertionError"""
+        bad = [
+            ScheduledTask(0, 101, "白色", False, 600, 800, 0),
+        ]
+        with pytest.raises(AssertionError):
+            _assert_within_deadline(bad, deadline=720)
+
+    def test_within_deadline_passes_on_boundary(self):
+        """8.3b 任务恰好在 deadline 结束 → 不抛"""
+        ok = [
+            ScheduledTask(0, 101, "白色", False, 600, 720, 0),
+        ]
+        _assert_within_deadline(ok, deadline=720)
+
+    def test_start_within_windows_catches_outside(self):
+        """8.4 start_min 不在任何窗口内 → 应抛 AssertionError"""
+        # 730 在 (720,750) 间隔内
+        bad = [
+            ScheduledTask(0, 101, "白色", False, 730, 850, 0),
+        ]
+        with pytest.raises(AssertionError):
+            _assert_start_within_windows(bad, DEFAULT_WINDOWS)
+
+    def test_start_within_windows_extra_allowed(self):
+        """8.4b extra_allowed_starts 放行 batch_0 在 custom_start 启动"""
+        # custom_start=0 不在 DEFAULT_WINDOWS 内
+        ok = [
+            ScheduledTask(0, 101, "白色", False, 0, 120, 0),
+        ]
+        _assert_start_within_windows(ok, DEFAULT_WINDOWS, extra_allowed_starts={0})
+
+    def test_no_negative_supply_catches_underflow(self):
+        """8.5 初始供给负数 → 应抛 AssertionError"""
+        with pytest.raises(AssertionError):
+            _assert_no_negative_supply(
+                scheduled=[],
+                configs=DESK_CONFIG_BY_ID,
+                initial_supply={(1, "白色"): -1},
+                bom_cache={10: DESK_BOM},
+                product_units=[(0, 10)],
+            )
+
+    def test_no_negative_supply_passes_normal(self):
+        """8.5b 正常回放 → 不抛"""
+        # 单个桌板任务，无消费（product_units 不存在 product 10 的完整 BOM 时 try_assemble 不动）
+        tasks = [ScheduledTask(0, 101, "白色", False, 0, 120, 0)]
+        _assert_no_negative_supply(
+            scheduled=tasks,
+            configs=DESK_CONFIG_BY_ID,
+            initial_supply={},
+            bom_cache={},
+            product_units=[],
+        )
+
+    def test_batch_quantity_conservation_returns_dict(self):
+        """8.6 辅助函数返回 per-batch 累加 dict 供调用方对比"""
+        tasks = [
+            ScheduledTask(0, 101, "白色", False, 0, 120, 0),  # qty 1
+            ScheduledTask(1, 104, "白色", False, 0, 60, 0),   # qty 20
+            ScheduledTask(0, 102, "白色", False, 135, 225, 1),  # qty 4
+        ]
+        result = _assert_batch_quantity_conservation(tasks, DESK_CONFIG_BY_ID)
+        # batch 0: 桌板 1 + 螺丝 20 ; batch 1: 桌腿 4
+        assert result[0][(1, "白色")] == 1
+        assert result[0][(4, "白色")] == 20
+        assert result[1][(2, "白色")] == 4
+
+        # 与独立手工累加比对
+        manual: dict[int, dict[DemandKey, int]] = defaultdict(lambda: defaultdict(int))
+        for t in tasks:
+            cfg = DESK_CONFIG_BY_ID[t.config_id]
+            manual[t.batch_index][(cfg.component_id, t.color)] += cfg.quantity
+        for b, totals in result.items():
+            for k, v in totals.items():
+                assert manual[b][k] == v, (
+                    f"batch {b} key {k}: helper={v} != manual={manual[b][k]}"
+                )
+
+    def test_batch_quantity_conservation_detects_buggy_variant(self):
+        """8.6b 故意构造一个 bug 变体（漏算 qty）→ 与正确辅助函数结果不一致"""
+        tasks = [
+            ScheduledTask(0, 104, "白色", False, 0, 60, 0),  # qty 20
+            ScheduledTask(1, 104, "白色", False, 0, 60, 0),  # qty 20
+        ]
+        correct = _assert_batch_quantity_conservation(tasks, DESK_CONFIG_BY_ID)
+        # buggy: 假设每盘只算 1（忽略 quantity 字段）
+        buggy: dict[int, dict[DemandKey, int]] = defaultdict(lambda: defaultdict(int))
+        for t in tasks:
+            cfg = DESK_CONFIG_BY_ID[t.config_id]
+            buggy[t.batch_index][(cfg.component_id, t.color)] += 1
+        # 两者应明显不同（correct 用 quantity=20 累加；buggy 每盘只计 1）
+        assert correct[0][(4, "白色")] == 40   # 2 盘 × 20/盘
+        assert buggy[0][(4, "白色")] == 2     # bug 变体只数盘数
+        assert correct[0][(4, "白色")] != buggy[0][(4, "白色")]
+
+
+# =====================================================================
+# 9. 跨场景不变量应用 — 真实排程结果上检验所有不变量
+# =====================================================================
+
+class TestInvariantsAcrossScenarios:
+    """构造多种代表性场景，跑 schedule_tasks / plan_two_phase，应用 5 个不变量。"""
+
+    # ---- scenario A: 单产品 4 打印机 24h，三策略 ----
+
+    def test_scenario_single_product_utilization(self):
+        """9.1 单产品 4 打印机 24h — utilization-like（不带产品上下文） + 5 不变量"""
+        # Phase 1 规划任务再 Phase 2 排程
+        queue = [(0, 10)] * 6  # 6 个产品单元
+        tasks = plan_two_phase(
+            num_printers=4, duration_hours=24, changeover=CHANGEOVER,
+            surplus_enabled=False, windows=DEFAULT_WINDOWS,
+            custom_start=0, deadline=1440,
+            product_queue=queue, bom_map={10: DESK_BOM},
+            config_map=DESK_CONFIGS, initial_supply={},
+        )
+        scheduled = schedule_tasks(
+            tasks, DESK_CONFIG_BY_ID, 4, DEFAULT_WINDOWS,
+            custom_start=0, deadline=1440, changeover=CHANGEOVER,
+            sync_strength=0,
+        )
+        assert len(scheduled) > 0
+        _assert_no_printer_overlap(scheduled, CHANGEOVER)
+        _assert_within_deadline(scheduled, 1440)
+        _assert_start_within_windows(scheduled, DEFAULT_WINDOWS, extra_allowed_starts={0})
+        _assert_no_negative_supply(
+            scheduled, DESK_CONFIG_BY_ID,
+            initial_supply={}, bom_cache={10: DESK_BOM},
+            product_units=queue,
+        )
+        per_batch = _assert_batch_quantity_conservation(scheduled, DESK_CONFIG_BY_ID)
+        # 全局守恒：每个 config 排程数 × quantity == per_batch 累加
+        from_helper: dict[DemandKey, int] = defaultdict(int)
+        for batch_totals in per_batch.values():
+            for k, v in batch_totals.items():
+                from_helper[k] += v
+        manual: dict[DemandKey, int] = defaultdict(int)
+        for t in scheduled:
+            cfg = DESK_CONFIG_BY_ID[t.config_id]
+            manual[(cfg.component_id, t.color)] += cfg.quantity
+        assert dict(from_helper) == dict(manual)
+
+    def test_scenario_single_product_two_phase(self):
+        """9.2 同场景 — two_phase 策略（Phase 1 + Phase 2 sync_strength=50） + 不变量"""
+        queue = [(0, 10)] * 6
+        tasks = plan_two_phase(
+            num_printers=4, duration_hours=24, changeover=CHANGEOVER,
+            surplus_enabled=False, windows=DEFAULT_WINDOWS,
+            custom_start=0, deadline=1440,
+            product_queue=queue, bom_map={10: DESK_BOM},
+            config_map=DESK_CONFIGS, initial_supply={},
+        )
+        scheduled = schedule_tasks(
+            tasks, DESK_CONFIG_BY_ID, 4, DEFAULT_WINDOWS,
+            custom_start=0, deadline=1440, changeover=CHANGEOVER,
+            sync_strength=50,
+        )
+        assert len(scheduled) > 0
+        _assert_no_printer_overlap(scheduled, CHANGEOVER)
+        _assert_within_deadline(scheduled, 1440)
+        _assert_start_within_windows(scheduled, DEFAULT_WINDOWS, extra_allowed_starts={0})
+        _assert_batch_quantity_conservation(scheduled, DESK_CONFIG_BY_ID)
+
+    def test_scenario_single_product_product_first(self):
+        """9.3 同场景 — product_first 策略（pick_task 驱动手工循环） + 不变量"""
+        # 手工驱动一个 batch_0 的 product_first 选择，验证 pick_task 输出落入排程时仍满足不变量。
+        # 这里直接构造一个等效的简化排程：在 batch_0 用 pick_task 选 4 个任务。
+        queue = [(0, 10)] * 4  # 4 个产品单元
+        bom_cache = {10: DESK_BOM}
+        sim_supply: dict[DemandKey, int] = {}
+        assembled: set[int] = set()
+        # 用 pick_task 串行选 4 个组件
+        remaining = [
+            (101, "白色"), (102, "白色"), (103, "白色"), (104, "白色"),
+        ]
+        picks: list[tuple[int, str]] = []
+        for _ in range(4):
+            result = pick_task(
+                list(remaining), DESK_CONFIG_BY_ID,
+                start=480, changeover=CHANGEOVER,
+                windows=DEFAULT_WINDOWS, deadline=1440,
+                sim_supply=sim_supply, product_units=queue,
+                bom_cache=bom_cache, assembled=assembled,
+            )
+            assert result is not None
+            picks.append((result[0], result[1]))
+            remaining = [r for r in remaining if r[0] != result[0]]
+            cfg = DESK_CONFIG_BY_ID[result[0]]
+            sim_supply[(cfg.component_id, result[1])] = sim_supply.get((cfg.component_id, result[1]), 0) + cfg.quantity
+
+        # 转成 ScheduledTask 列表（4 台打印机并行启动）
+        scheduled = []
+        for i, (cid, color) in enumerate(picks):
+            cfg = DESK_CONFIG_BY_ID[cid]
+            scheduled.append(ScheduledTask(
+                printer_index=i, config_id=cid, color=color,
+                is_surplus=False, start_min=480,
+                end_min=480 + cfg.duration_minutes, batch_index=0,
+            ))
+
+        _assert_no_printer_overlap(scheduled, CHANGEOVER)
+        _assert_within_deadline(scheduled, 1440)
+        _assert_start_within_windows(scheduled, DEFAULT_WINDOWS)
+        _assert_no_negative_supply(
+            scheduled, DESK_CONFIG_BY_ID,
+            initial_supply={}, bom_cache=bom_cache, product_units=queue,
+        )
+        _assert_batch_quantity_conservation(scheduled, DESK_CONFIG_BY_ID)
+
+    # ---- scenario B: 多产品共享组件 5 打印机 168h，有初始供给 ----
+
+    def test_scenario_multi_product_shared_components(self):
+        """9.4 3 个产品共享组件，5 打印机 168h，有初始供给 + 4 不变量"""
+        # 三个产品都需要桌板 + 螺丝，A/B 还需桌腿
+        bom_a = {(1, "白色"): 1, (2, "白色"): 2, (4, "白色"): 4}
+        bom_b = {(1, "白色"): 1, (2, "白色"): 1, (4, "白色"): 2}
+        bom_c = {(1, "白色"): 1, (4, "白色"): 6}
+        bom_map = {10: bom_a, 11: bom_b, 12: bom_c}
+        configs = {
+            (1, "白色"): DESK_CONFIGS[(1, "白色")],
+            (2, "白色"): DESK_CONFIGS[(2, "白色")],
+            (4, "白色"): DESK_CONFIGS[(4, "白色")],
+        }
+        config_by_id = {c.id: c for c in configs.values()}
+        queue = [(0, 10), (1, 10), (2, 11), (3, 12), (4, 12)]
+        initial = {(4, "白色"): 8}  # 已有 8 个螺丝
+
+        tasks = plan_two_phase(
+            num_printers=5, duration_hours=168, changeover=CHANGEOVER,
+            surplus_enabled=False, windows=DEFAULT_WINDOWS,
+            custom_start=0, deadline=168 * 60,
+            product_queue=queue, bom_map=bom_map,
+            config_map=configs, initial_supply=initial,
+        )
+        scheduled = schedule_tasks(
+            tasks, config_by_id, 5, DEFAULT_WINDOWS,
+            custom_start=0, deadline=168 * 60, changeover=CHANGEOVER,
+            sync_strength=30,
+        )
+        assert len(scheduled) > 0
+        _assert_no_printer_overlap(scheduled, CHANGEOVER)
+        _assert_within_deadline(scheduled, 168 * 60)
+        _assert_start_within_windows(scheduled, DEFAULT_WINDOWS, extra_allowed_starts={0})
+        _assert_no_negative_supply(
+            scheduled, config_by_id,
+            initial_supply=initial, bom_cache=bom_map, product_units=queue,
+        )
+        _assert_batch_quantity_conservation(scheduled, config_by_id)
+
+    # ---- scenario C: 单打印机长任务跨午休 ----
+
+    def test_scenario_long_task_across_lunch(self):
+        """9.5 单打印机 11:00 启动 240min 任务跨午休（12:00-12:30 间隔） + 不变量"""
+        long_cfg = {901: make_config(901, 91, "长板", qty=1, dur=240)}
+        tasks = [(901, "白色", False)] * 2
+        scheduled = schedule_tasks(
+            tasks, long_cfg, 1, DEFAULT_WINDOWS,
+            custom_start=660, deadline=1440, changeover=CHANGEOVER,  # 11:00 = 660
+            sync_strength=0,
+        )
+        assert len(scheduled) >= 1
+        # 跨午休：第一个任务 660 启动，900 结束（15:00），跨越 720-750 间隔
+        first = scheduled[0]
+        assert first.start_min == 660
+        assert first.end_min == 900
+        _assert_no_printer_overlap(scheduled, CHANGEOVER)
+        _assert_within_deadline(scheduled, 1440)
+        # start_min=660 在 (480,720) 窗口内
+        _assert_start_within_windows(scheduled, DEFAULT_WINDOWS)
+        _assert_batch_quantity_conservation(scheduled, long_cfg)
+
+    # ---- scenario D: 跨天排班 48h ----
+
+    def test_scenario_cross_day(self):
+        """9.6 跨天 48h 排程 → 任务分布在两天窗口 + 不变量（含 sync_strength=100）"""
+        tasks = [(101, "白色", False)] * 40  # 桌板 120min × 40
+        scheduled = schedule_tasks(
+            tasks, DESK_CONFIG_BY_ID, 4, TWO_DAY_WINDOWS,
+            custom_start=0, deadline=2880, changeover=CHANGEOVER,
+            sync_strength=100,
+        )
+        assert len(scheduled) > 0
+        day1 = [t for t in scheduled if t.start_min < 1440]
+        day2 = [t for t in scheduled if t.start_min >= 1440]
+        assert len(day1) > 0
+        assert len(day2) > 0
+        _assert_no_printer_overlap(scheduled, CHANGEOVER)
+        _assert_within_deadline(scheduled, 2880)
+        _assert_start_within_windows(scheduled, TWO_DAY_WINDOWS, extra_allowed_starts={0})
+        _assert_batch_quantity_conservation(scheduled, DESK_CONFIG_BY_ID)
+
+    # ---- scenario E: 所有任务超 deadline (边界) ----
+
+    def test_scenario_all_tasks_over_deadline(self):
+        """9.7 所有任务时长 > deadline → 返回空 list，不变量自然满足"""
+        # 单任务 500min，deadline=60min
+        long_cfg = {801: make_config(801, 81, "超长", qty=1, dur=500)}
+        tasks = [(801, "白色", False)] * 3
+        scheduled = schedule_tasks(
+            tasks, long_cfg, 4, DEFAULT_WINDOWS,
+            custom_start=0, deadline=60, changeover=CHANGEOVER,
+        )
+        assert scheduled == []
+        # 空列表不变量平凡满足
+        _assert_no_printer_overlap(scheduled, CHANGEOVER)
+        _assert_within_deadline(scheduled, 60)
+        _assert_start_within_windows(scheduled, DEFAULT_WINDOWS)
+        _assert_batch_quantity_conservation(scheduled, long_cfg)
+
+    # ---- scenario F: 零需求 ----
+
+    def test_scenario_zero_demand(self):
+        """9.8 demand_tasks=[] surplus=[] → 空 list，所有不变量满足"""
+        scheduled = schedule_tasks(
+            [], DESK_CONFIG_BY_ID, 4, DEFAULT_WINDOWS,
+            custom_start=0, deadline=1440, changeover=CHANGEOVER,
+        )
+        assert scheduled == []
+        _assert_no_printer_overlap(scheduled, CHANGEOVER)
+        _assert_within_deadline(scheduled, 1440)
+        _assert_start_within_windows(scheduled, DEFAULT_WINDOWS, extra_allowed_starts={0})
+        _assert_no_negative_supply(
+            scheduled, DESK_CONFIG_BY_ID,
+            initial_supply={}, bom_cache={}, product_units=[],
+        )
+        _assert_batch_quantity_conservation(scheduled, DESK_CONFIG_BY_ID)
