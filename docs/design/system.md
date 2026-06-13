@@ -300,7 +300,7 @@ flowchart TB
 
 - `scheduler_core.py` 只接受 plain Python 数据结构（`dict`、`tuple`、`@dataclass ConfigInfo/ScheduledTask`），**无 `Session` 依赖**，因此可纯单元测试（`backend/tests/test_scheduler.py`）。
 - `scheduler.py` 负责 DB 查询、构建输入数据、调用 core、把结果（分钟整数）转回 `"HH:MM"` 写入 DB。
-- **现状缺陷**：该分离尚未彻底——`scheduler.py` 仍保留一份 `_pick_task` 旧实现（multiplicative 同步惩罚）与一份 `product_first/utilization` 主调度循环，并未全部委托给 core；core 的 `pick_task` 是 additive 惩罚的新版本。两份逻辑存在分歧，详见 `design-scheduler.md` 与本文「Open Questions & Risks」。
+- **现状缺陷（scheduler 修复迭代进行中）**：该分离尚未彻底——`scheduler.py` 仍保留一份 `_pick_task` 旧实现（multiplicative 同步惩罚）与一份 `product_first/utilization` 主调度循环，并未全部委托给 core；core 的 `pick_task` 是 additive 惩罚的新版本。两份逻辑存在分歧。**本轮迭代将主循环下沉为 core 纯函数 `schedule_greedy`、删除 `scheduler.py._pick_task`、三策略统一加法惩罚**，使本分离彻底化（目标见 `design-scheduler.md` §目标设计·T1）。
 
 ### 6.3 时间窗口与分钟时间戳
 
@@ -379,8 +379,8 @@ flowchart TB
 > 各组件自身的风险见对应 `design-*.md`。此处仅列系统级。
 
 1. **表数量口径不一致**：`specs.md` 称 10 张表、本仓库任务背景也写「10 张表」，实际 ORM 为 13 张物理表。文档已以代码为准。
-2. **`SURPLUS_TARGET_PRODUCTS` 常量重复定义**：`scheduler.py`（=20）与 `scheduler_core.py`（=20）各定义一份；`schedule_specs.md` 7.3 写 `=5`，`project-overview.md` 一处写 20、一处写 5。三处口径不一。应收敛到 `scheduler_core.py` 单一定义并被 `scheduler.py` 导入。
-3. **同步惩罚算法两套实现并存**：`scheduler.py._pick_task` 用 multiplicative 前置因子（旧），`scheduler_core.py.pick_task` 用 additive「等效空闲分钟」二次方缩放（新）；`schedule_specs.md` 9.3 描述的是 multiplicative 版本，已与 core 实现脱节。`product_first/utilization` 主循环走的是 `scheduler.py._pick_task`，仅 `two_phase` 阶段 2 走 core。需统一并更新 specs。
+2. ~~**`SURPLUS_TARGET_PRODUCTS` 常量重复定义**~~ **【scheduler 修复迭代·方案 C】**：收敛到 `scheduler_core.py` 单一定义=20，`scheduler.py` 导入，`schedule_specs.md §7.3` 由 5 改 20（对齐代码实际值，零行为变更）。详见 `design-scheduler.md` §目标设计·T3。
+3. ~~**同步惩罚算法两套实现并存**~~ **【scheduler 修复迭代·方案 A+F】**：统一为 `scheduler_core` 唯一 additive 惩罚（抽出单一 `_sync_penalty` 函数，三处调用方复用），`product_first/utilization` 主循环下沉为 core `schedule_greedy`，删除 `scheduler.py._pick_task`，`schedule_specs.md §9.3` 用加法公式重写。详见 `design-scheduler.md` §目标设计·T1/T4。
 4. **操作窗口默认值硬编码两处**：`scheduler.py:53` 的 fallback `[(480,720),(750,1080),(1110,1380)]` 与前端 `Settings.tsx` 弹窗默认窗口各硬编码一份，应通过初始化迁移写入默认 `ScheduleConfig` 行统一来源。
 5. **`SystemConfig` 默认值无初始化**：`changeover_minutes`、`surplus_enabled` 等无启动初始化迁移，代码到处用 `int(cfg.value) if cfg else 15` 这类内联默认；多处重复同一默认数字。
 6. **AntV/G2 规划落空**：specs.md 第 2 节列为图表选型，实际未引入；甘特图用原生 DOM 实现。文档已更正。

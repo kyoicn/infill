@@ -26,18 +26,19 @@ from ..models import (
 )
 from .scheduler_core import (
     ConfigInfo, ScheduledTask, DemandKey,
+    DEFAULT_CHANGEOVER_MINUTES,
+    SURPLUS_TARGET_PRODUCTS,
     try_assemble as _try_assemble,
     compute_effective_capacity,
     plan_two_phase as _plan_two_phase_core,
     schedule_tasks as _schedule_tasks_core,
     schedule_greedy as _schedule_greedy_core,
-    SURPLUS_TARGET_PRODUCTS,
 )
 
 
 def _get_changeover_minutes(db: Session) -> int:
     cfg = db.query(SystemConfig).filter(SystemConfig.key == "changeover_minutes").first()
-    return int(cfg.value) if cfg else 15
+    return int(cfg.value) if cfg else DEFAULT_CHANGEOVER_MINUTES
 
 
 def _get_day_windows(db: Session, d: date) -> list[tuple[int, int]]:

@@ -29,7 +29,7 @@
 
 ## 3. 换料时间（changeover）
 
-- 每个任务结束后有固定的换料时间（默认 15 分钟），用于收取成品、更换打印版、启动下一轮
+- 每个任务结束后有固定的换料时间（默认见代码常量 `DEFAULT_CHANGEOVER_MINUTES`，当前值 15 分钟），用于收取成品、更换打印版、启动下一轮
 - `printer_available = task_end_time + changeover_minutes`，表示该打印机最早可以**启动**下一个任务的时间
 - 寻找下一个可启动时间时，不再额外加 changeover（因为已包含在 `printer_available` 中）
 
@@ -89,7 +89,9 @@ score = (order_priority, -completion_ratio, bottleneck_ratio, idle, duration)
 
 - 集中火力：接近完成的产品会被优先凑齐，而不是所有产品同时推进一点点
 - 瓶颈优先：每次打印产出量少的组件（如上柜 1个/盘）自然获得更多尽早安排的机会
-- 订单 FIFO：早期订单的产品优先被凑齐，但不会完全阻塞后续订单
+- **硬 FIFO**：早期订单的产品永远获得更高的 `prod_score` 优先级（订单按 `created_at` 升序，priority 在批次开始时静态确定，不会因后续凑齐情况调整）
+- **唯一的"跳过"**：在构建需求池阶段，若某订单的全部组件在初始库存中即可满足，则该订单直接被视为可发货而不进入需求池（见 `scheduler.py._calc_ordered_tasks`）
+- **不实现软 FIFO**：本系统**不**实现"为后续订单让位早期缺料订单"的软化逻辑——一旦订单进入需求池，其优先级即固定，不会因为该订单暂时凑不齐而把产能让给后面的订单
 - 自适应窗口：idle 和 duration 作为 tiebreaker，保持窗口利用率优化
 
 ### 5.2 策略二：最大化利用率（`utilization`）
@@ -136,6 +138,7 @@ score = (order_priority, idle, duration)
 1. 计算总可用产能：
    total_capacity = 打印机数量 × 排班时长（分钟）
    考虑换料损耗：effective_capacity = total_capacity - 预估换料次数 × changeover
+   再乘以安全系数（见代码常量 `CAPACITY_SAFETY_MARGIN`，当前值 0.9）留出富裕空间
 
 2. 确定目标产品集合及优先级：
    - 有订单：按订单 FIFO 展开产品单元队列
@@ -256,7 +259,7 @@ score = (order_priority, idle, duration)
 
 ### 7.3 富余任务上限
 
-设定**目标富余产品数**（代码常量 `SURPLUS_TARGET_PRODUCTS = 20`），当模拟库存比基线多出该数量的可组装完整产品时停止生成富余任务。避免无限制生产导致某一组件堆积过多。
+设定**目标富余产品数**（见代码常量 `SURPLUS_TARGET_PRODUCTS`，当前值 20），当模拟库存比基线多出该数量的可组装完整产品时停止生成富余任务。避免无限制生产导致某一组件堆积过多。
 
 ### 7.4 富余任务调度
 
@@ -313,35 +316,68 @@ score = (order_priority, idle, duration)
 
 ### 9.3 算法机制
 
-**锚定 + 偏差惩罚**：
+**锚定 + 加法等效空闲惩罚**：
 
 ```
 1. 批次中第一台打印机正常按策略评分选择最优任务
    → 该任务的时长作为"锚定时长"(anchor_duration)
+   → 批内首台 anchor_duration = None, sync_penalty = 0
 
-2. 后续打印机选任务时，在原始评分基础上叠加时长偏差惩罚：
-   duration_penalty = |candidate_duration - anchor_duration| / anchor_duration
-   
-   惩罚以 sync_strength/100 的权重混入评分：
-   - 将 penalty 乘以 sync_strength/100 作为评分元组的前置因子
-   - penalty = 0 时（时长完全匹配）不影响原始评分
-   - sync_strength = 0 时所有 penalty 归零，退化为当前行为
+2. 后续打印机选任务时，按下式计算"等效空闲分钟"：
 
-3. 效果：sync_strength 越高，越倾向于为同一批次的打印机选择
-   时长相近的任务，即使这些任务不是单独看的"最优"选择
+   sync_penalty = |duration - anchor_duration| / anchor_duration
+                  × (sync_strength / 100) ** 2
+                  × changeover
+                  × SYNC_PENALTY_CHANGEOVER_MULT
+
+   含义：把"与首台时长的偏差比例"换算为"等效空闲分钟"，
+   加入 idle 维度参与排序。
+
+3. 评分元组（加法叠加，不是支配排序）：
+
+   score = (prod_score, idle + sync_penalty, dur)
+
+   关键性质：
+   - sync_penalty 加在 idle 上，**绝不支配** prod_score
+     → prod_score 不同时永远先按 prod_score 选（实现 §9.2 的正交承诺）
+   - sync_strength = 0 时 sync_penalty 恒为 0，完全退化为非同步行为
+   - anchor_duration = None（首台）时 sync_penalty = 0
 ```
+
+**缩放因子说明**：
+
+- `× SYNC_PENALTY_CHANGEOVER_MULT`（见代码常量，当前值 4）：把偏差按 changeover 倍数放大。
+  sync=100 时一个时长偏差 100% 的任务相当于 `4 × changeover` 的空闲代价——
+  足够大，让同步在 idle 维度有话语权，又不会大到压过 prod_score。
+- `(sync_strength / 100) ** 2`（二次方缩放）：低强度（<30）近乎无惩罚，
+  高强度（>70）强惩罚——给用户一个"先弱后强"的体感曲线，
+  默认 50 时实际权重为 0.25。
 
 ### 9.4 效果示例
 
-4 台打印机，候选任务时长 2h / 3h / 4h / 6h：
+**定性效果**：
 
-| sync_strength | 分配 | 完成时间 | 操作次数 |
-|---|---|---|---|
-| 0 | A:2h B:3h C:4h D:6h | 10:00 / 11:00 / 12:00 / 14:00 | 4 次 |
-| 50 | A:4h B:3h C:4h D:6h | 12:00 / 11:00 / 12:00 / 14:00 | 3 次 |
-| 100 | A:4h B:4h C:4h D:4h | 12:00 / 12:00 / 12:00 / 12:00 | 1 次 |
+- sync 越高，后续打印机越愿意选时长接近 anchor 的任务，
+  即使该任务原本 idle 略大；
+- **prod_score 不同时永远先按 prod_score 选**——同步只在 `prod_score`
+  打平时影响选择，不会让任何"次级目标"凌驾于产品优先级；
+- sync 越高，越愿意为对齐推迟批次启动（见 `schedule_tasks` 中的
+  `wait_time` 插值，由 sync_strength 控制最早 / 最晚可用时间的混合比例）。
 
-> 100% 极端情况：如果任务池中没有足够多相同时长的任务，会自动降级选择最接近的。
+**等效空闲分钟示意**：anchor = 100 min，candidate = 150 min（偏差 50%），
+changeover = 15 min，SYNC_PENALTY_CHANGEOVER_MULT = 4：
+
+| sync_strength | strength_factor | sync_penalty (≈等效空闲分钟) |
+|---|---|---|
+| 25 | 0.0625 | 0.5 × 0.0625 × 15 × 4 ≈ 1.9 |
+| 50 | 0.25 | 0.5 × 0.25 × 15 × 4 = 7.5 |
+| 75 | 0.5625 | 0.5 × 0.5625 × 15 × 4 ≈ 16.9 |
+| 100 | 1.0 | 0.5 × 1.0 × 15 × 4 = 30 |
+
+低强度下惩罚几乎可忽略；高强度下时长偏差大的任务会被 ~30 分钟等效空闲
+排到后面。无论强度多高，只要 prod_score 更优，候选任务依然胜出。
+
+> 极端情况：如果任务池中没有足够多相同时长的任务，会自动降级选择最接近的。
 
 ### 9.5 自强化效应
 
@@ -357,20 +393,27 @@ score = (order_priority, idle, duration)
 
 ### 10.1 需求计算
 
-按 `created_at` 升序逐个处理待处理订单，维护一个滚动供给池：
+**硬 FIFO**：按 `created_at` 升序逐个处理待处理订单，维护一个滚动供给池。
+每个订单的 priority 在批次构建时静态确定（`enumerate(orders)`，
+见 `scheduler.py._calc_ordered_tasks`），后续不会因凑齐进度调整。
 
 1. 初始供给 = 当前库存 + 早于排班日的已排班产出
 2. 对每个订单：
    - 计算该订单的组件需求（如有产品过滤，只计算匹配产品的需求）
    - 从供给池中扣除可满足的部分，得到净需求
-   - 如果净需求为空 → 库存已满足此订单，跳过
-   - 为净需求选择打印配置，生成任务
+   - **唯一的"跳过"**：如果净需求为空 → 库存已满足此订单，跳过
+     （该订单直接被视为可发货而不进入需求池）
+   - 为净需求选择打印配置，生成任务（task 携带订单的静态 priority）
    - 任务产出中超出净需求的溢出量加回供给池
 
 ### 10.2 效果
 
 - 库存已能满足的早期订单被跳过，不浪费产能
 - 前序订单打印配置的溢出量自动供给后续订单，减少重复打印
+- **不实现软 FIFO**：一旦订单进入需求池，其 priority 即固定，
+  不会因"该订单暂时缺料、后面的订单已凑齐"而让产能给后续订单。
+  这是有意的设计——避免出现"晚提交、料齐"的订单抢占"早提交、缺料"
+  订单的优先级，让产线节奏对用户可预测。
 
 ---
 

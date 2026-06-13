@@ -17,12 +17,22 @@ from math import ceil
 # 需求维度：(component_id, color)
 DemandKey = tuple[int, str]
 
+# ---------------------------------------------------------------------------
+# 算法常量（集中定义，文档 docs/schedule_specs.md 引用此处）
+# ---------------------------------------------------------------------------
+
 # 富余生产：目标额外完整产品数量上限
 SURPLUS_TARGET_PRODUCTS = 20
 
-# 同步惩罚相对换料时间的放大倍数
+# 同步惩罚：把"时长偏差比例"放大为"等效空闲分钟"的 changeover 倍数
+# sync=100、duration 偏差 100% 时，penalty = changeover × SYNC_PENALTY_CHANGEOVER_MULT
 SYNC_PENALTY_CHANGEOVER_MULT = 4
 
+# 默认换料时间（分钟） — SystemConfig.changeover_minutes 缺失时的回退值
+DEFAULT_CHANGEOVER_MINUTES = 15
+
+# compute_effective_capacity 安全系数 — 给阶段 1 规划留出富裕空间
+CAPACITY_SAFETY_MARGIN = 0.9
 
 # ---------------------------------------------------------------------------
 # 数据结构
@@ -230,7 +240,7 @@ def compute_effective_capacity(
     deadline: int,
     windows: list[tuple[int, int]],
     num_printers: int,
-    safety_margin: float = 0.9,
+    safety_margin: float = CAPACITY_SAFETY_MARGIN,
 ) -> int:
     """基于操作窗口计算有效产能（分钟）。"""
     total_span = deadline - custom_start
