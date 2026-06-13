@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Steps, Typography } from 'antd';
 import { api } from '../api/client';
+import UploadMode from './intake/Upload';
 
 type IntakeMode =
   | { kind: 'upload' }
-  | { kind: 'recognizing'; abortController: AbortController }
+  | {
+      kind: 'recognizing';
+      abortController: AbortController;
+      sessionId: string;
+      assemblyImageIds: string[];
+      produceImageIds: string[];
+    }
   | { kind: 'draft'; draft: any; conflicts: any[] }
   | { kind: 'color'; draft: any; variants: any[] }
   | { kind: 'previewing'; finalDraft: any }
@@ -62,8 +69,7 @@ function pageTitle(kind: IntakeMode['kind'], variant?: 'recognize' | 'merge'): s
 export default function Intake() {
   const [mode, setMode] = useState<IntakeMode>({ kind: 'upload' });
   const [providerConfigured, setProviderConfigured] = useState<boolean>(false);
-  // setMode is consumed by mode child components in subsequent tasks (T4/T6/T7/T8/T10).
-  void setMode;
+  const [productBaseName, setProductBaseName] = useState<string>('');
 
   useEffect(() => {
     api.intake
@@ -93,7 +99,20 @@ export default function Intake() {
       </div>
 
       {mode.kind === 'upload' && (
-        <div>upload mode placeholder — to be implemented by subsequent tasks (providerConfigured={String(providerConfigured)})</div>
+        <UploadMode
+          providerConfigured={providerConfigured}
+          productBaseName={productBaseName}
+          onProductBaseNameChange={setProductBaseName}
+          onProceedToRecognize={(sessionId, assemblyImageIds, produceImageIds) =>
+            setMode({
+              kind: 'recognizing',
+              abortController: new AbortController(),
+              sessionId,
+              assemblyImageIds,
+              produceImageIds,
+            })
+          }
+        />
       )}
       {mode.kind === 'recognizing' && (
         <div>recognizing mode placeholder — to be implemented by subsequent tasks</div>
