@@ -848,3 +848,310 @@ class TestCountCompleteProducts:
         result = count_complete_products(tasks, DESK_CONFIG_BY_ID, {10: DESK_BOM}, supply)
         # 桌板 1, 桌腿 4/2=2, 抽屉 1, 螺丝 4/4=1 → min=1
         assert result[10] == 1
+
+
+# =====================================================================
+# T2. 关键纯函数直接单测加固
+# =====================================================================
+
+class TestProductCompletionScore:
+    """直接覆盖 product_completion_score —— 凑齐评分的心脏。"""
+
+    INIT = (float('inf'), 0.0, float('inf'))
+
+    def test_comp_key_not_in_any_bom(self):
+        """comp_key 不在任何 BOM 中 → 返回初值 (inf, 0.0, inf)"""
+        result = product_completion_score(
+            comp_key=(99, "白色"),
+            sim_supply={},
+            product_units=[(0, 1)],
+            bom_cache={1: {(1, "红色"): 1}},
+            assembled=set(),
+        )
+        assert result == self.INIT
+
+    def test_all_bom_empty_supply(self):
+        """单产品单元、sim_supply 为空 → min_ratio=0, comp_ratio=0,
+        prod_score=(0, -0.0, 0.0)"""
+        result = product_completion_score(
+            comp_key=(1, "红色"),
+            sim_supply={},
+            product_units=[(0, 1)],
+            bom_cache={1: {(1, "红色"): 1, (2, "红色"): 2}},
+            assembled=set(),
+        )
+        assert result == (0, -0.0, 0.0)
+
+    def test_min_ratio_is_smallest_across_bom(self):
+        """min_ratio 是 BOM 中最小 ratio，而非选 comp_key 的 ratio。"""
+        # comp_key=(1,"r") ratio=4/2=2.0；(2,"r") ratio=0/1=0
+        # 应取最小 0 而非 2.0
+        result = product_completion_score(
+            comp_key=(1, "红色"),
+            sim_supply={(1, "红色"): 4, (2, "红色"): 0},
+            product_units=[(0, 1)],
+            bom_cache={1: {(1, "红色"): 2, (2, "红色"): 1}},
+            assembled=set(),
+        )
+        # min_ratio=0 → -min_ratio=-0.0；comp_ratio=4/2=2.0
+        assert result == (0, -0.0, 2.0)
+
+    def test_multi_units_priority_wins(self):
+        """两单元不同 priority，pri 小的赢（不论 ratio）。"""
+        # pid=A 单元 ratio 很高（接近凑齐）；pid=B 单元 ratio=0
+        # 但 pri=0 < pri=1，应选 pri=0
+        result = product_completion_score(
+            comp_key=(1, "红色"),
+            sim_supply={(1, "红色"): 10, (2, "红色"): 10},
+            product_units=[(0, 100), (1, 200)],
+            bom_cache={
+                100: {(1, "红色"): 1, (2, "红色"): 1},   # pid=A, pri=0
+                200: {(1, "红色"): 1, (2, "红色"): 1},   # pid=B, pri=1
+            },
+            assembled=set(),
+        )
+        # pri=0 的赢；min_ratio=10/1=10, comp_ratio=10/1=10
+        assert result[0] == 0
+        assert result == (0, -10.0, 10.0)
+
+    def test_assembled_units_skipped(self):
+        """assembled 中的单元被跳过，结果由剩余单元决定。"""
+        # 单元 0 在 assembled，应被忽略；单元 1 (pri=5, pid=200) 主导
+        result = product_completion_score(
+            comp_key=(1, "红色"),
+            sim_supply={(1, "红色"): 3},
+            product_units=[(0, 100), (5, 200)],
+            bom_cache={
+                100: {(1, "红色"): 1},
+                200: {(1, "红色"): 1},
+            },
+            assembled={0},
+        )
+        # 仅单元 1 参与：pri=5, min_ratio=3, comp_ratio=3
+        assert result == (5, -3.0, 3.0)
+
+    def test_bom_qty_zero_returns_inf_comp_ratio(self):
+        """BOM 中 comp_key 的 qty=0 → comp_ratio=inf。"""
+        result = product_completion_score(
+            comp_key=(1, "红色"),
+            sim_supply={(1, "红色"): 5, (2, "红色"): 4},
+            product_units=[(0, 1)],
+            bom_cache={1: {(1, "红色"): 0, (2, "红色"): 2}},
+            assembled=set(),
+        )
+        # qty=0 跳过 ratio 计算；min_ratio 由 (2,"红色") 决定 = 4/2=2.0
+        # comp_bom_qty=0 → comp_ratio=inf
+        assert result[0] == 0
+        assert result[1] == -2.0
+        assert result[2] == float('inf')
+
+    def test_tiebreak_lower_min_ratio_wins(self):
+        """两单元同 pri，min_ratio 更低的赢（因 -min_ratio 更小，即 -0.5 < -0.2 是 False，
+        所以 min_ratio=0.5 给出 -0.5；min_ratio=0.2 给出 -0.2；-0.5 < -0.2 → 0.5 胜出）。"""
+        # 单元 0: pid=100, BOM 让 min_ratio=0.5
+        # 单元 1: pid=200, BOM 让 min_ratio=0.2
+        # 单元 0 应赢（-0.5 < -0.2）
+        result = product_completion_score(
+            comp_key=(1, "红色"),
+            sim_supply={(1, "红色"): 1, (2, "红色"): 1, (3, "红色"): 1},
+            product_units=[(0, 100), (0, 200)],
+            bom_cache={
+                100: {(1, "红色"): 2, (2, "红色"): 2},     # min_ratio=min(1/2,1/2)=0.5
+                200: {(1, "红色"): 5, (3, "红色"): 5},     # min_ratio=min(1/5,1/5)=0.2
+            },
+            assembled=set(),
+        )
+        # 单元 0 胜出：pri=0, -min_ratio=-0.5, comp_ratio=1/2=0.5
+        assert result == (0, -0.5, 0.5)
+
+    def test_tiebreak_lower_comp_ratio_wins(self):
+        """两单元同 (pri, -min_ratio)，comp_ratio 小的赢。"""
+        # 两单元同 BOM 形状但 comp_key 的 qty 不同 → 不同 comp_ratio
+        # 单元 0: comp_bom_qty=2, sim_supply=2 → comp_ratio=1.0
+        # 单元 1: comp_bom_qty=4, sim_supply=2 → comp_ratio=0.5
+        # 为了让 min_ratio 相同，控制其他组件
+        result = product_completion_score(
+            comp_key=(1, "红色"),
+            sim_supply={(1, "红色"): 2, (2, "红色"): 1},
+            product_units=[(0, 100), (0, 200)],
+            bom_cache={
+                100: {(1, "红色"): 2, (2, "红色"): 1},   # min_ratio=min(1.0, 1.0)=1.0; comp_ratio=1.0
+                200: {(1, "红色"): 4, (2, "红色"): 0.5}, # min_ratio=min(0.5, 2.0)=0.5; comp_ratio=0.5
+            },
+            assembled=set(),
+        )
+        # 单元 0 (-min_ratio=-1.0) vs 单元 1 (-min_ratio=-0.5)
+        # -1.0 < -0.5 → 单元 0 胜出
+        assert result == (0, -1.0, 1.0)
+
+    def test_tiebreak_strict_comp_ratio(self):
+        """构造同 pri、同 -min_ratio、不同 comp_ratio，验证 comp_ratio 小的赢。"""
+        # 单元 0: bom={comp:1, other:1}, supply={comp:1, other:1} → min_ratio=1, comp_ratio=1
+        # 单元 1: bom={comp:2, other:2}, supply={comp:2, other:2} → min_ratio=1, comp_ratio=1
+        # 同 (0,-1,1)，best 保留单元 0（严格 <）
+        result = product_completion_score(
+            comp_key=(1, "红色"),
+            sim_supply={(1, "红色"): 2, (2, "红色"): 2, (3, "红色"): 2},
+            product_units=[(0, 100), (0, 200)],
+            bom_cache={
+                100: {(1, "红色"): 2, (2, "红色"): 2},   # min_ratio=1, comp_ratio=2/2=1.0
+                200: {(1, "红色"): 4, (3, "红色"): 1},   # min_ratio=min(0.5,2)=0.5, comp_ratio=2/4=0.5
+            },
+            assembled=set(),
+        )
+        # 单元 0: (0,-1.0,1.0)；单元 1: (0,-0.5,0.5)
+        # -1.0 < -0.5 → 单元 0 赢
+        assert result == (0, -1.0, 1.0)
+
+
+class TestComputeEffectiveCapacity:
+    """直接覆盖 compute_effective_capacity —— 0.9 安全系数影响 two_phase 全部规划。"""
+
+    def test_empty_windows(self):
+        """windows=[] → sorted_wins=[], gap_loss=0, eff=total_span。
+        当 deadline==custom_start → total_span=0 → 0"""
+        assert compute_effective_capacity(
+            custom_start=100, deadline=100, windows=[], num_printers=1,
+        ) == 0
+
+    def test_single_window_no_safety_margin(self):
+        """windows=[(0,100)], deadline=100, safety=1.0 → 精确 100。"""
+        assert compute_effective_capacity(
+            custom_start=0, deadline=100,
+            windows=[(0, 100)], num_printers=1, safety_margin=1.0,
+        ) == 100
+
+    def test_default_safety_margin_applied(self):
+        """默认 safety_margin=0.9：100 * 1 * 0.9 = 90"""
+        result = compute_effective_capacity(
+            custom_start=0, deadline=100,
+            windows=[(0, 100)], num_printers=1,
+        )
+        # 显式确认默认行为：90 而非 100
+        assert result == 90
+
+    def test_multi_windows_with_gap_loss(self):
+        """windows=[(0,60),(90,150)]，gap=30 → gap_loss=15。
+        total_span=150, eff=150-15=135, 与窗口长度之和(120)不同。"""
+        result = compute_effective_capacity(
+            custom_start=0, deadline=150,
+            windows=[(0, 60), (90, 150)], num_printers=1, safety_margin=1.0,
+        )
+        # 验证不是窗口长度之和（60+60=120）
+        assert result != 120
+        # 而是 total_span - gap*0.5 = 150 - 15 = 135
+        assert result == 135
+
+    def test_cross_day_offset(self):
+        """跨天 windows=[(0,60),(1440,1500)]：total_span=1500, gap=1380, gap_loss=690, eff=810"""
+        result = compute_effective_capacity(
+            custom_start=0, deadline=1500,
+            windows=[(0, 60), (1440, 1500)], num_printers=1, safety_margin=1.0,
+        )
+        assert result == 810
+
+    def test_zero_safety_margin(self):
+        """safety_margin=0 → 0"""
+        assert compute_effective_capacity(
+            custom_start=0, deadline=1000,
+            windows=[(0, 500), (600, 1000)],
+            num_printers=4, safety_margin=0.0,
+        ) == 0
+
+    def test_num_printers_multiplies(self):
+        """num_printers 直接相乘：100 * 3 * 1.0 = 300"""
+        assert compute_effective_capacity(
+            custom_start=0, deadline=100,
+            windows=[(0, 100)], num_printers=3, safety_margin=1.0,
+        ) == 300
+
+
+class TestPickTaskDirect:
+    """直接调用 pick_task，覆盖决策树多分支。"""
+
+    CFG = {
+        1: ConfigInfo(id=1, component_id=1, component_name="A", quantity=1, duration_minutes=100),
+        2: ConfigInfo(id=2, component_id=2, component_name="B", quantity=1, duration_minutes=100),
+        3: ConfigInfo(id=3, component_id=3, component_name="C", quantity=1, duration_minutes=200),
+    }
+    WIN = [(0, 10000)]
+
+    def test_empty_remaining(self):
+        """remaining=[] → None"""
+        assert pick_task(
+            remaining=[], configs=self.CFG, start=0,
+            changeover=15, windows=self.WIN, deadline=1000,
+        ) is None
+
+    def test_all_tasks_over_deadline_returns_none(self):
+        """所有任务 start+dur > deadline → None；remaining 不被修改。"""
+        remaining = [(1, "红色"), (2, "白色")]
+        original = list(remaining)
+        # start=500, dur=100 → 600 > deadline=550
+        result = pick_task(
+            remaining=remaining, configs=self.CFG, start=500,
+            changeover=15, windows=self.WIN, deadline=550,
+        )
+        assert result is None
+        # 关键：remaining 完整保留，未被 clear/pop
+        assert remaining == original
+        assert len(remaining) == 2
+
+    def test_use_completion_changes_selection(self):
+        """传/不传 sim_supply 等，应选不同任务。"""
+        # 两个任务：comp_id=1（A）和 comp_id=2（B），同样 dur，idle 相同
+        # 不传 completion 时 fallback (0,0,0) 平手 → 取 list[0] = (1,"红色")
+        remaining_a = [(1, "红色"), (2, "白色")]
+        no_comp = pick_task(
+            remaining=remaining_a, configs=self.CFG, start=0,
+            changeover=15, windows=self.WIN, deadline=10000,
+        )
+        # 传 completion：BOM 要求 comp B 但 supply 已有 A，B 凑齐分更优 → 选 (2,"白色")
+        remaining_b = [(1, "红色"), (2, "白色")]
+        with_comp = pick_task(
+            remaining=remaining_b, configs=self.CFG, start=0,
+            changeover=15, windows=self.WIN, deadline=10000,
+            sim_supply={(1, "红色"): 10, (2, "白色"): 0},
+            product_units=[(0, 999)],
+            bom_cache={999: {(1, "红色"): 1, (2, "白色"): 1}},
+            assembled=set(),
+        )
+        # 两次选择应不同
+        assert no_comp != with_comp
+        assert no_comp == (1, "红色")
+        assert with_comp == (2, "白色")
+
+    def test_no_completion_uses_order_priority(self):
+        """不传 sim_supply 等，item[2] 是 priority；小的赢。"""
+        remaining = [(1, "红色", 5), (2, "白色", 1)]
+        result = pick_task(
+            remaining=remaining, configs=self.CFG, start=0,
+            changeover=15, windows=self.WIN, deadline=10000,
+        )
+        # priority=1 < priority=5 → 选第二个
+        assert result == (2, "白色", 1)
+        # 选中项被 pop
+        assert remaining == [(1, "红色", 5)]
+
+    def test_tiebreak_picks_first_when_equal_score(self):
+        """完全等价任务（同 cfg、同 idle、同 sync），返回 list 中第一个（严格 < tiebreak）。"""
+        # 两个同 config 任务 → score 完全相同 → 首个胜出
+        remaining = [(1, "红色"), (1, "白色")]
+        result = pick_task(
+            remaining=remaining, configs=self.CFG, start=0,
+            changeover=15, windows=self.WIN, deadline=10000,
+        )
+        assert result == (1, "红色")
+        assert remaining == [(1, "白色")]
+
+    def test_filters_only_over_deadline_tasks(self):
+        """部分任务超 deadline 应被跳过，可行任务被选中。"""
+        # cfg 3 dur=200 超 deadline=150；cfg 1 dur=100 可行
+        remaining = [(3, "白色"), (1, "红色")]
+        result = pick_task(
+            remaining=remaining, configs=self.CFG, start=0,
+            changeover=15, windows=self.WIN, deadline=150,
+        )
+        assert result == (1, "红色")
+        # 超时项未被 pop，留在 remaining
+        assert remaining == [(3, "白色")]
