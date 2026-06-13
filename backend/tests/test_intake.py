@@ -1,30 +1,50 @@
-"""产品录入（intake）后端测试 — T3
+"""产品录入（intake）后端测试
 
 覆盖：
 - 启发式分类器（heuristic_classify）：真实样例 + 合成边界
 - POST /api/intake/upload：multipart 上传 + 分类 + 落盘
 - GET /api/intake/provider-status：DEEPSEEK_API_KEY 在场/不在场两条路径
 - cleanup_stale_sessions：TTL 过期清理
-"""
+- DeepSeek provider 错误映射（401/5xx/timeout/parse_failed/schema_invalid）
+- POST /api/intake/recognize：happy path（前缀拼接、盘号默认、source_image_id 反查）+ no_api_key 分支
+- detect_conflicts 服务（DB 撞名查询）
+
+LLM 调用一律 mock，不依赖网络。"""
 
 from __future__ import annotations
 
 import io
+import json
 import os
 import time
 from pathlib import Path
+from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
+from app.database import Base, get_db
 from app.main import app
+from app.models import Component, PrintConfig
 from app.services import intake as intake_service
+from app.services import intake_llm
 from app.services.intake import (
     INTAKE_TMP_DIR,
     TTL_SECONDS,
     cleanup_stale_sessions,
+    detect_conflicts,
     heuristic_classify,
+)
+from app.services.intake_llm import (
+    DeepSeekVisionProvider,
+    LLMProviderError,
+    _parse_duration_to_minutes,
+    _strip_markdown_json,
 )
 
 
@@ -291,3 +311,416 @@ def test_cleanup_stale_sessions_keeps_recent(tmp_path, monkeypatch):
     cleaned = cleanup_stale_sessions()
     assert cleaned == 0
     assert recent.is_dir()
+# ---------- 测试 fixture：内存 SQLite + intake_tmp 隔离 ----------
+
+@pytest.fixture()
+def db_session(tmp_path, monkeypatch):
+    """内存 SQLite + 临时 intake_tmp 目录，每个测试独立。"""
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(bind=engine)
+    TestSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+    session = TestSession()
+
+    # 路由经由 Depends(get_db)，需 override
+    def _override_get_db():
+        try:
+            yield session
+        finally:
+            pass
+
+    app.dependency_overrides[get_db] = _override_get_db
+
+    # intake_tmp 指向 tmp_path，避免污染真实 data 目录
+    tmp_intake = tmp_path / "intake_tmp"
+    tmp_intake.mkdir()
+    monkeypatch.setattr(intake_service, "INTAKE_TMP_DIR", tmp_intake)
+
+    yield session
+
+    app.dependency_overrides.clear()
+    session.close()
+
+
+@pytest.fixture()
+def client(db_session):
+    return TestClient(app)
+
+
+# ---------- _parse_duration_to_minutes 单测 ----------
+
+class TestParseDurationToMinutes:
+    def test_hours_minutes(self):
+        assert _parse_duration_to_minutes("2h43m") == 163
+
+    def test_minutes_seconds(self):
+        # 17m45s = 17 + ceil(45/60) = 17 + 1 = 18
+        assert _parse_duration_to_minutes("17m45s") == 18
+
+    def test_pure_hours(self):
+        assert _parse_duration_to_minutes("3h") == 180
+
+    def test_pure_minutes(self):
+        assert _parse_duration_to_minutes("45m") == 45
+
+    def test_int_passthrough(self):
+        assert _parse_duration_to_minutes(120) == 120
+
+    def test_numeric_string(self):
+        assert _parse_duration_to_minutes("90") == 90
+
+    def test_invalid_raises(self):
+        with pytest.raises(ValueError):
+            _parse_duration_to_minutes("abc")
+
+    def test_empty_raises(self):
+        with pytest.raises(ValueError):
+            _parse_duration_to_minutes("")
+
+
+class TestStripMarkdownJson:
+    def test_strip_json_fence(self):
+        text = '```json\n{"a":1}\n```'
+        assert _strip_markdown_json(text).strip() == '{"a":1}'
+
+    def test_strip_plain_fence(self):
+        text = '```\n{"a":1}\n```'
+        assert _strip_markdown_json(text).strip() == '{"a":1}'
+
+    def test_no_fence_passthrough(self):
+        assert _strip_markdown_json('{"a":1}') == '{"a":1}'
+
+
+# ---------- 通用 mock httpx Response ----------
+
+class _MockResponse:
+    def __init__(self, status_code: int, text: str = "", json_data: Any = None):
+        self.status_code = status_code
+        self.text = text
+        self._json_data = json_data
+
+    def json(self):
+        if self._json_data is not None:
+            return self._json_data
+        return json.loads(self.text)
+
+
+def _llm_json_payload(content_str: str) -> dict:
+    """构造 DeepSeek-style 响应包装（choices[0].message.content = 字符串）。"""
+    return {
+        "id": "test-1",
+        "choices": [{"message": {"role": "assistant", "content": content_str}}],
+    }
+
+
+# ---------- DeepSeek provider 错误映射 ----------
+
+class TestDeepSeekProviderErrorMapping:
+    def _provider(self, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        return DeepSeekVisionProvider()
+
+    def test_no_api_key_raises(self, monkeypatch):
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        provider = DeepSeekVisionProvider()
+        with pytest.raises(LLMProviderError) as ei:
+            provider.recognize([b"asm"], [b"prd"])
+        assert ei.value.error_kind == "no_api_key"
+
+    def test_http_401_maps_to_http_401(self, monkeypatch):
+        provider = self._provider(monkeypatch)
+
+        def fake_post(self, url, json=None, headers=None):  # noqa: A002
+            return _MockResponse(401, text='{"error":"unauthorized"}')
+
+        monkeypatch.setattr(httpx.Client, "post", fake_post)
+        with pytest.raises(LLMProviderError) as ei:
+            provider.recognize([b"asm"], [b"prd"])
+        assert ei.value.error_kind == "http_401"
+        assert ei.value.raw_preview is not None
+
+    def test_http_403_maps_to_http_401(self, monkeypatch):
+        provider = self._provider(monkeypatch)
+
+        def fake_post(self, url, json=None, headers=None):  # noqa: A002
+            return _MockResponse(403, text="forbidden")
+
+        monkeypatch.setattr(httpx.Client, "post", fake_post)
+        with pytest.raises(LLMProviderError) as ei:
+            provider.recognize([b"asm"], [b"prd"])
+        assert ei.value.error_kind == "http_401"
+
+    def test_http_500_maps_to_http_5xx(self, monkeypatch):
+        provider = self._provider(monkeypatch)
+
+        def fake_post(self, url, json=None, headers=None):  # noqa: A002
+            return _MockResponse(500, text="internal error")
+
+        monkeypatch.setattr(httpx.Client, "post", fake_post)
+        with pytest.raises(LLMProviderError) as ei:
+            provider.recognize([b"asm"], [b"prd"])
+        assert ei.value.error_kind == "http_5xx"
+
+    def test_http_503_maps_to_http_5xx(self, monkeypatch):
+        provider = self._provider(monkeypatch)
+
+        def fake_post(self, url, json=None, headers=None):  # noqa: A002
+            return _MockResponse(503, text="service unavailable")
+
+        monkeypatch.setattr(httpx.Client, "post", fake_post)
+        with pytest.raises(LLMProviderError) as ei:
+            provider.recognize([b"asm"], [b"prd"])
+        assert ei.value.error_kind == "http_5xx"
+
+    def test_timeout_maps_to_timeout(self, monkeypatch):
+        provider = self._provider(monkeypatch)
+
+        def fake_post(self, url, json=None, headers=None):  # noqa: A002
+            raise httpx.TimeoutException("timed out")
+
+        monkeypatch.setattr(httpx.Client, "post", fake_post)
+        with pytest.raises(LLMProviderError) as ei:
+            provider.recognize([b"asm"], [b"prd"])
+        assert ei.value.error_kind == "timeout"
+
+    def test_non_json_body_maps_to_parse_failed(self, monkeypatch):
+        provider = self._provider(monkeypatch)
+
+        def fake_post(self, url, json=None, headers=None):  # noqa: A002
+            # 200 但 body 不是 JSON
+            return _MockResponse(200, text="<html>oh no</html>")
+
+        monkeypatch.setattr(httpx.Client, "post", fake_post)
+        with pytest.raises(LLMProviderError) as ei:
+            provider.recognize([b"asm"], [b"prd"])
+        assert ei.value.error_kind == "parse_failed"
+        assert ei.value.raw_preview is not None
+        assert "html" in ei.value.raw_preview.lower()
+
+    def test_missing_components_key_maps_to_schema_invalid(self, monkeypatch):
+        provider = self._provider(monkeypatch)
+        # content 是合法 JSON 但缺 components 键
+        payload = _llm_json_payload('{"product_base_name":"床头柜","plates":[]}')
+
+        def fake_post(self, url, json=None, headers=None):  # noqa: A002
+            return _MockResponse(200, json_data=payload)
+
+        monkeypatch.setattr(httpx.Client, "post", fake_post)
+        with pytest.raises(LLMProviderError) as ei:
+            provider.recognize([b"asm"], [b"prd"])
+        assert ei.value.error_kind == "schema_invalid"
+
+    def test_unknown_plate_component_name_maps_to_schema_invalid(self, monkeypatch):
+        provider = self._provider(monkeypatch)
+        # plate.component_name 不在 components 中
+        content = json.dumps({
+            "product_base_name": "床头柜",
+            "components": [{"name": "侧板", "bom_quantity": 2}],
+            "plates": [{
+                "source_index": 0,
+                "component_name": "抽屉",   # 未声明
+                "quantity_per_plate": 2,
+                "duration_minutes": 60,
+            }],
+        }, ensure_ascii=False)
+
+        def fake_post(self, url, json=None, headers=None):  # noqa: A002
+            return _MockResponse(200, json_data=_llm_json_payload(content))
+
+        monkeypatch.setattr(httpx.Client, "post", fake_post)
+        with pytest.raises(LLMProviderError) as ei:
+            provider.recognize([b"asm"], [b"prd"])
+        assert ei.value.error_kind == "schema_invalid"
+
+    def test_image_too_large_in_body_maps_to_image_too_large(self, monkeypatch):
+        provider = self._provider(monkeypatch)
+
+        def fake_post(self, url, json=None, headers=None):  # noqa: A002
+            return _MockResponse(400, text='{"error":"image_too_large"}')
+
+        monkeypatch.setattr(httpx.Client, "post", fake_post)
+        with pytest.raises(LLMProviderError) as ei:
+            provider.recognize([b"asm"], [b"prd"])
+        assert ei.value.error_kind == "image_too_large"
+
+
+# ---------- /api/intake/recognize 端点 happy path ----------
+
+def _seed_session_images(tmp_intake_dir: Path, session_id: str, image_ids: list[str]):
+    """在 intake_tmp 下 seed 指定 session 与 image_id 的占位图片。"""
+    sd = tmp_intake_dir / session_id
+    sd.mkdir(parents=True, exist_ok=True)
+    for img_id in image_ids:
+        (sd / f"{img_id}.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
+
+
+class TestRecognizeEndpoint:
+    def test_happy_path_prefixes_and_default_plate_names(self, client, db_session, monkeypatch):
+        # 1. seed session images
+        session_id = "sess-test-001"
+        assembly_ids = ["asm-1", "asm-2"]
+        produce_ids = ["prd-1", "prd-2", "prd-3"]
+        _seed_session_images(intake_service.INTAKE_TMP_DIR, session_id, assembly_ids + produce_ids)
+
+        # 2. mock provider
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+
+        def fake_recognize(self, assembly_images, produce_images, product_base_name=None):
+            return {
+                "product_base_name": "床头柜",
+                "components": [
+                    {"name": "侧板", "bom_quantity": 2},
+                    {"name": "抽屉", "bom_quantity": 3},
+                ],
+                "plates": [
+                    {"source_index": 0, "component_name": "侧板", "quantity_per_plate": 2, "duration_minutes": 111},
+                    {"source_index": 1, "component_name": "抽屉", "quantity_per_plate": 1, "duration_minutes": 80},
+                    {"source_index": 2, "component_name": "抽屉", "quantity_per_plate": 2, "duration_minutes": 150},
+                ],
+            }
+
+        monkeypatch.setattr(DeepSeekVisionProvider, "recognize", fake_recognize)
+
+        # 3. call endpoint
+        resp = client.post("/api/intake/recognize", json={
+            "session_id": session_id,
+            "assembly_image_ids": assembly_ids,
+            "produce_image_ids": produce_ids,
+            "product_base_name": "床头柜",
+        })
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+
+        # 4. 断言
+        assert body["ok"] is True
+        assert body["conflicts"] == []
+        draft = body["draft"]
+        assert draft["product_base_name"] == "床头柜"
+        # 组件名带前缀
+        comp_names = [c["name"] for c in draft["components"]]
+        assert "床头柜-侧板" in comp_names
+        assert "床头柜-抽屉" in comp_names
+        # 装配件数透传
+        ce = next(c for c in draft["components"] if c["name"] == "床头柜-侧板")
+        assert ce["assembly_quantity"] == 2
+        # 盘号默认 = 组件全名 + -<件数>
+        plates = draft["plates"]
+        plate0 = plates[0]
+        assert plate0["plate_name"] == "床头柜-侧板-2"
+        assert plate0["component_name"] == "床头柜-侧板"
+        assert plate0["quantity_per_plate"] == 2
+        assert plate0["duration_minutes"] == 111
+        # source_image_id 反查
+        assert plate0["source_image_id"] == "prd-1"
+        assert plates[1]["source_image_id"] == "prd-2"
+        assert plates[2]["source_image_id"] == "prd-3"
+        assert plates[2]["plate_name"] == "床头柜-抽屉-2"
+
+    def test_session_expired_returns_error(self, client, db_session, monkeypatch):
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+        # 不 seed 图片，直接调
+        resp = client.post("/api/intake/recognize", json={
+            "session_id": "missing-sess",
+            "assembly_image_ids": ["a"],
+            "produce_image_ids": ["b"],
+            "product_base_name": "床头柜",
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is False
+        assert body["error_kind"] == "session_expired"
+
+    def test_llm_error_propagates_raw_preview(self, client, db_session, monkeypatch):
+        session_id = "sess-err"
+        _seed_session_images(intake_service.INTAKE_TMP_DIR, session_id, ["a1", "p1"])
+
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
+
+        def fake_recognize(self, assembly_images, produce_images, product_base_name=None):
+            raise LLMProviderError("parse_failed", "bad json", raw_preview="<html>")
+
+        monkeypatch.setattr(DeepSeekVisionProvider, "recognize", fake_recognize)
+
+        resp = client.post("/api/intake/recognize", json={
+            "session_id": session_id,
+            "assembly_image_ids": ["a1"],
+            "produce_image_ids": ["p1"],
+        })
+        body = resp.json()
+        assert body["ok"] is False
+        assert body["error_kind"] == "parse_failed"
+        assert body["raw_response_preview"] == "<html>"
+
+
+class TestRecognizeNoApiKey:
+    def test_missing_api_key_returns_no_api_key(self, client, db_session, monkeypatch):
+        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+        # 即使 seed 了图片，no_api_key 应在调 LLM 前触发
+        session_id = "sess-nokey"
+        _seed_session_images(intake_service.INTAKE_TMP_DIR, session_id, ["a1", "p1"])
+
+        resp = client.post("/api/intake/recognize", json={
+            "session_id": session_id,
+            "assembly_image_ids": ["a1"],
+            "produce_image_ids": ["p1"],
+            "product_base_name": "床头柜",
+        })
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is False
+        assert body["error_kind"] == "no_api_key"
+
+
+# ---------- detect_conflicts 服务单测 ----------
+
+class TestDetectConflicts:
+    def test_empty_db_returns_empty(self, db_session):
+        result = detect_conflicts(db_session, ["床头柜-侧板"], ["床头柜-侧板-2"], [])
+        assert result == []
+
+    def test_component_and_plate_conflict(self, db_session):
+        # seed 现有 catalog：组件 + 盘
+        comp = Component(name="床头柜-把手", description="", colors=[])
+        db_session.add(comp)
+        db_session.flush()
+        pc = PrintConfig(
+            plate_name="床头柜-把手-40",
+            component_id=comp.id,
+            quantity=40,
+            duration_minutes=120,
+        )
+        db_session.add(pc)
+        db_session.commit()
+
+        conflicts = detect_conflicts(
+            db_session,
+            ["床头柜-把手", "床头柜-侧板"],
+            ["床头柜-把手-40", "床头柜-侧板-2"],
+            [],
+        )
+        # 应仅返回撞名的
+        kinds_names = {(c.kind, c.name) for c in conflicts}
+        assert ("component", "床头柜-把手") in kinds_names
+        assert ("plate", "床头柜-把手-40") in kinds_names
+        # 未撞名不应出现
+        assert ("component", "床头柜-侧板") not in kinds_names
+        assert ("plate", "床头柜-侧板-2") not in kinds_names
+        assert len(conflicts) == 2
+
+    def test_no_input_returns_empty(self, db_session):
+        # 即便 DB 有数据，传空列表也返回空
+        db_session.add(Component(name="X", description="", colors=[]))
+        db_session.commit()
+        result = detect_conflicts(db_session, [], [], [])
+        assert result == []
+
+    def test_existing_name_field_equals_name(self, db_session):
+        db_session.add(Component(name="床头柜-门板", description="", colors=[]))
+        db_session.commit()
+        conflicts = detect_conflicts(db_session, ["床头柜-门板"], [], [])
+        assert len(conflicts) == 1
+        assert conflicts[0].existing_name == "床头柜-门板"
+        assert conflicts[0].kind == "component"

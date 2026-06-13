@@ -3,22 +3,34 @@
 包含：
 - 启发式分类器（assembly / produce）— 不调 LLM
 - 上传文件落盘 + 过期会话清理（TTL）
+- 撞名检测（与现有 catalog 中 Component / PrintConfig / Product 比对）
+- 读取 session 图片字节
 
-完整契约见 docs/prd/prd-005-intake.md CUJ-1。
+完整契约见 docs/prd/prd-005-intake.md CUJ-1 / CUJ-2，
+设计文档见 docs/design/design-intake.md §3、§6、§7。
 """
 
 from __future__ import annotations
 
 import io
+import os
 import shutil
 import time
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
 from PIL import Image
+from sqlalchemy.orm import Session
 
-# 临时文件目录（与运行目录相对；上传的图片落到 data/intake_tmp/<session_id>/<image_id>.<suffix>）
-INTAKE_TMP_DIR = Path("data/intake_tmp")
+from ..models import Component, PrintConfig, Product
+from ..schemas_intake import Conflict
+
+
+# ---------- 文件系统路径 ----------
+
+# 默认临时目录：项目根的 data/intake_tmp（绝对路径，cwd 无关）
+_DEFAULT_TMP_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "intake_tmp"
+INTAKE_TMP_DIR = Path(os.environ.get("INTAKE_TMP_DIR", str(_DEFAULT_TMP_DIR)))
 
 # 会话过期时间（秒）— 上传后 1 小时未合并即清理
 TTL_SECONDS = 3600
@@ -36,6 +48,12 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp"}
 
 
+def _session_dir(session_id: str) -> Path:
+    return INTAKE_TMP_DIR / session_id
+
+
+# ---------- 启发式分类 + 落盘 + TTL 清理（CUJ-1） ----------
+
 def heuristic_classify(image_bytes: bytes) -> Literal["assembly", "produce"]:
     """启发式判定截图是 assembly（组装图）还是 produce（打印盘）。
 
@@ -50,7 +68,6 @@ def heuristic_classify(image_bytes: bytes) -> Literal["assembly", "produce"]:
         right = int(w * PRODUCE_PANEL_REGION[2])
         bottom = int(h * PRODUCE_PANEL_REGION[3])
         region = gray.crop((left, top, right, bottom))
-        # ImageStat.Stat.mean[0] 是 region 灰度均值；避免 getdata() 在 Pillow 14 移除
         from PIL import ImageStat
 
         if region.size[0] == 0 or region.size[1] == 0:
@@ -96,7 +113,7 @@ def save_uploaded_image(session_id: str, image_id: str, suffix: str, content: by
 
     父目录用 mkdir(parents=True, exist_ok=True) 自动创建。
     """
-    session_dir = INTAKE_TMP_DIR / session_id
+    session_dir = _session_dir(session_id)
     session_dir.mkdir(parents=True, exist_ok=True)
     path = session_dir / f"{image_id}.{suffix}"
     path.write_bytes(content)
@@ -105,8 +122,76 @@ def save_uploaded_image(session_id: str, image_id: str, suffix: str, content: by
 
 def cleanup_session(session_id: str) -> None:
     """删除 data/intake_tmp/<session_id>/ 整个子目录；不存在或删除失败均静默。"""
-    session_dir = INTAKE_TMP_DIR / session_id
+    session_dir = _session_dir(session_id)
     try:
         shutil.rmtree(session_dir)
     except (OSError, FileNotFoundError):
         return
+
+
+def load_session_images(session_id: str, image_ids: list[str]) -> Optional[list[bytes]]:
+    """按 image_ids 顺序读 session 目录下的图片 bytes。
+
+    任一 image_id 文件不存在 → 返回 None（路由层映射到 session_expired）。
+    """
+    sd = _session_dir(session_id)
+    if not sd.is_dir():
+        return None
+    result: list[bytes] = []
+    for img_id in image_ids:
+        matches = list(sd.glob(f"{img_id}.*"))
+        if not matches:
+            return None
+        result.append(matches[0].read_bytes())
+    return result
+
+
+# ---------- 撞名检测（CUJ-2 / CUJ-5） ----------
+
+def detect_conflicts(
+    db: Session,
+    component_names: list[str],
+    plate_names: list[str],
+    product_names: list[str],
+) -> list[Conflict]:
+    """查询 DB Component / PrintConfig / Product 表，找出与现有同名的条目。
+
+    返回 list[Conflict]，每条含 kind / name / existing_name；
+    现有同名条目就是 DB 中已存在的同名记录（`existing_name == name`）。
+    """
+    conflicts: list[Conflict] = []
+
+    if component_names:
+        existing_components = (
+            db.query(Component.name)
+            .filter(Component.name.in_(component_names))
+            .all()
+        )
+        existing_comp_set = {row[0] for row in existing_components}
+        for name in component_names:
+            if name in existing_comp_set:
+                conflicts.append(Conflict(kind="component", name=name, existing_name=name))
+
+    if plate_names:
+        existing_plates = (
+            db.query(PrintConfig.plate_name)
+            .filter(PrintConfig.plate_name.in_(plate_names))
+            .all()
+        )
+        existing_plate_set = {row[0] for row in existing_plates}
+        for name in plate_names:
+            if name in existing_plate_set:
+                conflicts.append(Conflict(kind="plate", name=name, existing_name=name))
+
+    if product_names:
+        existing_products = (
+            db.query(Product.name)
+            .filter(Product.name.in_(product_names))
+            .all()
+        )
+        existing_product_set = {row[0] for row in existing_products}
+        for name in product_names:
+            if name in existing_product_set:
+                conflicts.append(Conflict(kind="product", name=name, existing_name=name))
+
+    return conflicts

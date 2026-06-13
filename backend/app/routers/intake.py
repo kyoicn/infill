@@ -1,27 +1,32 @@
 """产品录入（intake）路由
 
-完整契约见 docs/prd/prd-005-intake.md。
-本任务（T3）实现 GET /provider-status 与 POST /upload；
-其他端点（recognize / merge / recent-logs）由 T5 / T9 接管，仍保持 stub。
+完整契约见 docs/prd/prd-005-intake.md（CUJ-1 上传 + 分类、CUJ-2 LLM 识别 + 撞名检测、
+CUJ-5 合并到 catalog.yaml）。
+本提交实现 `/provider-status` / `/upload` / `/recognize`；
+`/merge` / `/recent-logs` 仍保持 stub，由 CUJ-5 任务接管。
 """
 
 from __future__ import annotations
 
+import io
 import uuid
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from PIL import Image
-import io
+from sqlalchemy.orm import Session
 
-from app.schemas_intake import UploadedImage
+from app.database import get_db
+from app.schemas_intake import RecognizeRequest, UploadedImage
 from app.services.intake import (
     ALLOWED_MIME,
     MAX_UPLOAD_BYTES,
     cleanup_stale_sessions,
+    detect_conflicts,
     heuristic_classify,
+    load_session_images,
     save_uploaded_image,
 )
-from app.services.intake_llm import get_active_provider
+from app.services.intake_llm import LLMProviderError, get_active_provider
 
 router = APIRouter(prefix="/api/intake", tags=["产品录入"])
 
@@ -109,8 +114,102 @@ async def upload(
 
 
 @router.post("/recognize")
-def recognize():
-    return _NOT_IMPLEMENTED
+def recognize(req: RecognizeRequest, db: Session = Depends(get_db)):
+    """调 LLM 识别 → 转 Draft → 检测撞名 → 返回。
+
+    错误分支统一返回 `{ok: False, error_kind, error}`（HTTP 200，前端按 error_kind 分发）。
+    """
+    provider = get_active_provider()
+    if provider is None:
+        return {
+            "ok": False,
+            "error_kind": "no_api_key",
+            "error": "未检测到 LLM 提供商 API key，请在 .env 配置 DEEPSEEK_API_KEY",
+        }
+
+    # 读 session 图片
+    assembly_bytes = load_session_images(req.session_id, req.assembly_image_ids)
+    produce_bytes = load_session_images(req.session_id, req.produce_image_ids)
+    if assembly_bytes is None or produce_bytes is None:
+        return {
+            "ok": False,
+            "error_kind": "session_expired",
+            "error": f"会话 {req.session_id} 已过期或部分图片不存在，请回到上一步重新上传",
+        }
+
+    # 调 LLM
+    try:
+        llm_result = provider.recognize(
+            assembly_images=assembly_bytes,
+            produce_images=produce_bytes,
+            product_base_name=req.product_base_name,
+        )
+    except LLMProviderError as exc:
+        resp: dict = {
+            "ok": False,
+            "error_kind": exc.error_kind,
+            "error": exc.message,
+        }
+        if exc.raw_preview:
+            resp["raw_response_preview"] = exc.raw_preview
+        return resp
+
+    # 决定产品基名：用户预填优先，LLM 推断兜底
+    product_base_name = (
+        req.product_base_name
+        or llm_result.get("product_base_name")
+        or ""
+    )
+    if not product_base_name:
+        # 安全兜底（实际几乎不会触发，prompt 已强制 LLM 输出）
+        product_base_name = "未命名产品"
+
+    # 转换为前端 Draft schema：拼前缀、生成默认盘号、反查 source_image_id
+    components_out: list[dict] = []
+    short_to_full: dict[str, str] = {}
+    for comp in llm_result.get("components", []):
+        short_name = comp["name"]
+        full_name = f"{product_base_name}-{short_name}"
+        short_to_full[short_name] = full_name
+        components_out.append({
+            "name": full_name,
+            "assembly_quantity": int(comp["bom_quantity"]),
+        })
+
+    plates_out: list[dict] = []
+    for plate in llm_result.get("plates", []):
+        short_cn = plate["component_name"]
+        full_cn = short_to_full.get(short_cn, f"{product_base_name}-{short_cn}")
+        qpp = int(plate["quantity_per_plate"])
+        plate_name = f"{full_cn}-{qpp}"
+        si = int(plate["source_index"])
+        # 反查 source_image_id：source_index 是 produce_image_ids 数组下标
+        if 0 <= si < len(req.produce_image_ids):
+            source_image_id = req.produce_image_ids[si]
+        else:
+            source_image_id = ""
+        plates_out.append({
+            "plate_name": plate_name,
+            "component_name": full_cn,
+            "quantity_per_plate": qpp,
+            "duration_minutes": int(plate["duration_minutes"]),
+            "source_image_id": source_image_id,
+        })
+
+    # 撞名检测：组件名 + 盘号（产品名等 CUJ-5 颜色矩阵展开后才查）
+    component_names = [c["name"] for c in components_out]
+    plate_names = [p["plate_name"] for p in plates_out]
+    conflicts = detect_conflicts(db, component_names, plate_names, product_names=[])
+
+    return {
+        "ok": True,
+        "draft": {
+            "product_base_name": product_base_name,
+            "components": components_out,
+            "plates": plates_out,
+        },
+        "conflicts": [c.model_dump() for c in conflicts],
+    }
 
 
 @router.post("/merge")
