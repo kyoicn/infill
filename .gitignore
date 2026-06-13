@@ -32,3 +32,4 @@ frontend/dist/
 .qa-dev-server.log
 docs/issues-attachments/
 docs/gorilla/*/screenshots/
+.playwright-mcp/
