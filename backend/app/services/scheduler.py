@@ -26,14 +26,11 @@ from ..models import (
 )
 from .scheduler_core import (
     ConfigInfo, ScheduledTask, DemandKey,
-    find_next_start as _find_next_start,
-    idle_after as _idle_after,
-    product_completion_score as _product_completion_score,
     try_assemble as _try_assemble,
-    pick_task as _pick_task_core,
     compute_effective_capacity,
     plan_two_phase as _plan_two_phase_core,
     schedule_tasks as _schedule_tasks_core,
+    schedule_greedy as _schedule_greedy_core,
     SURPLUS_TARGET_PRODUCTS,
 )
 
@@ -171,7 +168,7 @@ def _calc_ordered_tasks(
 
     return all_tasks, supply
 
-# _find_next_start 和 _idle_after 已从 scheduler_core 导入
+# find_next_start / idle_after 等纯函数已下沉到 scheduler_core
 
 
 
@@ -202,86 +199,8 @@ def _build_product_context(
     return product_units, bom_cache
 
 
-# _product_completion_score 和 _try_assemble 已从 scheduler_core 导入
+# product_completion_score / try_assemble 已下沉到 scheduler_core（_try_assemble 仍在本模块使用）
 
-
-
-def _pick_task(
-    remaining: list,
-    config_cache: dict[int, PrintConfig],
-    start: int,
-    changeover: int,
-    windows: list[tuple[int, int]],
-    deadline: int,
-    sim_supply: dict[DemandKey, int] | None = None,
-    product_units: list[tuple[int, int]] | None = None,
-    bom_cache: dict[int, dict[DemandKey, int]] | None = None,
-    assembled: set[int] | None = None,
-    anchor_duration: int | None = None,
-    sync_strength: int = 0,
-) -> tuple | None:
-    """选择最优任务。remaining 元素为 (config_id, color) 或 (config_id, color, priority)。
-
-    当提供产品凑齐上下文时，选择优先级（从高到低）：
-    1. 产品凑齐优先：
-       - 订单优先级：更早订单的产品优先
-       - 完成度：接近凑齐的产品优先
-       - 瓶颈：该组件是产品最短板时优先
-    2. 空闲时间：idle 小的优先
-    3. 时长：短任务优先（为长间隔保留长任务）
-
-    未提供产品上下文时回退到静态订单 FIFO 优先级。
-
-    anchor_duration / sync_strength：同步策略参数。当 anchor_duration 有值时，
-    时长偏差惩罚作为评分前缀，sync_strength 控制惩罚权重。
-    """
-    if not remaining:
-        return None
-
-    use_completion = (
-        sim_supply is not None
-        and product_units is not None
-        and bom_cache is not None
-    )
-
-    best_idx = -1
-    best_score: tuple | None = None
-
-    for i in range(len(remaining)):
-        item = remaining[i]
-        cid = item[0]
-        color = item[1]
-        cfg = config_cache[cid]
-        dur = cfg.duration_minutes
-        if start + dur > deadline:
-            continue
-
-        idle = _idle_after(start, dur, changeover, windows)
-
-        if use_completion:
-            comp_key = (cfg.component_id, color)
-            prod_score = _product_completion_score(
-                comp_key, sim_supply, product_units, bom_cache, assembled or set()
-            )
-        else:
-            pri = item[2] if len(item) > 2 else 0
-            prod_score = (float(pri), 0.0, 0.0)
-
-        # 同步惩罚：anchor_duration 有值时，时长偏差越大惩罚越高
-        if anchor_duration is not None and anchor_duration > 0 and sync_strength > 0:
-            sync_penalty = abs(dur - anchor_duration) / anchor_duration * (sync_strength / 100)
-        else:
-            sync_penalty = 0.0
-
-        score = (sync_penalty, prod_score, idle, dur)
-
-        if best_idx == -1 or score < best_score:
-            best_idx = i
-            best_score = score
-
-    if best_idx == -1:
-        return None
-    return remaining.pop(best_idx)
 
 
 def _build_surplus_tasks(
@@ -514,6 +433,39 @@ def _plan_two_phase(
     )
 
 
+def _persist_scheduled(
+    db: Session, plan: PrintPlan, scheduled: list[ScheduledTask], printers: list,
+) -> None:
+    """将 ScheduledTask 列表写回为 PrintBatch / PrintTask。
+
+    按 batch_index 惰性创建批次，printer_index 映射到 printers 列表对应打印机。
+    two_phase 路径与贪心路径共用。
+    """
+    printer_list = list(printers)
+    batches_by_idx: dict[int, PrintBatch] = {}
+    for st in scheduled:
+        if st.batch_index not in batches_by_idx:
+            batch = PrintBatch(
+                plan_id=plan.id,
+                start_time=f"{st.start_min // 60:02d}:{st.start_min % 60:02d}",
+                batch_order=st.batch_index,
+            )
+            db.add(batch)
+            db.flush()
+            batches_by_idx[st.batch_index] = batch
+
+        task = PrintTask(
+            batch_id=batches_by_idx[st.batch_index].id,
+            printer_id=printer_list[st.printer_index].id,
+            print_config_id=st.config_id,
+            color=st.color,
+            is_surplus=st.is_surplus,
+            start_time=f"{st.start_min // 60:02d}:{st.start_min % 60:02d}",
+            end_time=f"{st.end_min // 60:02d}:{st.end_min % 60:02d}",
+        )
+        db.add(task)
+
+
 def generate_plan(
     db: Session, target_date: date, surplus_enabled: bool,
     start_time: str = "00:00", duration_hours: int = 24,
@@ -578,30 +530,7 @@ def generate_plan(
         db.add(plan)
         db.flush()
 
-        # 将 ScheduledTask 转换为 DB 模型
-        printer_list = list(printers)
-        batches_by_idx: dict[int, PrintBatch] = {}
-        for st in scheduled:
-            if st.batch_index not in batches_by_idx:
-                batch = PrintBatch(
-                    plan_id=plan.id,
-                    start_time=f"{st.start_min // 60:02d}:{st.start_min % 60:02d}",
-                    batch_order=st.batch_index,
-                )
-                db.add(batch)
-                db.flush()
-                batches_by_idx[st.batch_index] = batch
-
-            task = PrintTask(
-                batch_id=batches_by_idx[st.batch_index].id,
-                printer_id=printer_list[st.printer_index].id,
-                print_config_id=st.config_id,
-                color=st.color,
-                is_surplus=st.is_surplus,
-                start_time=f"{st.start_min // 60:02d}:{st.start_min % 60:02d}",
-                end_time=f"{st.end_min // 60:02d}:{st.end_min % 60:02d}",
-            )
-            db.add(task)
+        _persist_scheduled(db, plan, scheduled, printers)
 
         db.commit()
         db.refresh(plan)
@@ -650,122 +579,43 @@ def generate_plan(
             if cid not in config_cache:
                 config_cache[cid] = db.get(PrintConfig, cid)
 
-    # 4. 创建排班表
+    # 4. 构建 ConfigInfo 映射（plain-data，供 core 使用）
+    config_info: dict[int, ConfigInfo] = {}
+    for cid, cfg in config_cache.items():
+        if cfg is None:
+            continue
+        config_info[cid] = ConfigInfo(
+            id=cfg.id,
+            component_id=cfg.component_id,
+            component_name=cfg.component.name,
+            quantity=cfg.quantity,
+            duration_minutes=cfg.duration_minutes,
+        )
+
+    # 5. 委托给核心贪心主循环
+    scheduled = _schedule_greedy_core(
+        demand_tasks=list(task_items),
+        surplus_tasks=list(surplus_tasks) if surplus_enabled else [],
+        configs=config_info,
+        num_printers=len(printers),
+        windows=windows,
+        custom_start=custom_start,
+        deadline=deadline,
+        changeover=changeover,
+        sync_strength=sync_strength,
+        use_product_first=use_product_first,
+        sim_supply=sim_supply,
+        product_units=product_units,
+        bom_cache=bom_cache,
+        assembled=assembled,
+    )
+
+    # 6. 创建排班表并持久化
     plan = PrintPlan(date=target_date, start_time=start_time, duration_hours=duration_hours, status="draft")
     db.add(plan)
     db.flush()
 
-    # 5. 分批调度
-    batch_order = 0
-    printer_available = {p.id: custom_start for p in printers}
-    remaining_tasks: list = list(task_items)
-    remaining_surplus: list = list(surplus_tasks) if surplus_enabled else []
-
-    def _next_task(start: int, batch_anchor: int | None = None) -> tuple[int, str, bool] | None:
-        """优先从需求任务中取，取完后从富余池中取。返回 (config_id, color, is_surplus)"""
-        if remaining_tasks:
-            if use_product_first:
-                result = _pick_task(
-                    remaining_tasks, config_cache, start, changeover, windows, deadline,
-                    sim_supply, product_units, bom_cache, assembled,
-                    anchor_duration=batch_anchor, sync_strength=sync_strength,
-                )
-            else:
-                result = _pick_task(
-                    remaining_tasks, config_cache, start, changeover, windows, deadline,
-                    anchor_duration=batch_anchor, sync_strength=sync_strength,
-                )
-            if result:
-                return (result[0], result[1], False)
-            # 需求池里都放不下了（全部超出 deadline），清空以避免死循环
-            if not any(start + config_cache[t[0]].duration_minutes <= deadline for t in remaining_tasks):
-                remaining_tasks.clear()
-        if remaining_surplus:
-            if use_product_first:
-                result = _pick_task(
-                    remaining_surplus, config_cache, start, changeover, windows, deadline,
-                    sim_supply, product_units, bom_cache, assembled,
-                    anchor_duration=batch_anchor, sync_strength=sync_strength,
-                )
-            else:
-                result = _pick_task(
-                    remaining_surplus, config_cache, start, changeover, windows, deadline,
-                    anchor_duration=batch_anchor, sync_strength=sync_strength,
-                )
-            if result:
-                return (result[0], result[1], True)
-            if not any(start + config_cache[t[0]].duration_minutes <= deadline for t in remaining_surplus):
-                remaining_surplus.clear()
-        return None
-
-    while True:
-        if not remaining_tasks and not remaining_surplus:
-            break
-
-        earliest = min(printer_available.values())
-
-        if batch_order == 0:
-            start = custom_start
-        else:
-            start = _find_next_start(earliest, windows)
-            if start is None:
-                break
-
-        if start >= deadline:
-            break
-
-        available_printers = [p for p in printers if printer_available[p.id] <= start]
-        if not available_printers:
-            # 安全兜底：防止死循环
-            next_start = _find_next_start(earliest + 1, windows)
-            if next_start is None or next_start >= deadline:
-                break
-            for pid in printer_available:
-                if printer_available[pid] <= earliest:
-                    printer_available[pid] = next_start
-                    break
-            continue
-
-        batch = PrintBatch(plan_id=plan.id, start_time=f"{start // 60:02d}:{start % 60:02d}", batch_order=batch_order)
-        db.add(batch)
-        db.flush()
-
-        batch_tasks_added = 0
-        batch_anchor: int | None = None  # 锚定时长
-        for printer in available_printers:
-            item = _next_task(start, batch_anchor)
-            if item is None:
-                break
-            config_id, color, is_surplus = item
-            cfg = config_cache[config_id]
-            end_min = start + cfg.duration_minutes
-            if batch_anchor is None:
-                batch_anchor = cfg.duration_minutes  # 第一台设锚
-
-            # product_first 策略：更新模拟库存，检查是否有产品可组装
-            if use_product_first:
-                comp_key = (cfg.component_id, color)
-                sim_supply[comp_key] = sim_supply.get(comp_key, 0) + cfg.quantity
-                _try_assemble(sim_supply, product_units, bom_cache, assembled)
-
-            task = PrintTask(
-                batch_id=batch.id,
-                printer_id=printer.id,
-                print_config_id=config_id,
-                color=color,
-                is_surplus=is_surplus,
-                start_time=f"{start // 60:02d}:{start % 60:02d}",
-                end_time=f"{end_min // 60:02d}:{end_min % 60:02d}",
-            )
-            db.add(task)
-            printer_available[printer.id] = end_min + changeover
-            batch_tasks_added += 1
-
-        if batch_tasks_added == 0:
-            db.delete(batch)
-            break
-
-        batch_order += 1
+    _persist_scheduled(db, plan, scheduled, printers)
 
     db.commit()
     db.refresh(plan)

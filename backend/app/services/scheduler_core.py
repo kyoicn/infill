@@ -20,6 +20,9 @@ DemandKey = tuple[int, str]
 # 富余生产：目标额外完整产品数量上限
 SURPLUS_TARGET_PRODUCTS = 20
 
+# 同步惩罚相对换料时间的放大倍数
+SYNC_PENALTY_CHANGEOVER_MULT = 4
+
 
 # ---------------------------------------------------------------------------
 # 数据结构
@@ -133,6 +136,23 @@ def try_assemble(
 
 
 # ---------------------------------------------------------------------------
+# 同步惩罚（纯函数）
+# ---------------------------------------------------------------------------
+
+def _sync_penalty(duration: int, anchor_duration: int | None,
+                  sync_strength: int, changeover: int) -> float:
+    """同步惩罚 → 等效空闲分钟（加法，二次方缩放）。
+
+    anchor_duration 为 None/<=0 或 sync_strength<=0 时返回 0.0。
+    公式：|dur-anchor|/anchor × (sync/100)² × changeover × SYNC_PENALTY_CHANGEOVER_MULT
+    """
+    if not anchor_duration or anchor_duration <= 0 or sync_strength <= 0:
+        return 0.0
+    strength_factor = (sync_strength / 100) ** 2
+    return abs(duration - anchor_duration) / anchor_duration * strength_factor * changeover * SYNC_PENALTY_CHANGEOVER_MULT
+
+
+# ---------------------------------------------------------------------------
 # 任务选择（纯函数，带同步强度）
 # ---------------------------------------------------------------------------
 
@@ -188,12 +208,7 @@ def pick_task(
             prod_score = (float(pri), 0.0, 0.0)
 
         # 同步惩罚：转换为等效空闲分钟（additive，不阻止批次填满）
-        # 使用二次方缩放：低强度几乎无惩罚，高强度强惩罚
-        if anchor_duration is not None and anchor_duration > 0 and sync_strength > 0:
-            strength_factor = (sync_strength / 100) ** 2
-            sync_penalty = abs(dur - anchor_duration) / anchor_duration * strength_factor * changeover * 4
-        else:
-            sync_penalty = 0.0
+        sync_penalty = _sync_penalty(dur, anchor_duration, sync_strength, changeover)
 
         score = (prod_score, idle + sync_penalty, dur)
 
@@ -376,13 +391,7 @@ def schedule_tasks(
             if start + dur > deadline:
                 continue
             idle = idle_after(start, dur, changeover, windows)
-            if anchor_dur is not None and anchor_dur > 0 and sync_strength > 0:
-                # 同步惩罚：时长偏差转换为"等效空闲分钟"
-                # 使用二次方缩放：低强度（<30）几乎无惩罚，高强度（>70）强惩罚
-                strength_factor = (sync_strength / 100) ** 2
-                sp = abs(dur - anchor_dur) / anchor_dur * strength_factor * changeover * 4
-            else:
-                sp = 0.0
+            sp = _sync_penalty(dur, anchor_dur, sync_strength, changeover)
             score = idle + sp
             if best_idx == -1 or score < best_score:
                 best_idx = i
@@ -438,6 +447,142 @@ def schedule_tasks(
             end_min = start + cfg.duration_minutes
             if batch_anchor is None:
                 batch_anchor = cfg.duration_minutes
+
+            result.append(ScheduledTask(
+                printer_index=printer,
+                config_id=config_id,
+                color=color,
+                is_surplus=is_surplus,
+                start_min=start,
+                end_min=end_min,
+                batch_index=batch_order,
+            ))
+            printer_available[printer] = end_min + changeover
+            batch_tasks_added += 1
+
+        if batch_tasks_added == 0:
+            break
+
+        batch_order += 1
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 贪心主循环（纯函数）— product_first / utilization 共用
+# ---------------------------------------------------------------------------
+
+def schedule_greedy(
+    *,
+    demand_tasks: list[tuple[int, str, int]],   # (config_id, color, order_priority)
+    surplus_tasks: list[tuple[int, str]],        # 无富余传 []
+    configs: dict[int, ConfigInfo],
+    num_printers: int,
+    windows: list[tuple[int, int]],
+    custom_start: int,
+    deadline: int,
+    changeover: int,
+    sync_strength: int,
+    use_product_first: bool,
+    sim_supply: dict[DemandKey, int] | None = None,
+    product_units: list[tuple[int, int]] | None = None,
+    bom_cache: dict[int, dict[DemandKey, int]] | None = None,
+    assembled: set[int] | None = None,
+) -> list[ScheduledTask]:
+    """贪心分批调度：先排需求任务，再排富余任务。
+
+    use_product_first=True 时用模拟库存的产品凑齐评分；否则按订单 FIFO 优先级。
+    批次启动沿用现状：首批从 custom_start；后续批从 find_next_start(min(printer_available))。
+    返回排程后的 ScheduledTask 列表（不触碰数据库）。
+    """
+    printer_available = {i: custom_start for i in range(num_printers)}
+    remaining_tasks: list = list(demand_tasks)
+    remaining_surplus: list = list(surplus_tasks)
+    result: list[ScheduledTask] = []
+    batch_order = 0
+
+    def _next_task(start: int, batch_anchor: int | None = None) -> tuple[int, str, bool] | None:
+        """优先从需求任务中取，取完后从富余池中取。返回 (config_id, color, is_surplus)"""
+        if remaining_tasks:
+            if use_product_first:
+                picked = pick_task(
+                    remaining_tasks, configs, start, changeover, windows, deadline,
+                    sim_supply, product_units, bom_cache, assembled,
+                    anchor_duration=batch_anchor, sync_strength=sync_strength,
+                )
+            else:
+                picked = pick_task(
+                    remaining_tasks, configs, start, changeover, windows, deadline,
+                    anchor_duration=batch_anchor, sync_strength=sync_strength,
+                )
+            if picked:
+                return (picked[0], picked[1], False)
+            # 需求池里都放不下了（全部超出 deadline），清空以避免死循环
+            if not any(start + configs[t[0]].duration_minutes <= deadline for t in remaining_tasks):
+                remaining_tasks.clear()
+        if remaining_surplus:
+            if use_product_first:
+                picked = pick_task(
+                    remaining_surplus, configs, start, changeover, windows, deadline,
+                    sim_supply, product_units, bom_cache, assembled,
+                    anchor_duration=batch_anchor, sync_strength=sync_strength,
+                )
+            else:
+                picked = pick_task(
+                    remaining_surplus, configs, start, changeover, windows, deadline,
+                    anchor_duration=batch_anchor, sync_strength=sync_strength,
+                )
+            if picked:
+                return (picked[0], picked[1], True)
+            if not any(start + configs[t[0]].duration_minutes <= deadline for t in remaining_surplus):
+                remaining_surplus.clear()
+        return None
+
+    while True:
+        if not remaining_tasks and not remaining_surplus:
+            break
+
+        earliest = min(printer_available.values())
+
+        if batch_order == 0:
+            start = custom_start
+        else:
+            start = find_next_start(earliest, windows)
+            if start is None:
+                break
+
+        if start >= deadline:
+            break
+
+        available_printers = [p for p in range(num_printers) if printer_available[p] <= start]
+        if not available_printers:
+            # 安全兜底：防止死循环
+            next_start = find_next_start(earliest + 1, windows)
+            if next_start is None or next_start >= deadline:
+                break
+            for pid in printer_available:
+                if printer_available[pid] <= earliest:
+                    printer_available[pid] = next_start
+                    break
+            continue
+
+        batch_tasks_added = 0
+        batch_anchor: int | None = None  # 锚定时长
+        for printer in available_printers:
+            item = _next_task(start, batch_anchor)
+            if item is None:
+                break
+            config_id, color, is_surplus = item
+            cfg = configs[config_id]
+            end_min = start + cfg.duration_minutes
+            if batch_anchor is None:
+                batch_anchor = cfg.duration_minutes  # 第一台设锚
+
+            # product_first 策略：更新模拟库存，检查是否有产品可组装
+            if use_product_first:
+                comp_key = (cfg.component_id, color)
+                sim_supply[comp_key] = sim_supply.get(comp_key, 0) + cfg.quantity
+                try_assemble(sim_supply, product_units, bom_cache, assembled)
 
             result.append(ScheduledTask(
                 printer_index=printer,

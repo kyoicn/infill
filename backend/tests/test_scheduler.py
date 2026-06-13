@@ -13,6 +13,7 @@ from app.services.scheduler_core import (
     product_completion_score, try_assemble,
     pick_task, compute_effective_capacity,
     plan_two_phase, schedule_tasks, count_complete_products,
+    schedule_greedy, _sync_penalty, SYNC_PENALTY_CHANGEOVER_MULT,
 )
 
 # ---------------------------------------------------------------------------
@@ -1009,3 +1010,225 @@ class TestCountCompleteProducts:
         result = count_complete_products(tasks, DESK_CONFIG_BY_ID, {10: DESK_BOM}, supply)
         # 桌板 1, 桌腿 4/2=2, 抽屉 1, 螺丝 4/4=1 → min=1
         assert result[10] == 1
+
+
+# =====================================================================
+# 8. 同步惩罚纯函数测试
+# =====================================================================
+
+class TestSyncPenalty:
+    def test_anchor_none(self):
+        """8.1 anchor=None → 0.0"""
+        assert _sync_penalty(60, None, 100, CHANGEOVER) == 0.0
+
+    def test_anchor_nonpositive(self):
+        """8.2 anchor<=0 → 0.0"""
+        assert _sync_penalty(60, 0, 100, CHANGEOVER) == 0.0
+        assert _sync_penalty(60, -10, 100, CHANGEOVER) == 0.0
+
+    def test_sync_zero(self):
+        """8.3 sync_strength=0 → 0.0"""
+        assert _sync_penalty(60, 120, 0, CHANGEOVER) == 0.0
+
+    def test_known_value(self):
+        """8.4 已知值手算比对：|60-120|/120 × 1² × 15 × 4 = 30.0"""
+        # strength_factor = (100/100)^2 = 1
+        # 0.5 × 1 × 15 × 4 = 30.0
+        assert _sync_penalty(60, 120, 100, CHANGEOVER) == 30.0
+
+    def test_uses_changeover_mult_constant(self):
+        """8.5 公式使用 SYNC_PENALTY_CHANGEOVER_MULT 常量"""
+        expected = abs(60 - 120) / 120 * 1.0 * CHANGEOVER * SYNC_PENALTY_CHANGEOVER_MULT
+        assert _sync_penalty(60, 120, 100, CHANGEOVER) == expected
+
+    def test_quadratic_scaling(self):
+        """8.6 二次方缩放：sync=30 的惩罚 ≪ sync=100"""
+        p30 = _sync_penalty(60, 120, 30, CHANGEOVER)
+        p100 = _sync_penalty(60, 120, 100, CHANGEOVER)
+        # (30/100)^2 = 0.09, (100/100)^2 = 1.0 → p30 = 0.09 × p100
+        assert p30 == pytest.approx(p100 * 0.09)
+        assert p30 < p100 * 0.2  # 远小于
+
+    def test_zero_deviation(self):
+        """8.7 时长与锚定相同 → 无惩罚"""
+        assert _sync_penalty(120, 120, 100, CHANGEOVER) == 0.0
+
+
+# =====================================================================
+# 9. 贪心主循环测试
+# =====================================================================
+
+class TestScheduleGreedy:
+    # 混合时长配置（用于同步/批次测试）
+    GREEDY_CONFIGS = {
+        401: make_config(401, 41, "短", qty=1, dur=60),
+        402: make_config(402, 42, "中", qty=1, dur=120),
+        403: make_config(403, 43, "长", qty=1, dur=240),
+    }
+
+    def _mixed_demand(self):
+        return (
+            [(401, "白色", 0)] * 4 +
+            [(402, "白色", 0)] * 4 +
+            [(403, "白色", 0)] * 4
+        )
+
+    def test_product_first_bottleneck_over_sync(self):
+        """9.a product_first + sync=100：仍优先选瓶颈件而非时长对齐件。
+
+        sync 只影响 idle 维度，不夺取 prod_score 主导权。
+        """
+        configs = {
+            101: make_config(101, 1, "桌板", qty=1, dur=120),  # 瓶颈（库存 0）
+            102: make_config(102, 2, "桌腿", qty=4, dur=90),   # 库存充足
+        }
+        bom = {(1, "白色"): 1, (2, "白色"): 2}
+        units = [(0, 10)]
+        bom_cache = {10: bom}
+        sim = {(1, "白色"): 0, (2, "白色"): 2}  # 桌腿已满足，桌板缺
+        demand = [(101, "白色", 0), (102, "白色", 0)]
+
+        sched = schedule_greedy(
+            demand_tasks=list(demand), surplus_tasks=[], configs=configs,
+            num_printers=2, windows=DEFAULT_WINDOWS, custom_start=480,
+            deadline=1440, changeover=CHANGEOVER, sync_strength=100,
+            use_product_first=True, sim_supply=dict(sim),
+            product_units=list(units), bom_cache=bom_cache, assembled=set(),
+        )
+        b0 = sorted([t for t in sched if t.batch_index == 0],
+                    key=lambda t: t.printer_index)
+        # 第一台（设锚）应选瓶颈桌板 101，即便 sync=100
+        assert b0[0].config_id == 101
+
+    def test_utilization_fifo_over_sync(self):
+        """9.b utilization：sync 影响 idle 维度但 FIFO order_priority 仍优先。"""
+        configs = {
+            501: make_config(501, 51, "锚", qty=1, dur=100),  # 锚定时长
+            502: make_config(502, 52, "P0", qty=1, dur=240),  # 优先级 0，偏离锚
+            503: make_config(503, 53, "P1", qty=1, dur=100),  # 优先级 1，匹配锚
+        }
+        demand = [
+            (501, "白色", 0),  # 第一台设锚 = 100
+            (502, "白色", 0),  # 优先级 0，时长 240（不匹配）
+            (503, "白色", 1),  # 优先级 1，时长 100（匹配）—— sync 会偏好它
+        ]
+        sched = schedule_greedy(
+            demand_tasks=list(demand), surplus_tasks=[], configs=configs,
+            num_printers=3, windows=DEFAULT_WINDOWS, custom_start=480,
+            deadline=1440, changeover=CHANGEOVER, sync_strength=100,
+            use_product_first=False,
+        )
+        b0 = sorted([t for t in sched if t.batch_index == 0],
+                    key=lambda t: t.printer_index)
+        # 第二台应选优先级 0 的 502（FIFO 主导），而非时长对齐的 503
+        assert b0[1].config_id == 502
+
+    def test_demand_before_surplus(self):
+        """9.c demand 取完才取 surplus。"""
+        configs = {104: make_config(104, 4, "螺丝", qty=20, dur=60)}
+        demand = [(104, "白色", 0)] * 2
+        surplus = [(104, "白色")] * 2
+        sched = schedule_greedy(
+            demand_tasks=list(demand), surplus_tasks=list(surplus), configs=configs,
+            num_printers=4, windows=DEFAULT_WINDOWS, custom_start=480,
+            deadline=1380, changeover=CHANGEOVER, sync_strength=0,
+            use_product_first=False,
+        )
+        b0 = sorted([t for t in sched if t.batch_index == 0],
+                    key=lambda t: t.printer_index)
+        # 前两台是需求（is_surplus=False），后两台是富余（True）
+        assert [t.is_surplus for t in b0] == [False, False, True, True]
+
+    def test_demand_all_over_deadline_no_deadlock(self):
+        """9.c demand 全超 deadline 不死循环，且富余仍能排入。"""
+        configs = {
+            201: make_config(201, 21, "超长", qty=1, dur=300),  # 放不进 240min 窗口
+            104: make_config(104, 4, "螺丝", qty=20, dur=60),
+        }
+        demand = [(201, "白色", 0)] * 3   # 全部超 deadline
+        surplus = [(104, "白色")] * 2
+        sched = schedule_greedy(
+            demand_tasks=list(demand), surplus_tasks=list(surplus), configs=configs,
+            num_printers=2, windows=[(480, 720)], custom_start=480,
+            deadline=720, changeover=CHANGEOVER, sync_strength=0,
+            use_product_first=False,
+        )
+        # 没有死循环；超长需求被丢弃，富余螺丝排入
+        assert len(sched) == 2
+        assert all(t.config_id == 104 for t in sched)
+
+    def test_batch_start_timing(self):
+        """9.d 批次启动断言：首批==custom_start，后续批==find_next_start(min available)。"""
+        configs = {104: make_config(104, 4, "螺丝", qty=20, dur=60)}
+        demand = [(104, "白色", 0)] * 12
+        sched = schedule_greedy(
+            demand_tasks=list(demand), surplus_tasks=[], configs=configs,
+            num_printers=4, windows=DEFAULT_WINDOWS, custom_start=480,
+            deadline=1380, changeover=CHANGEOVER, sync_strength=0,
+            use_product_first=False,
+        )
+        by_batch = {}
+        for t in sched:
+            by_batch.setdefault(t.batch_index, []).append(t)
+
+        # 首批从 custom_start 启动
+        assert all(t.start_min == 480 for t in by_batch[0])
+        # batch0 后最早可用打印机 = 480 + 60 + 15 = 555
+        assert 1 in by_batch
+        expected_b1 = find_next_start(555, DEFAULT_WINDOWS)
+        assert all(t.start_min == expected_b1 for t in by_batch[1])
+
+    def test_golden_additive_penalty_selection(self):
+        """9.e 黄金值锁定：固定输入下加法惩罚使 sync=100 完美对齐同时长批次。
+
+        防回退到旧乘法版本（旧版评分前缀为乘法 sync_penalty，会改变选择结果）。
+        """
+        demand = self._mixed_demand()
+        sched = schedule_greedy(
+            demand_tasks=list(demand), surplus_tasks=[], configs=self.GREEDY_CONFIGS,
+            num_printers=4, windows=DEFAULT_WINDOWS, custom_start=480,
+            deadline=1440, changeover=CHANGEOVER, sync_strength=100,
+            use_product_first=False,
+        )
+        b0 = [t for t in sched if t.batch_index == 0]
+        durations = sorted(t.end_min - t.start_min for t in b0)
+        # 加法惩罚 + sync=100：首批锚定 60min 短任务后，其余三台都选 60min
+        assert durations == [60, 60, 60, 60]
+
+    def test_sync_gradient_monotonic(self):
+        """9 同步梯度单调性扩展到贪心路径（参照 schedule_tasks 的梯度测试）。"""
+        demand = self._mixed_demand()
+        batch_counts = {}
+        for s in [0, 25, 50, 75, 100]:
+            sched = schedule_greedy(
+                demand_tasks=list(demand), surplus_tasks=[], configs=self.GREEDY_CONFIGS,
+                num_printers=4, windows=DEFAULT_WINDOWS, custom_start=480,
+                deadline=1440, changeover=CHANGEOVER, sync_strength=s,
+                use_product_first=False,
+            )
+            batch_counts[s] = max((t.batch_index for t in sched), default=-1) + 1
+
+        values = [batch_counts[s] for s in [0, 25, 50, 75, 100]]
+        # 单调不增
+        for i in range(len(values) - 1):
+            assert values[i] >= values[i + 1], \
+                f"batch counts not monotonic: {dict(zip([0,25,50,75,100], values))}"
+        # 有梯度，或批次数已经很少
+        assert batch_counts[0] > batch_counts[100] or batch_counts[0] <= 3, \
+            f"no gradient: all values = {values}"
+
+    def test_product_first_self_reinforcing_sync(self):
+        """9 product_first 下相同时长任务在 sync=100 完美对齐。"""
+        configs = {601: make_config(601, 61, "X", qty=1, dur=120)}
+        bom = {(61, "白色"): 1}
+        demand = [(601, "白色", 0)] * 8
+        sched = schedule_greedy(
+            demand_tasks=list(demand), surplus_tasks=[], configs=configs,
+            num_printers=4, windows=DEFAULT_WINDOWS, custom_start=480,
+            deadline=1440, changeover=CHANGEOVER, sync_strength=100,
+            use_product_first=True, sim_supply={}, product_units=[(0, 99)],
+            bom_cache={99: bom}, assembled=set(),
+        )
+        b0 = [t for t in sched if t.batch_index == 0]
+        # 同批次所有任务结束时间相同
+        assert len({t.end_min for t in b0}) == 1
