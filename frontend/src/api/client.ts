@@ -57,4 +57,26 @@ export const api = {
   completeTask: (id: number) => request<any>(`/schedule/tasks/${id}/complete`, { method: 'POST' }),
   cancelTask: (id: number) => request<any>(`/schedule/tasks/${id}/cancel`, { method: 'POST' }),
   failTask: (id: number) => request<any>(`/schedule/tasks/${id}/fail`, { method: 'POST' }),
+
+  // 产品录入
+  intake: {
+    providerStatus: () => request<any>('/intake/provider-status'),
+    upload: async (files: File[], sessionId?: string | null) => {
+      const fd = new FormData();
+      for (const f of files) fd.append('files', f);
+      if (sessionId) fd.append('session_id', sessionId);
+      const res = await fetch('/api/intake/upload', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+    recognize: (body: any, signal?: AbortSignal) =>
+      request<any>('/intake/recognize', { method: 'POST', body: JSON.stringify(body), signal }),
+    merge: (body: any) =>
+      request<any>('/intake/merge', { method: 'POST', body: JSON.stringify(body) }),
+    recentLogs: (lines = 100) =>
+      request<any>(`/intake/recent-logs?lines=${lines}`),
+  },
 };
