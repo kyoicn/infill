@@ -1,0 +1,70 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push (linux/arm64 for Apple Silicon mini)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: [self-hosted, macOS, deploy]
+    timeout-minutes: 5
+    steps:
+      - name: Pull & restart
+        run: |
+          set -euo pipefail
+          cd ~/workspace/infill-deploy
+          docker compose pull
+          docker compose up -d
+
+      - name: Healthcheck
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/api/products >/dev/null; then
+              echo "ready after ${i} attempts"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "healthcheck timed out (60s); last 50 log lines:"
+          cd ~/workspace/infill-deploy && docker compose logs --tail=50
+          exit 1
