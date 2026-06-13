@@ -46,7 +46,7 @@ jobs:
   deploy:
     needs: build
     runs-on: [self-hosted, macOS, deploy]
-    timeout-minutes: 5
+    timeout-minutes: 15   # first pull ~300MB; subsequent only fetches new layers
     steps:
       - name: Pull & restart
         run: |
