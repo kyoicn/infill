@@ -2540,14 +2540,19 @@ class TestStrategyOrdering:
             assert total_dur <= capacity_bound, \
                 f"strategy={strat} total_dur={total_dur} > capacity_bound={capacity_bound}"
 
-    def test_product_first_no_worse_at_sync_zero(self):
-        """sync=0 时（同步惩罚=0）product_first 在完整产品维度不劣于 utilization。
+    def test_product_first_strictly_better_at_tight_deadline(self):
+        """另一 deadline 点（800min）下 product_first **严格** > utilization：pf=5 vs ut=2。
 
-        sync=0 排除掉同步策略对 pick_task 的影响，纯测产品凑齐评分的价值。
+        与 test_product_first_geq_utilization_complete_products (deadline=600，pf=1 ut=0)
+        互补：本测试用 deadline=800，差距更大（3 个完整产品），强证明
+        product_first 的凑齐评分相对 FIFO 在共享瓶颈场景下不是巧合优势。
+
+        注：_simulate_strategy 调用 pick_task 时不传 sync_strength（默认 0），
+        因此本测试纯测 product_completion_score 的价值，无同步策略干扰。
         """
         configs, bom_map, queue, task_pool = self._build_shared_bottleneck_scenario()
         configs_by_id = {c.id: c for c in configs.values()}
-        deadline = 600
+        deadline = 800
         pf = self._simulate_strategy(
             "product_first", configs=configs, bom_map=bom_map,
             product_queue=list(queue), task_pool=list(task_pool),
@@ -2562,5 +2567,12 @@ class TestStrategyOrdering:
         )
         pf_complete = count_complete_products(pf, configs_by_id, bom_map)
         ut_complete = count_complete_products(ut, configs_by_id, bom_map)
-        assert sum(pf_complete.values()) >= sum(ut_complete.values()), \
-            f"product_first complete={pf_complete} < utilization complete={ut_complete}"
+        pf_total = sum(pf_complete.values())
+        ut_total = sum(ut_complete.values())
+        # 严格 > 而非 ≥：本场景下 product_first 必须明显优于 FIFO
+        assert pf_total > ut_total, \
+            f"product_first total={pf_total} should be strictly > utilization total={ut_total}; " \
+            f"pf={pf_complete} ut={ut_complete}"
+        # 至少差 2 个完整产品（实测 5 vs 2，差 3；留 1 个余量）
+        assert pf_total - ut_total >= 2, \
+            f"gap={pf_total - ut_total} too small to be a meaningful discriminator"
