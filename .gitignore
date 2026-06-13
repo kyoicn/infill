@@ -2,6 +2,10 @@
 /data/*
 !/data/catalog.yaml.example
 
+# intake 临时文件与目录备份（产品录入功能产生）
+data/intake_tmp/
+data/catalog.yaml.bak.*
+
 # 后端
 backend/__pycache__/
 backend/app/__pycache__/
