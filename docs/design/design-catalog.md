@@ -1,13 +1,15 @@
 # 产品目录加载（Catalog）
 
-> Last updated: 2026-06-13 02:11:44 (UTC+8)
+> Last updated: 2026-06-14 01:38:46 (UTC+8)
 > Serves: 产品目录管理（specs.md 第 1、3 节）、目录只读展示与重新加载
 >
 > 业务规格见 [docs/specs.md](../specs.md) §3（数据模型）、§8.2（目录页）。
+>
+> **写源 vs 读源**：本文档描述的 `load_catalog(db)` 是**读源**（YAML → DB 镜像）。`data/catalog.yaml` 的**写源**有两个：① 用户手工编辑（原始路径，prd-000）；② **prd-005 产品录入工具**通过 `POST /api/intake/merge` 自动追加（备份 + append + 回滚 + 立即调用 `load_catalog`），详见 [design-intake.md](design-intake.md)。两个写源都通过同一个 `load_catalog` 入 DB，保证语义一致。
 
 ## Overview
 
-`data/catalog.yaml` 是产品目录（组件、打印盘配置、产品 BOM）的**唯一数据源**。数据库中的 `Component`/`PrintConfig`/`Product`/`ProductComponent` 表只是 YAML 的运行时镜像。本组件负责把 YAML 解析并**差量同步**到 DB，并联动维护库存记录。网页对目录只读，用户通过编辑 YAML + 点「重新加载目录」维护。
+`data/catalog.yaml` 是产品目录（组件、打印盘配置、产品 BOM）的**唯一数据源**。数据库中的 `Component`/`PrintConfig`/`Product`/`ProductComponent` 表只是 YAML 的运行时镜像。本组件负责把 YAML 解析并**差量同步**到 DB，并联动维护库存记录。网页对目录只读，用户通过编辑 YAML + 点「重新加载目录」维护（**或**通过 prd-005 「产品录入」页自动 append + reload，详见 design-intake.md）。
 
 实现文件：
 - `backend/app/services/catalog.py` — `load_catalog(db)`，加载与同步逻辑。
@@ -174,6 +176,7 @@ sequenceDiagram
 - **被依赖**：排班（`design-scheduler.md`）、订单/库存（`design-orders-inventory.md`）全部依赖目录表。
 - **与库存耦合**：组件颜色集合驱动 `Inventory` 行的存在性（见同步规则）。
 - **路径**：`CATALOG_PATH` 环境变量覆盖默认 `<repo>/data/catalog.yaml`（Docker 指向 `/app/data/catalog.yaml`）。
+- **写源（产品录入）**：[design-intake.md](design-intake.md) 的 `POST /api/intake/merge` 是除「用户手工编辑」之外的唯一 `catalog.yaml` 写入路径。该路径在文件级别保证原子性（备份 + 失败回滚到 `catalog.yaml.bak.<timestamp>`），并在写入成功后**同进程**直接调用 `load_catalog(db)`（不绕 HTTP），让 prd-000 CUJ-1 `/products` 页面立刻可见新条目。失败回滚后 catalog.yaml 文件状态与合并前完全一致，DB 内部分一致性由 `load_catalog` 现有实现决定（见 Open Questions §2）。
 
 ## Open Questions & Risks
 

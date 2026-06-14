@@ -1,37 +1,46 @@
 # Dev Loop State
 
-Last updated: 2026-06-13 16:11:29 (UTC+8)
-Iteration: 2
+Last updated: 2026-06-14 22:01:51 (UTC+8)
+Iteration: 3
 Status: done
 
 ## Last Cycle Summary
-- Scope: 纯测试加固，0 行生产代码改动
-- Tasks executed: 3 parallel (T1 invariants / T2 pure-function units / T3 behavior breadth + ordering)
-- Tasks passed: 3 (+1 post-merge fix by orchestrator + 1 quality fix by TL review)
-- Tests passing: 131 (iter1 基线 74 → iter2 收尾 131；新增 57，其中 worktree 提交 55 + 主线补 2）
+- Scope: 交付 prd-005「产品录入」端到端（5 CUJ：上传分类 / LLM 识别 / 草稿校对 / 颜色矩阵 / 合并 catalog）
+- Tasks executed: 13（4 组 G1=2 / G2=4 / G3=4 / G4=3）
+- Tasks passed QA: 13 — 全部通过（含 2 轮 QA retry 修 3 个 MEDIUM+ bug 后）
+- Tasks rolled back by QA: 0（在 QA gate 通过前 inline 修复，未回滚到 in-progress）
+- Tests passing: 202（baseline 131 → +71 新加 intake 测试，含 1 个 E2E）
 - Tests failing: 0
-- QA inner loops used: 0（无功能变化，pytest 即为 QA）
-- CUJ behavior changes: 无
-- PM review skipped: 无 CUJ 旅程改动
+- QA inner loops used: 2 of 2
+- CUJs completed this cycle: prd-005 CUJ-1 上传截图 + 自动分类 / CUJ-2 触发 LLM 识别 / CUJ-3 草稿校对 / CUJ-4 颜色矩阵 / CUJ-5 合并到 catalog.yaml
+- CUJs remaining: 0（prd-005 frontmatter status 已 `active → completed`）
 
-## Coverage Closed (against iter1's audit gaps)
+## QA Gate
+- Verdict: PASS
+- Fabrications found: 0
+- HIGH bugs found: 1（state-loss-on-back，retry 1 修复后关闭）
+- MEDIUM bugs found: 2（stepIndex-error-case retry 1 修；cancel-button-fake-error retry 2 修）
+- LOW bugs forwarded: 3 类（AntD deprecation console warnings × 4 处、MergeStats schema 中英文 key drift、9 个 manual NOT_RUN 覆盖空白）
+- Tasks rolled back: 0
 
-| 原 P0 缺口 | 状态 | 测试类 |
-|---|---|---|
-| `product_completion_score` 零直接单测 | ✅ Closed | `TestProductCompletionScore` (9) — 覆盖所有分支与三级 tie-break |
-| `compute_effective_capacity` 零直接单测 | ✅ Closed | `TestComputeEffectiveCapacity` (7) — 含跨天、gap_loss、安全系数 |
-| `pick_task` 仅 2 处间接 | ✅ Closed | `TestPickTaskDirect` (6) — 含 `remaining` 不被修改的强断言 |
-| 不变量 (property) 断言 0 覆盖 | ✅ 3/5 Closed，2/5 弱 | 5 helper + 8 cross-scenario，但 `_assert_no_negative_supply` 与 `_assert_batch_quantity_conservation` 在 try_assemble 路径下结构性不可能触发（TL 评审揭示） |
-| schedule_greedy 跨天 / 富余池清空 / sync 边界 / 策略偏序 0 覆盖 | ✅ Closed | `TestScheduleGreedyCrossDay` (3) / `TestSurplusPoolClearance` (5，含 2 个直击 scheduler_core.py:547) / `TestBoundarySync` (4，已改为调真函数 `_sync_penalty`) / `TestStrategyOrdering` (4，强化 deadline=800 让 pf=5 vs ut=2) |
+## PM Gate
+- Verdict: 5/5 Satisfied / 0 Caveats / 0 Not done
+- prd-005 frontmatter 已翻 `active → completed`
+- 设计阶段所有关键判断都已落地且与 mock 视觉一致
 
-## Implementation Commits
-`59bb9e6` (baseline) → `4f39ca6` T2 → `5dab483` T1 → `3325c82` T3 → `78797de`/`c33fbf1`/`3a90735` 顺序合并（含 orchestrator 修：去 T3 公式克隆改调真函数 `_sync_penalty`、补 2 个 schedule_greedy 富余池兜底测试；TL review 修：强化 1 个冗余偏序测试）
+## Iter3 Implementation Commits（acf4e43 之后 17 个）
+`0dd921e` design docs + 17 mocks → `0dd13d7` / `79265a6` G1 infra → `b2d79d2` / `1f253d3` / `b27e7c9` / `0f578d2` G2 CUJ-1/2 → `f185117` calibration fix → `41be754` / `9df2280` / `1c5cb68` / `062ebb3` G3 CUJ-3/4/5 → `a7cf11f` color schema 类型集成 fix → `1cb61fc` G4 E2E smoke → `fdc1e19` TL review（HIGH 路径遍历 + recent-logs 契约）→ `1eee605` QA retry 1（state lift + stepIndex 修）→ `558849d` QA retry 2（cancel 按钮 sentinel）
 
-## Next Focus (TL 评审产出的 P1 真实空白)
+## Next Focus（PM 建议优先级）
+1. 补 12 个 Playwright E2E 覆盖 9 个 manual NOT_RUN 场景（高价值 / 1 开发日）
+2. 修 4 处 AntD deprecation prop 改名（30 分钟）
+3. 统一 MergeStats schema 中英文键 + 显式设 `response_model`（1 小时）
+4. 用户决定：识别历史 / 草稿持久化（如实际使用反馈高频丢失草稿，立 prd-006）
+5. 用户决定：成组改色快捷操作（如变体数 ≥ 5 高频，立 prd-006）
+6. 跨 PRD 回归：用新加的「床头柜 - 配色 N」走一遍排班生成确认无副作用（极低成本）
 
-1. **替换 `_assert_no_negative_supply` 为真实的产销守恒断言**：`Σ produced − Σ assembled_BOM_consumed == final_supply`，能抓到 quantity lookup 错、双重计数等真 bug
-2. **`try_assemble` 同优先级竞争测试**：两个 `(0, pid)` 单元都能从供给凑齐，断言谁赢 + 供给被正确扣除（当前 `break` 后从 index 0 重启的微妙顺序未锁）
-3. **`count_complete_products` 补 4 个分支**：多产品 bom_map / BOM 含 qty=0 / 空 BOM / 孤儿供给
-4. **`schedule_greedy` 也跑一遍不变量 sweep**：目前 `TestInvariantsAcrossScenarios` 只过 schedule_tasks 路径，生产代码 product_first/utilization 走的是 schedule_greedy
-5. **`compute_effective_capacity` 补边界**：custom_start > deadline、safety_margin > 1.0
-6. iter1 遗留：prd-003 CUJ-3 task pending UI 文案歧义、无库存行时 `+N` toast 谎报
+---
+
+## 历史 retry 详记（参考）
+
+详见 `docs/qa-report.md` 「Iter3 Retry 1 / Retry 2」两节 — 含 16 张视觉证据 + DOM 程序化扫描结论。

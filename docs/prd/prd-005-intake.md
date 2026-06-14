@@ -1,7 +1,7 @@
 ---
 id: prd-005
 title: 产品录入
-status: active
+status: completed
 created: 2026-06-14
 deprecation_reason:
 ---
