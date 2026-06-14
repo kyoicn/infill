@@ -34,6 +34,8 @@ export default function RecognizingMode(props: RecognizingModeProps) {
   // 进度条从 30% 渐进到 95%（不回退、不到 100% — 完成时直接跳转）。
   const [percent, setPercent] = useState(30);
   const controllerRef = useRef<AbortController | null>(null);
+  // QA 修复：用户主动取消时，abort 会触发 fetch .catch，需要标记跳过 onError 误触错误页
+  const cancelledByUserRef = useRef(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -69,6 +71,10 @@ export default function RecognizingMode(props: RecognizingModeProps) {
         }
       })
       .catch((err: any) => {
+        if (cancelledByUserRef.current) {
+          // 用户点了「取消」— onCancel 已被调用 setMode 回 upload，这里不要把 abort 误报为错误页
+          return;
+        }
         if (controller.signal.aborted) {
           // 超时分支
           onError('timeout', '连接超时 — 90 秒未收到响应');
@@ -88,6 +94,7 @@ export default function RecognizingMode(props: RecognizingModeProps) {
   }, []);
 
   const handleCancel = () => {
+    cancelledByUserRef.current = true;
     controllerRef.current?.abort();
     onCancel();
   };
