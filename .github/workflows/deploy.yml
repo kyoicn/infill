@@ -1,9 +1,9 @@
 name: Build & Deploy
 
 on:
-  push:
-    branches: [main]
-  workflow_dispatch:
+  release:
+    types: [published]    # 仅在你 gh release create 时触发
+  workflow_dispatch:       # 保留手动触发以便测试 / 紧急部署
 
 concurrency:
   group: deploy
@@ -39,7 +39,7 @@ jobs:
           push: true
           tags: |
             ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:${{ github.event.release.tag_name || github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
