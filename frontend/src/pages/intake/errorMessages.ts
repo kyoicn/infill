@@ -12,11 +12,20 @@ export const RECOGNIZE_ERROR_LABELS: Record<string, string> = {
   network: '网络错误 — 请检查网络连接',
 };
 
-// CUJ-5 merge 的 errorKind 映射 — T10 会扩展进一步细化，这里先放占位。
+// CUJ-5 merge 的 errorKind 映射 — 见 prd-005 §CUJ-5 与 schemas_intake.MergeResponse.error_kind。
 export const MERGE_ERROR_LABELS: Record<string, string> = {
   conflict: '撞名冲突 — 草稿中的组件名 / 盘号与现有目录重复',
-  backup_failed: '无法创建备份文件',
-  write_failed: '写入 catalog.yaml 失败',
-  yaml_invalid: 'YAML 格式校验失败',
-  load_failed: '重新加载 catalog 失败 — 已自动回滚',
+  backup_failed: '备份失败 — 无法写入 catalog.yaml.bak.xxx 文件，请检查磁盘空间与权限',
+  write_failed: '写入失败 — append 到 catalog.yaml 时出错',
+  yaml_invalid: 'YAML 格式校验失败 — 写入后的 catalog.yaml 无法被重新解析（可能是字符编码或结构问题）',
+  load_failed: '重新加载失败 — 写入成功但 load_catalog(db) 报错，常见原因是引用了不存在的组件或字段缺失',
+};
+
+// CUJ-5 错误建议（按 errorKind 给出排查方向）。
+export const ERROR_SUGGESTIONS: Record<string, string> = {
+  conflict: '返回上一步给撞名组件 / 盘号 / 变体改名',
+  backup_failed: '检查 data/ 目录权限和磁盘空间',
+  write_failed: '检查 data/ 目录权限和磁盘空间，或查看后端日志',
+  yaml_invalid: '联系开发者 — 这通常是 bug',
+  load_failed: '返回上一步检查命名是否撞名，或在产品基名旁加版本号（如『床头柜 v2』）',
 };

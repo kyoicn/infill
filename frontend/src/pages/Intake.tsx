@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Steps, Typography } from 'antd';
+import { Spin, Steps, Typography } from 'antd';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import UploadMode from './intake/Upload';
 import RecognizingMode from './intake/Recognizing';
 import ColorMode from './intake/Color';
 import IntakeError from './intake/IntakeError';
 import DraftMode from './intake/Draft';
+import PreviewMode from './intake/Preview';
+import type { FinalDraft } from './intake/Preview';
+import SuccessMode from './intake/Success';
 
 type IntakeMode =
   | { kind: 'upload' }
@@ -25,9 +29,21 @@ type IntakeMode =
       produceImageIds: string[];
     }
   | { kind: 'color'; draft: any; variants: any[] }
-  | { kind: 'previewing'; finalDraft: any }
+  | {
+      kind: 'previewing';
+      finalDraft: FinalDraft;
+      sessionId: string;
+      // 失败回 color mode 需要 — 透传上游 draft/variants 上下文
+      colorContext?: { draft: any; variants: any[] };
+    }
   | { kind: 'merging' }
-  | { kind: 'success'; stats: any; backupPath: string; timingMs: Record<string, number> }
+  | {
+      kind: 'success';
+      stats: { components_added: number; plates_added: number; products_added: number };
+      backupPath: string;
+      timingMs: Record<string, number>;
+      variantNames: string[];
+    }
   | {
       kind: 'error';
       variant: 'recognize' | 'merge';
@@ -41,6 +57,13 @@ type IntakeMode =
         produceImageIds: string[];
         productBaseName: string;
       };
+      // CUJ-5 merge 失败时携带：用于「返回上一步」回到 color，以及在错误详情里显示 backup_path
+      mergeContext?: {
+        finalDraft: FinalDraft;
+        sessionId: string;
+        colorContext?: { draft: any; variants: any[] };
+      };
+      mergeDetails?: any;
     };
 
 const STEP_ITEMS = [
@@ -91,6 +114,7 @@ function pageTitle(kind: IntakeMode['kind'], variant?: 'recognize' | 'merge'): s
 }
 
 export default function Intake() {
+  const navigate = useNavigate();
   const [mode, setMode] = useState<IntakeMode>({ kind: 'upload' });
   const [providerConfigured, setProviderConfigured] = useState<boolean>(false);
   const [productBaseName, setProductBaseName] = useState<string>('');
@@ -194,13 +218,66 @@ export default function Intake() {
         />
       )}
       {mode.kind === 'previewing' && (
-        <div>previewing mode placeholder — to be implemented by subsequent tasks</div>
+        <PreviewMode
+          finalDraft={mode.finalDraft}
+          sessionId={mode.sessionId}
+          onBack={() => {
+            if (mode.colorContext) {
+              setMode({ kind: 'color', ...mode.colorContext });
+            } else {
+              setMode({ kind: 'upload' });
+            }
+          }}
+          onMerging={() => setMode({ kind: 'merging' })}
+          onSuccess={(stats, backupPath, timingMs) =>
+            setMode({
+              kind: 'success',
+              stats,
+              backupPath,
+              timingMs,
+              variantNames: mode.finalDraft.variants.map((v) => v.variant_name),
+            })
+          }
+          onError={(errorKind, error, details) =>
+            setMode({
+              kind: 'error',
+              variant: 'merge',
+              errorKind,
+              error,
+              mergeContext: {
+                finalDraft: mode.finalDraft,
+                sessionId: mode.sessionId,
+                colorContext: mode.colorContext,
+              },
+              mergeDetails: details,
+            })
+          }
+        />
       )}
       {mode.kind === 'merging' && (
-        <div>merging mode placeholder — to be implemented by subsequent tasks</div>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            minHeight: 360,
+          }}
+        >
+          <Spin size="large" tip="正在合并到 catalog.yaml..." />
+        </div>
       )}
       {mode.kind === 'success' && (
-        <div>success mode placeholder — to be implemented by subsequent tasks</div>
+        <SuccessMode
+          stats={mode.stats}
+          backupPath={mode.backupPath}
+          timingMs={mode.timingMs}
+          variantNames={mode.variantNames}
+          onContinue={() => {
+            setMode({ kind: 'upload' });
+            setProductBaseName('');
+          }}
+          onGotoProducts={() => navigate('/products')}
+        />
       )}
       {mode.kind === 'error' && (
         <IntakeError
@@ -208,6 +285,7 @@ export default function Intake() {
           errorKind={mode.errorKind}
           error={mode.error}
           rawPreview={mode.rawPreview}
+          details={mode.mergeDetails}
           onRetry={() => {
             if (mode.variant === 'recognize') {
               if (mode.recognizeContext) {
@@ -216,16 +294,24 @@ export default function Intake() {
                 setMode({ kind: 'upload' });
               }
             } else {
-              // merge 失败重试：回到 color 步骤（T10 实现细化）。
-              setMode({ kind: 'upload' });
+              // merge variant 在错误页直接走 onBack 按钮（无独立 retry），此分支用作兜底回到 color。
+              if (mode.mergeContext?.colorContext) {
+                setMode({ kind: 'color', ...mode.mergeContext.colorContext });
+              } else {
+                setMode({ kind: 'upload' });
+              }
             }
           }}
           onBack={() => {
             if (mode.variant === 'recognize') {
               setMode({ kind: 'upload' });
             } else {
-              // merge 失败返回：回到 color 步骤（T10 实现细化）。
-              setMode({ kind: 'upload' });
+              // merge 失败「返回上一步调整」：回到 color mode 让用户改名 / 改颜色。
+              if (mode.mergeContext?.colorContext) {
+                setMode({ kind: 'color', ...mode.mergeContext.colorContext });
+              } else {
+                setMode({ kind: 'upload' });
+              }
             }
           }}
         />
