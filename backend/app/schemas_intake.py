@@ -115,6 +115,13 @@ class FinalDraft(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class MergeRequest(BaseModel):
+    session_id: str
+    final_draft: FinalDraft
+
+    model_config = {"from_attributes": True}
+
+
 class MergeStats(BaseModel):
     新增组件: int
     新增打印盘: int

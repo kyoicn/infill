@@ -5,25 +5,29 @@
 - 上传文件落盘 + 过期会话清理（TTL）
 - 撞名检测（与现有 catalog 中 Component / PrintConfig / Product 比对）
 - 读取 session 图片字节
+- merge 5 阶段事务（备份 + append + reload + 失败回滚）+ recent-logs ring buffer
 
-完整契约见 docs/prd/prd-005-intake.md CUJ-1 / CUJ-2，
-设计文档见 docs/design/design-intake.md §3、§6、§7。
+完整契约见 docs/prd/prd-005-intake.md CUJ-1 / CUJ-2 / CUJ-5，
+设计文档见 docs/design/design-intake.md §3、§6、§7、§8。
 """
 
 from __future__ import annotations
 
+import collections
 import io
 import os
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
+import yaml
 from PIL import Image
 from sqlalchemy.orm import Session
 
 from ..models import Component, PrintConfig, Product
-from ..schemas_intake import Conflict
+from ..schemas_intake import Conflict, FinalDraft
 
 
 # ---------- 文件系统路径 ----------
@@ -197,3 +201,268 @@ def detect_conflicts(
                 conflicts.append(Conflict(kind="product", name=name, existing_name=name))
 
     return conflicts
+
+
+# ---------- recent-logs ring buffer（CUJ-5 失败页查看后端日志） ----------
+
+# 进程级环形缓冲（设计 §6 后半段简化方案）— 同 stdout 双写
+_RECENT_LOGS: collections.deque[str] = collections.deque(maxlen=500)
+
+
+def intake_log(msg: str) -> None:
+    """同时 print 到 stdout 与 append 进 ring buffer，供 /recent-logs 拉取。"""
+    print(msg)
+    _RECENT_LOGS.append(msg)
+
+
+def get_recent_logs(lines: int = 100) -> list[str]:
+    """返回最近 N 条 intake_log 记录（按调用顺序）。"""
+    if lines <= 0:
+        return []
+    buf = list(_RECENT_LOGS)
+    return buf[-lines:]
+
+
+# ---------- 颜色矩阵 → YAML 展开（设计 §8） ----------
+
+def expand_to_yaml_structures(
+    final_draft: FinalDraft,
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """把 FinalDraft 展开为 catalog YAML 三段结构 (组件列表, 打印盘列表, 产品列表)。
+
+    - 组件列表：每条 `{"名称": comp.name, "可选颜色": [...union of colors across variants...]}`，
+      无可选颜色时不输出 `可选颜色` 字段。
+    - 打印盘列表：每条 `{"盘号", "组件", "数量", "耗时分钟"}`，无 `颜色` 字段。
+    - 产品列表：每个变体一条 `{"名称": v.variant_name, "BOM": [{"组件", "颜色", "数量"}, ...]}`。
+    """
+    # 组件 → union(dedupe but keep first-seen order) of colors across all variants
+    comp_to_colors: dict[str, list[str]] = {}
+    for comp in final_draft.components:
+        comp_to_colors[comp.name] = []
+    for variant in final_draft.variants:
+        for cell in variant.color_cells:
+            if cell.component_name not in comp_to_colors:
+                comp_to_colors[cell.component_name] = []
+            if cell.color and cell.color not in comp_to_colors[cell.component_name]:
+                comp_to_colors[cell.component_name].append(cell.color)
+
+    components_out: list[dict] = []
+    for comp in final_draft.components:
+        entry: dict = {"名称": comp.name}
+        colors = comp_to_colors.get(comp.name, [])
+        if colors:
+            entry["可选颜色"] = colors
+        components_out.append(entry)
+
+    plates_out: list[dict] = []
+    for p in final_draft.plates:
+        plates_out.append({
+            "盘号": p.plate_name,
+            "组件": p.component_name,
+            "数量": p.quantity_per_plate,
+            "耗时分钟": p.duration_minutes,
+        })
+
+    # 各组件的装配数量（每套产品所需件数）
+    comp_to_qty: dict[str, int] = {
+        c.name: c.assembly_quantity for c in final_draft.components
+    }
+
+    products_out: list[dict] = []
+    for variant in final_draft.variants:
+        bom = []
+        for cell in variant.color_cells:
+            bom.append({
+                "组件": cell.component_name,
+                "颜色": cell.color,
+                "数量": comp_to_qty.get(cell.component_name, 1),
+            })
+        products_out.append({
+            "名称": variant.variant_name,
+            "BOM": bom,
+        })
+
+    return components_out, plates_out, products_out
+
+
+# ---------- 备份 / append / 回滚 ----------
+
+def backup_catalog(catalog_path: Path, timestamp: str) -> Path:
+    """把 catalog.yaml 复制到 <catalog_path>.bak.<timestamp>，返回备份路径。"""
+    backup_path = catalog_path.with_name(f"{catalog_path.name}.bak.{timestamp}")
+    shutil.copy2(catalog_path, backup_path)
+    return backup_path
+
+
+def append_to_catalog(
+    catalog_path: Path,
+    new_components: list[dict],
+    new_plates: list[dict],
+    new_products: list[dict],
+) -> None:
+    """把 new_* append 到 catalog.yaml 末尾，保持中文键 + 文件 YAML 合法。
+
+    现有条目原样保留，新条目追加在各自段末尾。
+    """
+    if catalog_path.exists():
+        raw = catalog_path.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) if raw.strip() else {}
+        if data is None:
+            data = {}
+    else:
+        data = {}
+
+    if not isinstance(data, dict):
+        data = {}
+
+    data.setdefault("组件", []).extend(new_components)
+    data.setdefault("打印盘", []).extend(new_plates)
+    data.setdefault("产品", []).extend(new_products)
+
+    dumped = yaml.safe_dump(
+        data,
+        allow_unicode=True,
+        sort_keys=False,
+        default_flow_style=False,
+        width=4096,
+        indent=2,
+    )
+    catalog_path.write_text(dumped, encoding="utf-8")
+
+
+def rollback_from_backup(catalog_path: Path, backup_path: Path) -> None:
+    """从 bak 恢复 catalog.yaml；不删 bak 文件（保留作为审计）。"""
+    shutil.copy2(backup_path, catalog_path)
+
+
+# ---------- merge 5 阶段事务（CUJ-5 / 设计 §7） ----------
+
+def do_merge(
+    db: Session,
+    final_draft: FinalDraft,
+    catalog_path: Path,
+    session_id: str,
+) -> dict:
+    """5 阶段流水：撞名兜底 → 备份 → append + 复读验证 → load_catalog → 清理 + 返回。
+
+    任一步失败：撞名（无备份）/ backup_failed（无备份）→ 直接返回；
+    write_failed / yaml_invalid / load_failed → 从 bak 回滚 catalog.yaml 后返回。
+    """
+    # ---- 阶段 1：撞名兜底 ----
+    component_names = [c.name for c in final_draft.components]
+    plate_names = [p.plate_name for p in final_draft.plates]
+    product_names = [v.variant_name for v in final_draft.variants]
+    conflicts = detect_conflicts(db, component_names, plate_names, product_names)
+    if conflicts:
+        intake_log(f"merge 撞名拦截：{len(conflicts)} 项冲突")
+        return {
+            "ok": False,
+            "error_kind": "conflict",
+            "error": f"检测到 {len(conflicts)} 项撞名冲突",
+            "rolled_back": False,
+            "details": [c.model_dump() for c in conflicts],
+        }
+
+    # ---- 阶段 2：备份 ----
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    try:
+        backup_path = backup_catalog(catalog_path, timestamp)
+    except OSError as exc:
+        intake_log(f"备份失败：{exc!r}")
+        return {
+            "ok": False,
+            "error_kind": "backup_failed",
+            "error": str(exc),
+            "rolled_back": False,
+        }
+    intake_log(f"备份创建：{backup_path}")
+
+    # ---- 阶段 3：append + 复读验证 ----
+    write_t0 = time.perf_counter()
+    try:
+        new_components, new_plates, new_products = expand_to_yaml_structures(final_draft)
+        append_to_catalog(catalog_path, new_components, new_plates, new_products)
+    except (OSError, yaml.YAMLError) as exc:
+        intake_log(f"append 写入失败，rollback 触发：原因 = {exc!r}")
+        try:
+            rollback_from_backup(catalog_path, backup_path)
+        except OSError as roll_exc:
+            intake_log(f"回滚失败（数据可能不一致）：{roll_exc!r}")
+            return {
+                "ok": False,
+                "error_kind": "write_failed",
+                "error": str(exc),
+                "rolled_back": False,
+                "backup_path": str(backup_path),
+            }
+        return {
+            "ok": False,
+            "error_kind": "write_failed",
+            "error": str(exc),
+            "rolled_back": True,
+            "backup_path": str(backup_path),
+        }
+
+    # 复读验证 — append 完后整文件应仍是合法 YAML
+    try:
+        yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError, OSError) as exc:
+        intake_log(f"yaml 复读校验失败，rollback 触发：原因 = {exc!r}")
+        try:
+            rollback_from_backup(catalog_path, backup_path)
+            rolled_back = True
+        except OSError:
+            rolled_back = False
+        return {
+            "ok": False,
+            "error_kind": "yaml_invalid",
+            "error": str(exc),
+            "rolled_back": rolled_back,
+            "backup_path": str(backup_path),
+        }
+    write_ms = int((time.perf_counter() - write_t0) * 1000)
+    intake_log("append 写入完成")
+
+    # ---- 阶段 4：load_catalog ----
+    from ..database import SessionLocal
+    from .catalog import load_catalog
+
+    reload_t0 = time.perf_counter()
+    new_session = SessionLocal()
+    try:
+        try:
+            load_catalog(new_session)
+        except Exception as exc:  # noqa: BLE001 — load_catalog 实现可能抛多种异常
+            intake_log(f"load_catalog 失败，rollback 触发：原因 = {exc!r}")
+            try:
+                rollback_from_backup(catalog_path, backup_path)
+                rolled_back = True
+            except OSError:
+                rolled_back = False
+            return {
+                "ok": False,
+                "error_kind": "load_failed",
+                "error": str(exc),
+                "rolled_back": rolled_back,
+                "backup_path": str(backup_path),
+            }
+    finally:
+        new_session.close()
+    reload_ms = int((time.perf_counter() - reload_t0) * 1000)
+    intake_log("load_catalog 成功")
+
+    # ---- 阶段 5：清理 session tmp + 返回成功 ----
+    cleanup_session(session_id)
+    return {
+        "ok": True,
+        "stats": {
+            "components_added": len(new_components),
+            "plates_added": len(new_plates),
+            "products_added": len(new_products),
+        },
+        "backup_path": str(backup_path),
+        "timing_ms": {
+            "写入": write_ms,
+            "重新加载": reload_ms,
+        },
+    }

@@ -1,9 +1,7 @@
 """产品录入（intake）路由
 
 完整契约见 docs/prd/prd-005-intake.md（CUJ-1 上传 + 分类、CUJ-2 LLM 识别 + 撞名检测、
-CUJ-5 合并到 catalog.yaml）。
-本提交实现 `/provider-status` / `/upload` / `/recognize`；
-`/merge` / `/recent-logs` 仍保持 stub，由 CUJ-5 任务接管。
+CUJ-5 合并到 catalog.yaml + 失败回滚 + recent-logs）。
 """
 
 from __future__ import annotations
@@ -16,12 +14,14 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.schemas_intake import RecognizeRequest, UploadedImage
+from app.schemas_intake import MergeRequest, RecognizeRequest, UploadedImage
 from app.services.intake import (
     ALLOWED_MIME,
     MAX_UPLOAD_BYTES,
     cleanup_stale_sessions,
     detect_conflicts,
+    do_merge,
+    get_recent_logs,
     heuristic_classify,
     load_session_images,
     save_uploaded_image,
@@ -29,13 +29,6 @@ from app.services.intake import (
 from app.services.intake_llm import LLMProviderError, get_active_provider
 
 router = APIRouter(prefix="/api/intake", tags=["产品录入"])
-
-
-_NOT_IMPLEMENTED = {
-    "ok": False,
-    "error_kind": "not_implemented",
-    "error": "not implemented",
-}
 
 
 _MIME_TO_SUFFIX = {
@@ -213,10 +206,26 @@ def recognize(req: RecognizeRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/merge")
-def merge():
-    return _NOT_IMPLEMENTED
+def merge(req: MergeRequest, db: Session = Depends(get_db)):
+    """5 阶段事务：撞名兜底 → 备份 → append + 复读 → load_catalog → 清理 + 返回。
+
+    错误统一 HTTP 200 + `{ok: False, error_kind, error, rolled_back, ...}`。
+    """
+    # 重新解析 CATALOG_PATH（services.catalog 模块属性可能在测试中被 monkeypatch）
+    from app.services import catalog as catalog_module
+
+    return do_merge(
+        db=db,
+        final_draft=req.final_draft,
+        catalog_path=catalog_module.CATALOG_PATH,
+        session_id=req.session_id,
+    )
 
 
 @router.get("/recent-logs")
 def recent_logs(lines: int = 100):
-    return _NOT_IMPLEMENTED
+    """返回最近 N 条 intake_log 记录（CUJ-5 失败页『查看后端日志』）。"""
+    return {
+        "ok": True,
+        "lines": get_recent_logs(lines=lines),
+    }

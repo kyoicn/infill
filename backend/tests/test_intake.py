@@ -724,3 +724,445 @@ class TestDetectConflicts:
         assert len(conflicts) == 1
         assert conflicts[0].existing_name == "床头柜-门板"
         assert conflicts[0].kind == "component"
+
+
+# ============================================================
+# CUJ-5 merge：颜色矩阵展开 / append / 5 阶段事务 + 回滚 / recent-logs
+# ============================================================
+
+import yaml as _yaml  # noqa: E402
+
+from app.schemas_intake import (  # noqa: E402
+    ColorCell,
+    DraftComponent,
+    DraftPlate,
+    FinalDraft,
+    Variant,
+)
+from app.services import catalog as catalog_module  # noqa: E402
+from app.services.intake import (  # noqa: E402
+    _RECENT_LOGS,
+    append_to_catalog,
+    backup_catalog,
+    do_merge,
+    expand_to_yaml_structures,
+    get_recent_logs,
+    intake_log,
+)
+
+
+def _make_final_draft_3v_4c() -> FinalDraft:
+    """构造 3 变体 × 4 组件的 FinalDraft（颜色组合各不相同）。"""
+    components = [
+        DraftComponent(name="床头柜-侧板", assembly_quantity=2),
+        DraftComponent(name="床头柜-抽屉", assembly_quantity=3),
+        DraftComponent(name="床头柜-把手", assembly_quantity=4),
+        DraftComponent(name="床头柜-门板", assembly_quantity=1),
+    ]
+    plates = [
+        DraftPlate(plate_name="床头柜-侧板-2", component_name="床头柜-侧板",
+                   quantity_per_plate=2, duration_minutes=120, source_image_id="i1"),
+        DraftPlate(plate_name="床头柜-抽屉-3", component_name="床头柜-抽屉",
+                   quantity_per_plate=3, duration_minutes=80, source_image_id="i2"),
+        DraftPlate(plate_name="床头柜-把手-4", component_name="床头柜-把手",
+                   quantity_per_plate=4, duration_minutes=60, source_image_id="i3"),
+        DraftPlate(plate_name="床头柜-门板-1", component_name="床头柜-门板",
+                   quantity_per_plate=1, duration_minutes=200, source_image_id="i4"),
+    ]
+    variants = [
+        Variant(variant_name="床头柜 - 灰白", color_cells=[
+            ColorCell(component_name="床头柜-侧板", color="灰色"),
+            ColorCell(component_name="床头柜-抽屉", color="白色"),
+            ColorCell(component_name="床头柜-把手", color="银色"),
+            ColorCell(component_name="床头柜-门板", color="白色"),
+        ]),
+        Variant(variant_name="床头柜 - 黑白", color_cells=[
+            ColorCell(component_name="床头柜-侧板", color="黑色"),
+            ColorCell(component_name="床头柜-抽屉", color="白色"),
+            ColorCell(component_name="床头柜-把手", color="银色"),
+            ColorCell(component_name="床头柜-门板", color="黑色"),
+        ]),
+        Variant(variant_name="床头柜 - 黑粉", color_cells=[
+            ColorCell(component_name="床头柜-侧板", color="黑色"),
+            ColorCell(component_name="床头柜-抽屉", color="粉色"),
+            ColorCell(component_name="床头柜-把手", color="金色"),
+            ColorCell(component_name="床头柜-门板", color="粉色"),
+        ]),
+    ]
+    return FinalDraft(
+        product_base_name="床头柜",
+        components=components,
+        plates=plates,
+        variants=variants,
+    )
+
+
+# ---------- TestColorMatrixExpansion ----------
+
+class TestColorMatrixExpansion:
+    def test_three_variants_produce_three_products(self):
+        draft = _make_final_draft_3v_4c()
+        comps, plates, products = expand_to_yaml_structures(draft)
+        assert len(products) == 3
+        variant_names = [p["名称"] for p in products]
+        assert variant_names == ["床头柜 - 灰白", "床头柜 - 黑白", "床头柜 - 黑粉"]
+
+    def test_each_product_has_four_bom_rows(self):
+        draft = _make_final_draft_3v_4c()
+        _, _, products = expand_to_yaml_structures(draft)
+        for p in products:
+            assert len(p["BOM"]) == 4
+
+    def test_components_keep_union_of_colors_dedupe(self):
+        draft = _make_final_draft_3v_4c()
+        comps, _, _ = expand_to_yaml_structures(draft)
+        comp_map = {c["名称"]: c for c in comps}
+
+        # 侧板：灰色（v1）+ 黑色（v2、v3）→ ["灰色", "黑色"]
+        assert comp_map["床头柜-侧板"]["可选颜色"] == ["灰色", "黑色"]
+        # 抽屉：白色（v1、v2）+ 粉色（v3）→ ["白色", "粉色"]
+        assert comp_map["床头柜-抽屉"]["可选颜色"] == ["白色", "粉色"]
+        # 把手：银色（v1、v2）+ 金色（v3） → ["银色", "金色"]
+        assert comp_map["床头柜-把手"]["可选颜色"] == ["银色", "金色"]
+        # 门板：白色（v1）+ 黑色（v2）+ 粉色（v3）→ ["白色", "黑色", "粉色"]
+        assert comp_map["床头柜-门板"]["可选颜色"] == ["白色", "黑色", "粉色"]
+
+    def test_plates_have_no_color_field(self):
+        draft = _make_final_draft_3v_4c()
+        _, plates, _ = expand_to_yaml_structures(draft)
+        for p in plates:
+            assert "颜色" not in p
+            assert set(p.keys()) == {"盘号", "组件", "数量", "耗时分钟"}
+
+    def test_component_without_any_color_omits_field(self):
+        """所有变体都给某组件填空字符串 → 该组件不带 可选颜色 字段。"""
+        comp = DraftComponent(name="X-通用件", assembly_quantity=1)
+        plate = DraftPlate(
+            plate_name="X-通用件-1", component_name="X-通用件",
+            quantity_per_plate=1, duration_minutes=30, source_image_id="i",
+        )
+        variant = Variant(variant_name="X - 默认", color_cells=[
+            ColorCell(component_name="X-通用件", color=""),
+        ])
+        draft = FinalDraft(
+            product_base_name="X", components=[comp], plates=[plate], variants=[variant],
+        )
+        comps, _, _ = expand_to_yaml_structures(draft)
+        assert comps[0] == {"名称": "X-通用件"}
+        assert "可选颜色" not in comps[0]
+
+    def test_bom_quantity_comes_from_assembly_quantity(self):
+        draft = _make_final_draft_3v_4c()
+        _, _, products = expand_to_yaml_structures(draft)
+        # 第一个变体的 BOM 顺序对应 components 顺序
+        bom = products[0]["BOM"]
+        # 侧板 assembly_quantity=2 → BOM 数量=2
+        assert bom[0]["数量"] == 2
+        assert bom[1]["数量"] == 3
+        assert bom[2]["数量"] == 4
+        assert bom[3]["数量"] == 1
+
+
+# ---------- TestAppendToCatalog ----------
+
+def _seed_minimal_catalog(path):
+    """写入一个最小合法 catalog.yaml（含 3 段空列表 + 1 个现有组件）。"""
+    initial = {
+        "组件": [{"名称": "旧组件", "可选颜色": ["白色"]}],
+        "打印盘": [{"盘号": "旧盘-1", "组件": "旧组件", "数量": 1, "耗时分钟": 30}],
+        "产品": [{"名称": "旧产品", "BOM": [{"组件": "旧组件", "颜色": "白色", "数量": 1}]}],
+    }
+    path.write_text(
+        _yaml.safe_dump(initial, allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+
+
+class TestAppendToCatalog:
+    def test_append_preserves_existing_entries(self, tmp_path):
+        catalog = tmp_path / "catalog.yaml"
+        _seed_minimal_catalog(catalog)
+
+        new_comps = [{"名称": "床头柜-侧板", "可选颜色": ["灰色"]}]
+        new_plates = [{"盘号": "床头柜-侧板-2", "组件": "床头柜-侧板", "数量": 2, "耗时分钟": 120}]
+        new_products = [{"名称": "床头柜 - 灰白", "BOM": [{"组件": "床头柜-侧板", "颜色": "灰色", "数量": 2}]}]
+
+        append_to_catalog(catalog, new_comps, new_plates, new_products)
+
+        loaded = _yaml.safe_load(catalog.read_text(encoding="utf-8"))
+        # 现有条目保留
+        assert any(c["名称"] == "旧组件" for c in loaded["组件"])
+        assert any(p["盘号"] == "旧盘-1" for p in loaded["打印盘"])
+        assert any(p["名称"] == "旧产品" for p in loaded["产品"])
+        # 新条目追加在末尾
+        assert loaded["组件"][-1]["名称"] == "床头柜-侧板"
+        assert loaded["打印盘"][-1]["盘号"] == "床头柜-侧板-2"
+        assert loaded["产品"][-1]["名称"] == "床头柜 - 灰白"
+
+    def test_round_trip_yaml_valid(self, tmp_path):
+        catalog = tmp_path / "catalog.yaml"
+        _seed_minimal_catalog(catalog)
+        append_to_catalog(catalog, [{"名称": "新A"}], [], [])
+        # 不抛 = 合法
+        _yaml.safe_load(catalog.read_text(encoding="utf-8"))
+
+    def test_allow_unicode_preserves_chinese(self, tmp_path):
+        catalog = tmp_path / "catalog.yaml"
+        _seed_minimal_catalog(catalog)
+        append_to_catalog(catalog, [{"名称": "床头柜-把手"}], [], [])
+        raw = catalog.read_text(encoding="utf-8")
+        # 中文原样出现（未被 escape 成 \uXXXX）
+        assert "床头柜-把手" in raw
+        assert "\\u" not in raw  # YAML 不应有 unicode escape
+
+    def test_empty_file_creates_three_sections(self, tmp_path):
+        catalog = tmp_path / "catalog.yaml"
+        catalog.write_text("", encoding="utf-8")
+        append_to_catalog(
+            catalog,
+            [{"名称": "新A"}],
+            [{"盘号": "新-1", "组件": "新A", "数量": 1, "耗时分钟": 30}],
+            [{"名称": "P", "BOM": [{"组件": "新A", "颜色": "", "数量": 1}]}],
+        )
+        loaded = _yaml.safe_load(catalog.read_text(encoding="utf-8"))
+        assert len(loaded["组件"]) == 1
+        assert len(loaded["打印盘"]) == 1
+        assert len(loaded["产品"]) == 1
+
+
+# ---------- merge 5 阶段事务 ----------
+
+@pytest.fixture
+def catalog_tmp(tmp_path, monkeypatch):
+    """临时 catalog.yaml + 重定向 catalog_module.CATALOG_PATH。"""
+    catalog = tmp_path / "catalog.yaml"
+    _seed_minimal_catalog(catalog)
+    monkeypatch.setattr(catalog_module, "CATALOG_PATH", catalog)
+    return catalog
+
+
+def _final_draft_minimal() -> FinalDraft:
+    """最小有效 final_draft：1 组件 1 盘 1 变体。"""
+    return FinalDraft(
+        product_base_name="床头柜",
+        components=[DraftComponent(name="床头柜-侧板", assembly_quantity=2)],
+        plates=[DraftPlate(
+            plate_name="床头柜-侧板-2", component_name="床头柜-侧板",
+            quantity_per_plate=2, duration_minutes=120, source_image_id="i1",
+        )],
+        variants=[Variant(variant_name="床头柜 - 灰白", color_cells=[
+            ColorCell(component_name="床头柜-侧板", color="灰色"),
+        ])],
+    )
+
+
+class TestMergeSuccess:
+    def test_success_full_flow(self, db_session, catalog_tmp, tmp_path, monkeypatch):
+        # 用真实 in-memory DB + 真实 load_catalog。SessionLocal 在 do_merge 内 new 一个 session，
+        # 也必须指向同一 in-memory engine。
+        from app.services.intake import do_merge as _do_merge
+        from app import database as db_module
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from sqlalchemy.pool import StaticPool
+
+        # 重建共享 engine，给 do_merge 内部 SessionLocal 用
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(bind=engine)
+        TestSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        monkeypatch.setattr(db_module, "SessionLocal", TestSession)
+
+        # seed session tmp dir
+        session_id = "sess-merge-ok"
+        sd = intake_service.INTAKE_TMP_DIR / session_id
+        sd.mkdir(parents=True, exist_ok=True)
+        (sd / "x.png").write_bytes(b"x")
+
+        draft = _final_draft_minimal()
+        outer_session = TestSession()
+        try:
+            result = _do_merge(
+                db=outer_session,
+                final_draft=draft,
+                catalog_path=catalog_tmp,
+                session_id=session_id,
+            )
+        finally:
+            outer_session.close()
+
+        assert result["ok"] is True, result
+        assert result["stats"]["components_added"] == 1
+        assert result["stats"]["plates_added"] == 1
+        assert result["stats"]["products_added"] == 1
+        # 备份文件存在
+        assert Path(result["backup_path"]).is_file()
+        # timing keys present and non-negative
+        assert "写入" in result["timing_ms"]
+        assert "重新加载" in result["timing_ms"]
+        assert result["timing_ms"]["写入"] >= 0
+        assert result["timing_ms"]["重新加载"] >= 0
+        # tmp dir 已清空
+        assert not sd.exists()
+
+        # DB 新增 1 Component / 1 PrintConfig / 1 Product（除了已加载的 1 旧组件 / 1 旧盘 / 1 旧产品）
+        verify_session = TestSession()
+        try:
+            from app.models import Product as P
+            comp_count = verify_session.query(Component).count()
+            plate_count = verify_session.query(PrintConfig).count()
+            prod_count = verify_session.query(P).count()
+            assert comp_count == 2   # 旧组件 + 新加
+            assert plate_count == 2  # 旧盘 + 新加
+            assert prod_count == 2   # 旧产品 + 新加
+        finally:
+            verify_session.close()
+
+
+class TestMergeConflict:
+    def test_conflict_short_circuits_no_backup(self, db_session, catalog_tmp):
+        # 预置同名组件
+        db_session.add(Component(name="床头柜-侧板", description="", colors=[]))
+        db_session.commit()
+
+        draft = _final_draft_minimal()
+        original_bytes = catalog_tmp.read_bytes()
+
+        result = do_merge(
+            db=db_session,
+            final_draft=draft,
+            catalog_path=catalog_tmp,
+            session_id="sess-conflict",
+        )
+        assert result["ok"] is False
+        assert result["error_kind"] == "conflict"
+        assert result["rolled_back"] is False
+        # 文件未被触碰
+        assert catalog_tmp.read_bytes() == original_bytes
+        # 无 bak 文件产生
+        baks = list(catalog_tmp.parent.glob("*.bak.*"))
+        assert baks == []
+        # details 含冲突信息
+        assert any(d["name"] == "床头柜-侧板" for d in result["details"])
+
+
+class TestMergeWriteFailed:
+    def test_write_failed_rolls_back(self, db_session, catalog_tmp, monkeypatch):
+        from app.services import intake as svc
+
+        def fake_append(*args, **kwargs):
+            # 模拟磁盘满；注意：被调用前 catalog 已被 monkeypatch 模块属性，
+            # 实际写到 catalog 的 yaml.safe_dump 没机会执行
+            raise OSError("disk full")
+
+        monkeypatch.setattr(svc, "append_to_catalog", fake_append)
+
+        original_bytes = catalog_tmp.read_bytes()
+        draft = _final_draft_minimal()
+
+        result = do_merge(
+            db=db_session,
+            final_draft=draft,
+            catalog_path=catalog_tmp,
+            session_id="sess-write-fail",
+        )
+        assert result["ok"] is False
+        assert result["error_kind"] == "write_failed"
+        assert result["rolled_back"] is True
+        # bak 文件存在
+        assert Path(result["backup_path"]).is_file()
+        # 文件字节级 == 原始（因为 append 在写之前就抛了 → rollback 还原 == 原始）
+        assert catalog_tmp.read_bytes() == original_bytes
+
+
+class TestMergeYamlInvalid:
+    def test_yaml_invalid_rolls_back(self, db_session, catalog_tmp, monkeypatch):
+        """append 写完后复读校验失败 → rollback。
+        模拟方式：让 append_to_catalog 直接写入非法 YAML 字节。
+        """
+        from app.services import intake as svc
+
+        def fake_append(catalog_path, *args, **kwargs):
+            # 写入非法 YAML（无法 safe_load 的字节序列）
+            catalog_path.write_bytes(b"\x00invalid: : : :\n  - [")
+
+        monkeypatch.setattr(svc, "append_to_catalog", fake_append)
+
+        original_bytes = catalog_tmp.read_bytes()
+        draft = _final_draft_minimal()
+
+        result = do_merge(
+            db=db_session,
+            final_draft=draft,
+            catalog_path=catalog_tmp,
+            session_id="sess-yaml-bad",
+        )
+        assert result["ok"] is False
+        assert result["error_kind"] == "yaml_invalid"
+        assert result["rolled_back"] is True
+        assert Path(result["backup_path"]).is_file()
+        # 回滚后内容 == 原始
+        assert catalog_tmp.read_bytes() == original_bytes
+
+
+class TestMergeRollback:
+    def test_load_catalog_failure_rolls_back(self, db_session, catalog_tmp, monkeypatch):
+        """模拟 load_catalog 抛错 → rollback；catalog.yaml 内容 = 备份。"""
+        from app.services import catalog as cat_mod
+
+        def fake_load_catalog(session):
+            raise ValueError("simulated reload failure")
+
+        monkeypatch.setattr(cat_mod, "load_catalog", fake_load_catalog)
+
+        original_bytes = catalog_tmp.read_bytes()
+        draft = _final_draft_minimal()
+
+        result = do_merge(
+            db=db_session,
+            final_draft=draft,
+            catalog_path=catalog_tmp,
+            session_id="sess-load-fail",
+        )
+        assert result["ok"] is False
+        assert result["error_kind"] == "load_failed"
+        assert result["rolled_back"] is True
+        # bak 文件存在
+        bak = Path(result["backup_path"])
+        assert bak.is_file()
+        # catalog.yaml 字节级 == 备份字节级 == 原始字节级
+        assert catalog_tmp.read_bytes() == original_bytes
+        assert bak.read_bytes() == original_bytes
+
+
+# ---------- TestRecentLogs ----------
+
+class TestRecentLogs:
+    def test_intake_log_appears_in_recent_logs(self, client):
+        _RECENT_LOGS.clear()
+        intake_log("hello")
+        intake_log("world")
+        resp = client.get("/api/intake/recent-logs?lines=2")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert body["lines"] == ["hello", "world"]
+
+    def test_recent_logs_truncates_to_lines_param(self, client):
+        _RECENT_LOGS.clear()
+        for i in range(10):
+            intake_log(f"log {i}")
+        resp = client.get("/api/intake/recent-logs?lines=3")
+        body = resp.json()
+        assert body["lines"] == ["log 7", "log 8", "log 9"]
+
+    def test_recent_logs_default_100(self, client):
+        _RECENT_LOGS.clear()
+        for i in range(5):
+            intake_log(f"line {i}")
+        resp = client.get("/api/intake/recent-logs")
+        body = resp.json()
+        assert len(body["lines"]) == 5
