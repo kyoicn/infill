@@ -28,13 +28,26 @@ type IntakeMode =
       assemblyImageIds: string[];
       produceImageIds: string[];
     }
-  | { kind: 'color'; draft: any; variants: any[] }
+  | {
+      kind: 'color';
+      draft: any;
+      variants: any[];
+      sessionId: string;
+      assemblyImageIds: string[];
+      produceImageIds: string[];
+    }
   | {
       kind: 'previewing';
       finalDraft: FinalDraft;
       sessionId: string;
-      // 失败回 color mode 需要 — 透传上游 draft/variants 上下文
-      colorContext?: { draft: any; variants: any[] };
+      // 失败回 color mode 需要 — 透传整个 color mode 上下文（含 image ids 等）
+      colorContext?: {
+        draft: any;
+        variants: any[];
+        sessionId: string;
+        assemblyImageIds: string[];
+        produceImageIds: string[];
+      };
     }
   | { kind: 'merging' }
   | {
@@ -61,7 +74,13 @@ type IntakeMode =
       mergeContext?: {
         finalDraft: FinalDraft;
         sessionId: string;
-        colorContext?: { draft: any; variants: any[] };
+        colorContext?: {
+          draft: any;
+          variants: any[];
+          sessionId: string;
+          assemblyImageIds: string[];
+          produceImageIds: string[];
+        };
       };
       mergeDetails?: any;
     };
@@ -206,15 +225,44 @@ export default function Intake() {
           assemblyImageIds={mode.assemblyImageIds}
           onBack={() => setMode({ kind: 'upload' })}
           onProceedToColor={(editedDraft) =>
-            setMode({ kind: 'color', draft: editedDraft, variants: [] })
+            setMode({
+              kind: 'color',
+              draft: editedDraft,
+              variants: [],
+              sessionId: mode.sessionId,
+              assemblyImageIds: mode.assemblyImageIds,
+              produceImageIds: mode.produceImageIds,
+            })
           }
         />
       )}
       {mode.kind === 'color' && (
         <ColorMode
           draft={mode.draft}
-          onBack={() => setMode({ kind: 'draft', draft: mode.draft, conflicts: [] })}
-          onProceedToPreview={(finalDraft) => setMode({ kind: 'previewing', finalDraft })}
+          onBack={() =>
+            setMode({
+              kind: 'draft',
+              draft: mode.draft,
+              conflicts: [],
+              sessionId: mode.sessionId,
+              assemblyImageIds: mode.assemblyImageIds,
+              produceImageIds: mode.produceImageIds,
+            })
+          }
+          onProceedToPreview={(finalDraft) =>
+            setMode({
+              kind: 'previewing',
+              finalDraft,
+              sessionId: mode.sessionId,
+              colorContext: {
+                draft: mode.draft,
+                variants: mode.variants,
+                sessionId: mode.sessionId,
+                assemblyImageIds: mode.assemblyImageIds,
+                produceImageIds: mode.produceImageIds,
+              },
+            })
+          }
         />
       )}
       {mode.kind === 'previewing' && (
