@@ -4,6 +4,7 @@ import { api } from '../api/client';
 import UploadMode from './intake/Upload';
 import RecognizingMode from './intake/Recognizing';
 import IntakeError from './intake/IntakeError';
+import DraftMode from './intake/Draft';
 
 type IntakeMode =
   | { kind: 'upload' }
@@ -14,7 +15,14 @@ type IntakeMode =
       produceImageIds: string[];
       productBaseName: string;
     }
-  | { kind: 'draft'; draft: any; conflicts: any[] }
+  | {
+      kind: 'draft';
+      draft: any;
+      conflicts: any[];
+      sessionId: string;
+      assemblyImageIds: string[];
+      produceImageIds: string[];
+    }
   | { kind: 'color'; draft: any; variants: any[] }
   | { kind: 'previewing'; finalDraft: any }
   | { kind: 'merging' }
@@ -138,7 +146,16 @@ export default function Intake() {
           assemblyImageIds={mode.assemblyImageIds}
           produceImageIds={mode.produceImageIds}
           onCancel={() => setMode({ kind: 'upload' })}
-          onSuccess={(draft, conflicts) => setMode({ kind: 'draft', draft, conflicts })}
+          onSuccess={(draft, conflicts) =>
+            setMode({
+              kind: 'draft',
+              draft,
+              conflicts,
+              sessionId: mode.sessionId,
+              assemblyImageIds: mode.assemblyImageIds,
+              produceImageIds: mode.produceImageIds,
+            })
+          }
           onError={(errorKind, error, rawPreview) =>
             setMode({
               kind: 'error',
@@ -157,7 +174,16 @@ export default function Intake() {
         />
       )}
       {mode.kind === 'draft' && (
-        <div>draft mode placeholder — to be implemented by subsequent tasks</div>
+        <DraftMode
+          draft={mode.draft}
+          conflicts={mode.conflicts || []}
+          sessionId={mode.sessionId}
+          assemblyImageIds={mode.assemblyImageIds}
+          onBack={() => setMode({ kind: 'upload' })}
+          onProceedToColor={(editedDraft) =>
+            setMode({ kind: 'color', draft: editedDraft, variants: [] })
+          }
+        />
       )}
       {mode.kind === 'color' && (
         <div>color mode placeholder — to be implemented by subsequent tasks</div>
