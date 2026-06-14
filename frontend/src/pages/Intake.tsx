@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Spin, Steps, Typography } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
-import UploadMode from './intake/Upload';
+import UploadMode, { type UploadedImage } from './intake/Upload';
 import RecognizingMode from './intake/Recognizing';
 import ColorMode from './intake/Color';
 import IntakeError from './intake/IntakeError';
@@ -93,7 +93,7 @@ const STEP_ITEMS = [
   { title: '合并' },
 ];
 
-function stepIndex(kind: IntakeMode['kind']): number {
+function stepIndex(kind: IntakeMode['kind'], variant?: 'recognize' | 'merge'): number {
   switch (kind) {
     case 'upload':
       return 0;
@@ -106,8 +106,10 @@ function stepIndex(kind: IntakeMode['kind']): number {
     case 'previewing':
     case 'merging':
     case 'success':
-    case 'error':
       return 4;
+    case 'error':
+      // 识别失败属于「识别」步骤，合并失败属于「合并」步骤
+      return variant === 'recognize' ? 1 : 4;
   }
 }
 
@@ -137,6 +139,13 @@ export default function Intake() {
   const [mode, setMode] = useState<IntakeMode>({ kind: 'upload' });
   const [providerConfigured, setProviderConfigured] = useState<boolean>(false);
   const [productBaseName, setProductBaseName] = useState<string>('');
+  // Lifted Upload mode state — preserved across 取消 / 返回上一步 navigations
+  // (QA HIGH bug fix: previously these lived in Upload.tsx and were lost on remount)
+  const [assemblyImages, setAssemblyImages] = useState<UploadedImage[]>([]);
+  const [produceImages, setProduceImages] = useState<UploadedImage[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [uploadingCount, setUploadingCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
     api.intake
@@ -149,7 +158,7 @@ export default function Intake() {
     document.title = pageTitle(mode.kind, mode.kind === 'error' ? mode.variant : undefined);
   }, [mode]);
 
-  const current = stepIndex(mode.kind);
+  const current = stepIndex(mode.kind, mode.kind === 'error' ? mode.variant : undefined);
 
   return (
     <div>
@@ -170,10 +179,20 @@ export default function Intake() {
           providerConfigured={providerConfigured}
           productBaseName={productBaseName}
           onProductBaseNameChange={setProductBaseName}
-          onProceedToRecognize={(sessionId, assemblyImageIds, produceImageIds) =>
+          assemblyImages={assemblyImages}
+          setAssemblyImages={setAssemblyImages}
+          produceImages={produceImages}
+          setProduceImages={setProduceImages}
+          sessionId={sessionId}
+          setSessionId={setSessionId}
+          uploadingCount={uploadingCount}
+          setUploadingCount={setUploadingCount}
+          totalCount={totalCount}
+          setTotalCount={setTotalCount}
+          onProceedToRecognize={(sid, assemblyImageIds, produceImageIds) =>
             setMode({
               kind: 'recognizing',
-              sessionId,
+              sessionId: sid,
               assemblyImageIds,
               produceImageIds,
               productBaseName,
@@ -321,8 +340,14 @@ export default function Intake() {
           timingMs={mode.timingMs}
           variantNames={mode.variantNames}
           onContinue={() => {
+            // 录入下一个产品：清空 Upload 持久态，让用户从空状态开始
             setMode({ kind: 'upload' });
             setProductBaseName('');
+            setAssemblyImages([]);
+            setProduceImages([]);
+            setSessionId(null);
+            setUploadingCount(0);
+            setTotalCount(0);
           }}
           onGotoProducts={() => navigate('/products')}
         />

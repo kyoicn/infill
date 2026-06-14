@@ -10,7 +10,7 @@ import {
 import { api } from '../../api/client';
 
 // Shape returned by POST /api/intake/upload (one element of `images`)
-interface UploadedImage {
+export interface UploadedImage {
   image_id: string;
   filename: string;
   suggested_class: 'assembly' | 'produce';
@@ -22,6 +22,17 @@ export interface UploadModeProps {
   providerConfigured: boolean;
   productBaseName: string;
   onProductBaseNameChange: (v: string) => void;
+  // Lifted state — owned by Intake.tsx so that 取消 / 返回 navigations preserve uploads.
+  assemblyImages: UploadedImage[];
+  setAssemblyImages: React.Dispatch<React.SetStateAction<UploadedImage[]>>;
+  produceImages: UploadedImage[];
+  setProduceImages: React.Dispatch<React.SetStateAction<UploadedImage[]>>;
+  sessionId: string | null;
+  setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
+  uploadingCount: number;
+  setUploadingCount: React.Dispatch<React.SetStateAction<number>>;
+  totalCount: number;
+  setTotalCount: React.Dispatch<React.SetStateAction<number>>;
   onProceedToRecognize: (
     sessionId: string,
     assemblyIds: string[],
@@ -60,14 +71,20 @@ export default function UploadMode(props: UploadModeProps) {
     providerConfigured,
     productBaseName,
     onProductBaseNameChange,
+    assemblyImages,
+    setAssemblyImages,
+    produceImages,
+    setProduceImages,
+    sessionId,
+    setSessionId,
+    uploadingCount,
+    setUploadingCount,
+    totalCount,
+    setTotalCount,
     onProceedToRecognize,
   } = props;
 
-  const [assemblyImages, setAssemblyImages] = useState<UploadedImage[]>([]);
-  const [produceImages, setProduceImages] = useState<UploadedImage[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [uploadingCount, setUploadingCount] = useState(0);
-  const [totalCount, setTotalCount] = useState(0);
+  // Pure UI transient — fine to keep local; cleared on remount.
   const [dragOverCol, setDragOverCol] = useState<'assembly' | 'produce' | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
