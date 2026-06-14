@@ -16,6 +16,7 @@ from __future__ import annotations
 import collections
 import io
 import os
+import re
 import shutil
 import time
 from datetime import datetime
@@ -52,6 +53,15 @@ MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 # 允许的 MIME 类型
 ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp"}
+
+# session_id / image_id 必须是 uuid4 hex（仅 [0-9a-f]，长度 == 32）。
+# 用作文件系统路径片段前必须校验，防止 `..` / `/` 等路径遍历输入。
+_HEX_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _is_safe_id(value: str) -> bool:
+    """校验 session_id / image_id 是否为合法 uuid4 hex（32 位小写十六进制）。"""
+    return isinstance(value, str) and bool(_HEX_ID_RE.match(value))
 
 
 def _session_dir(session_id: str) -> Path:
@@ -118,7 +128,10 @@ def save_uploaded_image(session_id: str, image_id: str, suffix: str, content: by
     """把上传字节写到 data/intake_tmp/<session_id>/<image_id>.<suffix>，返回该路径。
 
     父目录用 mkdir(parents=True, exist_ok=True) 自动创建。
+    session_id / image_id 必须先经 `_is_safe_id` 校验（路由层负责），此处再次断言以防路径遍历。
     """
+    if not _is_safe_id(session_id) or not _is_safe_id(image_id):
+        raise ValueError("invalid session_id / image_id")
     session_dir = _session_dir(session_id)
     session_dir.mkdir(parents=True, exist_ok=True)
     path = session_dir / f"{image_id}.{suffix}"
@@ -127,7 +140,12 @@ def save_uploaded_image(session_id: str, image_id: str, suffix: str, content: by
 
 
 def cleanup_session(session_id: str) -> None:
-    """删除 data/intake_tmp/<session_id>/ 整个子目录；不存在或删除失败均静默。"""
+    """删除 data/intake_tmp/<session_id>/ 整个子目录；不存在或删除失败均静默。
+
+    非法 session_id 直接静默忽略（不删任何东西，杜绝路径遍历）。
+    """
+    if not _is_safe_id(session_id):
+        return
     session_dir = _session_dir(session_id)
     try:
         shutil.rmtree(session_dir)
@@ -139,12 +157,17 @@ def load_session_images(session_id: str, image_ids: list[str]) -> Optional[list[
     """按 image_ids 顺序读 session 目录下的图片 bytes。
 
     任一 image_id 文件不存在 → 返回 None（路由层映射到 session_expired）。
+    非法 session_id 或 image_id（非 uuid4 hex）也返回 None — 不读任何文件，杜绝路径遍历。
     """
+    if not _is_safe_id(session_id):
+        return None
     sd = _session_dir(session_id)
     if not sd.is_dir():
         return None
     result: list[bytes] = []
     for img_id in image_ids:
+        if not _is_safe_id(img_id):
+            return None
         matches = list(sd.glob(f"{img_id}.*"))
         if not matches:
             return None

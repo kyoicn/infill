@@ -18,6 +18,7 @@ from app.schemas_intake import MergeRequest, RecognizeRequest, UploadedImage
 from app.services.intake import (
     ALLOWED_MIME,
     MAX_UPLOAD_BYTES,
+    _is_safe_id,
     cleanup_stale_sessions,
     detect_conflicts,
     do_merge,
@@ -57,6 +58,15 @@ async def upload(
 
     if not session_id:
         session_id = uuid.uuid4().hex
+    elif not _is_safe_id(session_id):
+        # 拒绝非 uuid4 hex 的 session_id —— 防止路径遍历（`../foo`）写到 intake_tmp 之外
+        return {
+            "ok": False,
+            "session_id": None,
+            "images": [],
+            "error_kind": "invalid_session_id",
+            "error": f"非法 session_id: {session_id!r}",
+        }
 
     images: list[dict] = []
     for file in files:
@@ -224,8 +234,13 @@ def merge(req: MergeRequest, db: Session = Depends(get_db)):
 
 @router.get("/recent-logs")
 def recent_logs(lines: int = 100):
-    """返回最近 N 条 intake_log 记录（CUJ-5 失败页『查看后端日志』）。"""
+    """返回最近 N 条 intake_log 记录（CUJ-5 失败页『查看后端日志』）。
+
+    响应 schema 见 design-intake.md §1：`{ok: true, logs: "<line1>\\n<line2>\\n..."}`，
+    前端 textarea 直接展示，无需 join 一次。
+    """
+    buf = get_recent_logs(lines=lines)
     return {
         "ok": True,
-        "lines": get_recent_logs(lines=lines),
+        "logs": "\n".join(buf),
     }

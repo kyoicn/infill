@@ -247,6 +247,22 @@ def test_upload_rejects_too_large(client, tmp_path, monkeypatch):
     assert body["error_kind"] == "too_large"
 
 
+def test_upload_rejects_path_traversal_session_id(client, tmp_path, monkeypatch):
+    """非 uuid4 hex 的 session_id（如 ../etc/passwd）必须被拒绝 —— 防路径遍历。"""
+    monkeypatch.setattr(intake_service, "INTAKE_TMP_DIR", tmp_path / "intake_tmp")
+
+    content = _make_white_image()
+    resp = client.post(
+        "/api/intake/upload",
+        files=[("files", ("a.png", content, "image/png"))],
+        data={"session_id": "../../../etc/passwd"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["error_kind"] == "invalid_session_id"
+
+
 def test_upload_session_id_reuse(client, tmp_path, monkeypatch):
     """传入相同 session_id 时，第二次上传落到同一子目录。"""
     monkeypatch.setattr(intake_service, "INTAKE_TMP_DIR", tmp_path / "intake_tmp")
@@ -559,10 +575,11 @@ def _seed_session_images(tmp_intake_dir: Path, session_id: str, image_ids: list[
 
 class TestRecognizeEndpoint:
     def test_happy_path_prefixes_and_default_plate_names(self, client, db_session, monkeypatch):
-        # 1. seed session images
-        session_id = "sess-test-001"
-        assembly_ids = ["asm-1", "asm-2"]
-        produce_ids = ["prd-1", "prd-2", "prd-3"]
+        # 1. seed session images — session_id / image_id 必须是 uuid4 hex（intake._is_safe_id 校验）
+        import uuid as _uuid
+        session_id = _uuid.uuid4().hex
+        assembly_ids = [_uuid.uuid4().hex for _ in range(2)]
+        produce_ids = [_uuid.uuid4().hex for _ in range(3)]
         _seed_session_images(intake_service.INTAKE_TMP_DIR, session_id, assembly_ids + produce_ids)
 
         # 2. mock provider
@@ -613,10 +630,10 @@ class TestRecognizeEndpoint:
         assert plate0["component_name"] == "床头柜-侧板"
         assert plate0["quantity_per_plate"] == 2
         assert plate0["duration_minutes"] == 111
-        # source_image_id 反查
-        assert plate0["source_image_id"] == "prd-1"
-        assert plates[1]["source_image_id"] == "prd-2"
-        assert plates[2]["source_image_id"] == "prd-3"
+        # source_image_id 反查 — 应等于按 LLM source_index 取 produce_ids 数组
+        assert plate0["source_image_id"] == produce_ids[0]
+        assert plates[1]["source_image_id"] == produce_ids[1]
+        assert plates[2]["source_image_id"] == produce_ids[2]
         assert plates[2]["plate_name"] == "床头柜-抽屉-2"
 
     def test_session_expired_returns_error(self, client, db_session, monkeypatch):
@@ -634,8 +651,11 @@ class TestRecognizeEndpoint:
         assert body["error_kind"] == "session_expired"
 
     def test_llm_error_propagates_raw_preview(self, client, db_session, monkeypatch):
-        session_id = "sess-err"
-        _seed_session_images(intake_service.INTAKE_TMP_DIR, session_id, ["a1", "p1"])
+        import uuid as _uuid
+        session_id = _uuid.uuid4().hex
+        a_id = _uuid.uuid4().hex
+        p_id = _uuid.uuid4().hex
+        _seed_session_images(intake_service.INTAKE_TMP_DIR, session_id, [a_id, p_id])
 
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
 
@@ -646,8 +666,8 @@ class TestRecognizeEndpoint:
 
         resp = client.post("/api/intake/recognize", json={
             "session_id": session_id,
-            "assembly_image_ids": ["a1"],
-            "produce_image_ids": ["p1"],
+            "assembly_image_ids": [a_id],
+            "produce_image_ids": [p_id],
         })
         body = resp.json()
         assert body["ok"] is False
@@ -976,8 +996,9 @@ class TestMergeSuccess:
         TestSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
         monkeypatch.setattr(db_module, "SessionLocal", TestSession)
 
-        # seed session tmp dir
-        session_id = "sess-merge-ok"
+        # seed session tmp dir — session_id 必须是 uuid4 hex（intake._is_safe_id 校验）
+        import uuid as _uuid
+        session_id = _uuid.uuid4().hex
         sd = intake_service.INTAKE_TMP_DIR / session_id
         sd.mkdir(parents=True, exist_ok=True)
         (sd / "x.png").write_bytes(b"x")
@@ -1149,7 +1170,7 @@ class TestRecentLogs:
         assert resp.status_code == 200
         body = resp.json()
         assert body["ok"] is True
-        assert body["lines"] == ["hello", "world"]
+        assert body["logs"] == "hello\nworld"
 
     def test_recent_logs_truncates_to_lines_param(self, client):
         _RECENT_LOGS.clear()
@@ -1157,7 +1178,7 @@ class TestRecentLogs:
             intake_log(f"log {i}")
         resp = client.get("/api/intake/recent-logs?lines=3")
         body = resp.json()
-        assert body["lines"] == ["log 7", "log 8", "log 9"]
+        assert body["logs"] == "log 7\nlog 8\nlog 9"
 
     def test_recent_logs_default_100(self, client):
         _RECENT_LOGS.clear()
@@ -1165,7 +1186,7 @@ class TestRecentLogs:
             intake_log(f"line {i}")
         resp = client.get("/api/intake/recent-logs")
         body = resp.json()
-        assert len(body["lines"]) == 5
+        assert body["logs"].split("\n") == [f"line {i}" for i in range(5)]
 
 
 # ============================================================
