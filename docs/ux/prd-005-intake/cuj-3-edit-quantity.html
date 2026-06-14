@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CUJ-3 原图复核 drawer（edit-quantity）</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="sider">
+    <div class="sider-logo">打印排班</div>
+    <ul class="menu">
+      <li>仪表盘</li>
+      <li>产品目录</li>
+      <li class="active">
+        <svg viewBox="64 64 896 896"><path d="M136 384h56c4.4 0 8-3.6 8-8V200h176c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H149.6c-12 0-21.6 9.6-21.6 21.6V376c0 4.4 3.6 8 8 8zm56 256h-56c-4.4 0-8 3.6-8 8v234.4c0 12 9.6 21.6 21.6 21.6H376c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H200V648c0-4.4-3.6-8-8-8zM896 128H637.6c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8H824v176c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V149.6c0-12-9.6-21.6-21.6-21.6zM888 640h-56c-4.4 0-8 3.6-8 8v176H648c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h238.4c12 0 21.6-9.6 21.6-21.6V648c0-4.4-3.6-8-8-8zm-94-294H230c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h564c4.4 0 8-3.6 8-8v-60c0-4.4-3.6-8-8-8z"/></svg>产品录入
+      </li>
+      <li>订单管理</li>
+      <li>库存管理</li>
+      <li>排班中心</li>
+      <li>系统设置</li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <h1 class="page-title">产品录入 · 草稿校对</h1>
+
+    <div class="card">
+      <div class="form-row">
+        <label>产品基名</label>
+        <input type="text" class="ant-input fixed-w" value="床头柜" />
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>打印盘清单</h2>
+        <span class="desc">用户正在复核「床头柜-把手-40」这一行的件数</span>
+      </div>
+      <table class="tbl">
+        <thead>
+          <tr><th class="col-wide">盘号</th><th>所属组件</th><th class="col-narrow">单盘件数</th><th class="col-narrow">耗时</th><th class="col-action">原图复核</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>床头柜-抽屉-3</td><td>床头柜-抽屉</td><td>3</td><td>2h43m</td><td class="col-action"><button class="icon-btn">👁</button></td></tr>
+          <tr><td>床头柜-隔板小-4</td><td>床头柜-隔板小</td><td>4</td><td>3h36m</td><td class="col-action"><button class="icon-btn">👁</button></td></tr>
+          <tr><td>床头柜-侧板-2</td><td>床头柜-侧板</td><td>2</td><td>1h51m</td><td class="col-action"><button class="icon-btn">👁</button></td></tr>
+          <tr style="background: #e6f4ff;">
+            <td><b>床头柜-把手-40</b></td>
+            <td>床头柜-把手</td>
+            <td><input class="input-inline num-w critical" value="40" /></td>
+            <td>17m45s</td>
+            <td class="col-action"><button class="icon-btn" style="border-color: var(--primary); color: var(--primary);">👁</button></td>
+          </tr>
+          <tr><td>床头柜-装饰球-80</td><td>床头柜-装饰球</td><td>80</td><td>1h12m</td><td class="col-action"><button class="icon-btn">👁</button></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </main>
+</div>
+
+<!-- Drawer: right slide-out for image preview -->
+<div class="drawer-mask"></div>
+<div class="drawer">
+  <div class="drawer-header">
+    <div class="drawer-title">原图复核 · 床头柜-把手-40</div>
+    <button class="drawer-close" title="关闭">×</button>
+  </div>
+  <div class="drawer-body">
+    <div class="drawer-img-box">
+      <div class="drawer-img-placeholder">
+        [原图：SS_002713.png]<br><br>
+        盘上密布约 40 个小把手<br>
+        右上角面板显示总时间 17m45s<br><br>
+        <em>真实实现里：可缩放、可拖拽</em>
+      </div>
+    </div>
+
+    <div class="drawer-meta-row"><span class="label">文件名</span><span class="value">SS_002713.png</span></div>
+    <div class="drawer-meta-row"><span class="label">LLM 识别件数</span><span class="value llm">40</span></div>
+    <div class="drawer-meta-row"><span class="label">LLM 识别耗时</span><span class="value llm">17m45s</span></div>
+    <div class="drawer-meta-row"><span class="label">所属组件</span><span class="value llm">床头柜-把手</span></div>
+    <div class="drawer-meta-row" style="border-bottom: none; padding-top: 16px;">
+      <span class="label">当前件数</span>
+      <span class="value"><input class="input-inline num-w critical" value="40" /></span>
+    </div>
+  </div>
+  <div class="drawer-footer">
+    <button class="btn-secondary">取消</button>
+    <button class="btn-primary">应用</button>
+  </div>
+</div>
+
+</body>
+</html>

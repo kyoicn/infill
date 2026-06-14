@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CUJ-1 上传中（uploading）</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="sider">
+    <div class="sider-logo">打印排班</div>
+    <ul class="menu">
+      <li>仪表盘</li>
+      <li>产品目录</li>
+      <li class="active">
+        <svg viewBox="64 64 896 896"><path d="M136 384h56c4.4 0 8-3.6 8-8V200h176c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H149.6c-12 0-21.6 9.6-21.6 21.6V376c0 4.4 3.6 8 8 8zm56 256h-56c-4.4 0-8 3.6-8 8v234.4c0 12 9.6 21.6 21.6 21.6H376c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H200V648c0-4.4-3.6-8-8-8zM896 128H637.6c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8H824v176c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V149.6c0-12-9.6-21.6-21.6-21.6zM888 640h-56c-4.4 0-8 3.6-8 8v176H648c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h238.4c12 0 21.6-9.6 21.6-21.6V648c0-4.4-3.6-8-8-8zm-94-294H230c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h564c4.4 0 8-3.6 8-8v-60c0-4.4-3.6-8-8-8z"/></svg>产品录入
+      </li>
+      <li>订单管理</li>
+      <li>库存管理</li>
+      <li>排班中心</li>
+      <li>系统设置</li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <h1 class="page-title">产品录入</h1>
+
+    <div class="card">
+      <div class="form-row">
+        <label>产品基名</label>
+        <input type="text" class="ant-input fixed-w" placeholder="上传完成后自动填入" disabled />
+        <span class="hint">系统会从图像和文件名推断后填入</span>
+      </div>
+      <div class="dropzone-mini">
+        <span class="progress">上传中 9 / 14</span>
+        <b>+ 继续拖入截图</b>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="split">
+        <div class="col assembly">
+          <div class="col-header">
+            <span class="badge-dot dot-assembly"></span>
+            <span class="badge-text assembly">组装图</span>
+            <span class="count">3 张</span>
+          </div>
+          <div class="thumb-grid">
+            <div class="thumb"><div class="thumb-img">[俯视图]</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">assembly.png</div></div>
+            <div class="thumb uploading"><div class="thumb-img">[侧视图]</div><div class="spinner"></div><div class="thumb-name">side_view.png</div></div>
+            <div class="thumb uploading"><div class="thumb-img">[45° 视图]</div><div class="spinner"></div><div class="thumb-name">angle_45.png</div></div>
+          </div>
+        </div>
+
+        <div class="col produce">
+          <div class="col-header">
+            <span class="badge-dot dot-produce"></span>
+            <span class="badge-text produce">打印盘</span>
+            <span class="count">11 张</span>
+          </div>
+          <div class="thumb-grid">
+            <div class="thumb"><div class="thumb-img has-panel">3 高方盒<br>2h43m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002113.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">4 矮方盒<br>3h36m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002257.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">2 中方盒<br>1h51m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002356.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">9 浅框小<br>2h18m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002440.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">12 浅框大<br>3h24m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002547.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">3 堆叠件<br>1h35m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002637.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">40 把手<br>17m45s</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002713.png</div></div>
+            <div class="thumb"><div class="thumb-img has-panel">~80 圆球<br>1h12m</div><div class="thumb-actions"><button class="thumb-btn">×</button></div><div class="thumb-name">SS_002841.png</div></div>
+            <div class="thumb uploading"><div class="thumb-img has-panel">…</div><div class="spinner"></div><div class="thumb-name">SS_002901.png</div></div>
+            <div class="thumb uploading"><div class="thumb-img has-panel">…</div><div class="spinner"></div><div class="thumb-name">SS_002912.png</div></div>
+            <div class="thumb uploading"><div class="thumb-img has-panel">…</div><div class="spinner"></div><div class="thumb-name">SS_002928.png</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="drag-hint"><span class="icon">⇄</span> 分类错了？把任意缩略图拖到另一栏即可调整</div>
+    </div>
+
+    <div class="footer">
+      <span class="tooltip-on-disabled">等待全部图片上传完成</span>
+      <button class="btn-primary" disabled>
+        开始识别
+        <svg viewBox="64 64 896 896"><path d="M869 487.8L491.2 159.9c-2.9-2.5-6.6-3.9-10.5-3.9h-88.5c-7.4 0-10.8 9.2-5.2 14l350.2 304H152c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h585.1L386.9 854c-5.6 4.9-2.2 14 5.2 14h91.5c1.9 0 3.8-.7 5.2-2L869 536.2a32.07 32.07 0 0 0 0-48.4z"/></svg>
+      </button>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

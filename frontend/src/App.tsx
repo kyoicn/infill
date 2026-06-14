@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AppLayout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
+import Intake from './pages/Intake';
 import Orders from './pages/Orders';
 import Inventory from './pages/Inventory';
 import Schedule from './pages/Schedule';
@@ -14,6 +15,7 @@ function App() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/products" element={<Products />} />
+          <Route path="/intake" element={<Intake />} />
           <Route path="/orders" element={<Orders />} />
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/schedule" element={<Schedule />} />

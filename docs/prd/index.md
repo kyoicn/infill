@@ -23,6 +23,7 @@
 | [prd-002-inventory](prd-002-inventory.md) | 组件库存管理（各组件各颜色实时库存查看 + 手动调整 + 富余/缺口展示 + Dashboard 预警） | active |
 | [prd-003-schedule](prd-003-schedule.md) | 打印机排班（生成排班·三策略+同步强度+富余+产品过滤 / 列表与甘特图视图 / 批次执行状态流转 / 草稿手动编辑 / 收菜闹钟） | active |
 | [prd-004-settings](prd-004-settings.md) | 系统配置（打印机管理·批量增删 / 操作时间窗口按星期几多时段 / 换版时间 / 数据库重置） | active |
+| [prd-005-intake](prd-005-intake.md) | 产品录入（从切片截图识别 BOM + 打印盘 + 颜色变体 / 合并入 catalog.yaml） | completed |
 
 ## 参考文档（Reference docs）
 

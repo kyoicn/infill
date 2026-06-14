@@ -6,6 +6,7 @@ import {
   InboxOutlined,
   ScheduleOutlined,
   SettingOutlined,
+  ScanOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 
@@ -14,6 +15,7 @@ const { Sider, Content } = Layout;
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
   { key: '/products', icon: <AppstoreOutlined />, label: '产品目录' },
+  { key: '/intake', icon: <ScanOutlined />, label: '产品录入' },
   { key: '/orders', icon: <ShoppingCartOutlined />, label: '订单管理' },
   { key: '/inventory', icon: <InboxOutlined />, label: '库存管理' },
   { key: '/schedule', icon: <ScheduleOutlined />, label: '排班中心' },

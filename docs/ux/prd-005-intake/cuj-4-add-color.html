@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CUJ-4 颜色下拉展开（add-color popover）</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="sider">
+    <div class="sider-logo">打印排班</div>
+    <ul class="menu">
+      <li>仪表盘</li>
+      <li>产品目录</li>
+      <li class="active">
+        <svg viewBox="64 64 896 896"><path d="M136 384h56c4.4 0 8-3.6 8-8V200h176c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H149.6c-12 0-21.6 9.6-21.6 21.6V376c0 4.4 3.6 8 8 8zm56 256h-56c-4.4 0-8 3.6-8 8v234.4c0 12 9.6 21.6 21.6 21.6H376c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H200V648c0-4.4-3.6-8-8-8zM896 128H637.6c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8H824v176c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V149.6c0-12-9.6-21.6-21.6-21.6zM888 640h-56c-4.4 0-8 3.6-8 8v176H648c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h238.4c12 0 21.6-9.6 21.6-21.6V648c0-4.4-3.6-8-8-8zm-94-294H230c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h564c4.4 0 8-3.6 8-8v-60c0-4.4-3.6-8-8-8z"/></svg>产品录入
+      </li>
+      <li>订单管理</li>
+      <li>库存管理</li>
+      <li>排班中心</li>
+      <li>系统设置</li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <h1 class="page-title">产品录入 · 填写颜色</h1>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>配色变体</h2>
+        <span class="desc">用户点开第三个变体「床头柜-侧板」的颜色下拉，正在选/输入颜色</span>
+      </div>
+
+      <div class="matrix-wrap">
+        <table class="matrix-tbl">
+          <thead>
+            <tr>
+              <th class="col-comp">组件</th>
+              <th class="col-qty">件数</th>
+              <th class="col-variant"><div class="variant-head"><input class="input-inline text-w" value="床头柜 - 灰白" /><div class="variant-head-actions"><button>⎘</button><button class="del">×</button></div></div></th>
+              <th class="col-variant"><div class="variant-head"><input class="input-inline text-w" value="床头柜 - 黑白" /><div class="variant-head-actions"><button>⎘</button><button class="del">×</button></div></div></th>
+              <th class="col-variant"><div class="variant-head"><input class="input-inline text-w" value="床头柜 - 配色 3" /><div class="variant-head-actions"><button>⎘</button><button class="del">×</button></div></div></th>
+              <th class="col-add" rowspan="7" style="vertical-align: middle; padding: 8px;"><button class="add-variant-btn"><span class="plus">+</span><span>新增配色</span></button></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="col-comp">床头柜-侧板</td>
+              <td class="col-qty">x2</td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#8c8c8c"></span><span class="color-name">灰色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#8c8c8c"></span><span class="color-name">灰色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant" style="position:relative;">
+                <div class="popover-wrap">
+                  <div class="color-cell active empty"><span class="color-swatch empty"></span><span class="color-name">选择颜色</span><span class="arrow">▾</span></div>
+                  <div class="popover">
+                    <div class="popover-section">
+                      <div class="popover-section-title">本产品已用过的颜色</div>
+                      <div class="popover-options">
+                        <button class="popover-option"><span class="swatch" style="background:#ffffff;border-color:rgba(0,0,0,0.25)"></span>白色</button>
+                        <button class="popover-option"><span class="swatch" style="background:#1f1f1f"></span>黑色</button>
+                        <button class="popover-option"><span class="swatch" style="background:#8c8c8c"></span>灰色</button>
+                      </div>
+                    </div>
+                    <div class="popover-divider"></div>
+                    <div class="popover-section">
+                      <div class="popover-section-title">常用颜色</div>
+                      <div class="popover-options">
+                        <button class="popover-option"><span class="swatch" style="background:#8b4513"></span>棕色</button>
+                        <button class="popover-option"><span class="swatch" style="background:#ffc0cb"></span>粉色</button>
+                        <button class="popover-option"><span class="swatch" style="background:#f5222d"></span>红色</button>
+                        <button class="popover-option"><span class="swatch" style="background:#fadb14"></span>黄色</button>
+                        <button class="popover-option"><span class="swatch" style="background:#1677ff"></span>蓝色</button>
+                        <button class="popover-option"><span class="swatch" style="background:#52c41a"></span>绿色</button>
+                        <button class="popover-option"><span class="swatch" style="background:#fa8c16"></span>橙色</button>
+                        <button class="popover-option"><span class="swatch" style="background:#722ed1"></span>紫色</button>
+                      </div>
+                    </div>
+                    <div class="popover-divider"></div>
+                    <div class="popover-section">
+                      <div class="popover-section-title">输入新颜色名</div>
+                      <div class="popover-input">
+                        <input type="text" placeholder="例如：丝绸粉、奶白" autofocus />
+                        <button>添加</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="col-comp">床头柜-抽屉</td>
+              <td class="col-qty">x4</td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#8c8c8c"></span><span class="color-name">灰色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#8c8c8c"></span><span class="color-name">灰色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant"><div class="color-cell empty"><span class="color-swatch empty"></span><span class="color-name">选择颜色</span><span class="arrow">▾</span></div></td>
+            </tr>
+            <tr>
+              <td class="col-comp">床头柜-隔板大</td>
+              <td class="col-qty">x1</td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#ffffff;border-color:rgba(0,0,0,0.25)"></span><span class="color-name">白色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#1f1f1f"></span><span class="color-name">黑色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant"><div class="color-cell empty"><span class="color-swatch empty"></span><span class="color-name">选择颜色</span><span class="arrow">▾</span></div></td>
+            </tr>
+            <tr>
+              <td class="col-comp">床头柜-隔板小</td>
+              <td class="col-qty">x2</td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#ffffff;border-color:rgba(0,0,0,0.25)"></span><span class="color-name">白色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#1f1f1f"></span><span class="color-name">黑色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant"><div class="color-cell empty"><span class="color-swatch empty"></span><span class="color-name">选择颜色</span><span class="arrow">▾</span></div></td>
+            </tr>
+            <tr>
+              <td class="col-comp">床头柜-把手</td>
+              <td class="col-qty">x4</td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#ffffff;border-color:rgba(0,0,0,0.25)"></span><span class="color-name">白色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#ffffff;border-color:rgba(0,0,0,0.25)"></span><span class="color-name">白色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant"><div class="color-cell empty"><span class="color-swatch empty"></span><span class="color-name">选择颜色</span><span class="arrow">▾</span></div></td>
+            </tr>
+            <tr>
+              <td class="col-comp">床头柜-装饰球</td>
+              <td class="col-qty">x12</td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#ffffff;border-color:rgba(0,0,0,0.25)"></span><span class="color-name">白色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant"><div class="color-cell"><span class="color-swatch" style="background:#ffffff;border-color:rgba(0,0,0,0.25)"></span><span class="color-name">白色</span><span class="arrow">▾</span></div></td>
+              <td class="col-variant"><div class="color-cell empty"><span class="color-swatch empty"></span><span class="color-name">选择颜色</span><span class="arrow">▾</span></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer-prev-next">
+      <button class="btn-secondary">← 上一步：校对</button>
+      <button class="btn-primary" disabled>
+        下一步：合并
+        <svg viewBox="64 64 896 896"><path d="M869 487.8L491.2 159.9c-2.9-2.5-6.6-3.9-10.5-3.9h-88.5c-7.4 0-10.8 9.2-5.2 14l350.2 304H152c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h585.1L386.9 854c-5.6 4.9-2.2 14 5.2 14h91.5c1.9 0 3.8-.7 5.2-2L869 536.2a32.07 32.07 0 0 0 0-48.4z"/></svg>
+      </button>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

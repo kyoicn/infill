@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CUJ-3 重名预警（conflict）</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="sider">
+    <div class="sider-logo">打印排班</div>
+    <ul class="menu">
+      <li>仪表盘</li>
+      <li>产品目录</li>
+      <li class="active">
+        <svg viewBox="64 64 896 896"><path d="M136 384h56c4.4 0 8-3.6 8-8V200h176c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H149.6c-12 0-21.6 9.6-21.6 21.6V376c0 4.4 3.6 8 8 8zm56 256h-56c-4.4 0-8 3.6-8 8v234.4c0 12 9.6 21.6 21.6 21.6H376c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H200V648c0-4.4-3.6-8-8-8zM896 128H637.6c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8H824v176c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V149.6c0-12-9.6-21.6-21.6-21.6zM888 640h-56c-4.4 0-8 3.6-8 8v176H648c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h238.4c12 0 21.6-9.6 21.6-21.6V648c0-4.4-3.6-8-8-8zm-94-294H230c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h564c4.4 0 8-3.6 8-8v-60c0-4.4-3.6-8-8-8z"/></svg>产品录入
+      </li>
+      <li>订单管理</li>
+      <li>库存管理</li>
+      <li>排班中心</li>
+      <li>系统设置</li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <h1 class="page-title">产品录入 · 草稿校对</h1>
+
+    <div class="alert error">
+      <div class="icon">⚠</div>
+      <div class="body">
+        <div class="title">检测到 2 处与现有目录重名 — 请改名或确认合并</div>
+        <div class="desc">合并到 <code>catalog.yaml</code> 时同名条目会冲突。改名能避免误覆盖；如果你确实想合到已有条目下，可以保持同名（系统会在合并时再次确认）。</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="form-row">
+        <label>产品基名</label>
+        <input type="text" class="ant-input fixed-w" value="床头柜" />
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>组件清单 (BOM)</h2>
+        <span class="desc">装配一套产品所需各组件及数量</span>
+      </div>
+
+      <div class="thumb-row">
+        <div class="thumb-zoom"><div class="img">[俯视图<br>3 种组件可见]</div><div class="name">assembly.png</div></div>
+        <div class="thumb-zoom"><div class="img">[侧视图<br>展示堆叠]</div><div class="name">side_view.png</div></div>
+        <div class="thumb-zoom"><div class="img">[45° 视图<br>把手细节]</div><div class="name">angle_45.png</div></div>
+      </div>
+
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th class="col-wide">组件名</th>
+            <th class="col-narrow">装配件数</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="conflict">
+            <td>
+              <input class="input-inline text-w conflict" value="床头柜-把手" />
+              <div class="field-hint conflict">目录中已存在同名组件「床头柜-把手」</div>
+            </td>
+            <td><input class="input-inline num-w critical" value="4" /></td>
+          </tr>
+          <tr>
+            <td><input class="input-inline text-w" value="床头柜-侧板" /></td>
+            <td><input class="input-inline num-w critical" value="2" /></td>
+          </tr>
+          <tr>
+            <td><input class="input-inline text-w" value="床头柜-抽屉" /></td>
+            <td><input class="input-inline num-w critical" value="4" /></td>
+          </tr>
+          <tr>
+            <td><input class="input-inline text-w" value="床头柜-隔板大" /></td>
+            <td><input class="input-inline num-w critical" value="1" /></td>
+          </tr>
+          <tr>
+            <td><input class="input-inline text-w" value="床头柜-隔板小" /></td>
+            <td><input class="input-inline num-w critical" value="2" /></td>
+          </tr>
+          <tr>
+            <td><input class="input-inline text-w" value="床头柜-装饰球" /></td>
+            <td><input class="input-inline num-w critical" value="12" /></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="tbl-add"><button>+ 增加组件</button></div>
+    </div>
+
+    <div class="card">
+      <div class="section-title">
+        <h2>打印盘清单</h2>
+        <span class="desc">每张打印盘的产量、耗时和所属组件 · 默认盘号「组件名-件数」拼接</span>
+      </div>
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th class="col-wide">盘号</th>
+            <th>所属组件</th>
+            <th class="col-narrow">单盘件数</th>
+            <th class="col-narrow">耗时</th>
+            <th class="col-action">原图复核</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><input class="input-inline text-w" value="床头柜-抽屉-3" /></td><td><select class="select-inline"><option>床头柜-抽屉</option></select></td><td><input class="input-inline num-w critical" value="3" /></td><td><input class="input-inline num-w critical" value="2h43m" /></td><td class="col-action"><button class="icon-btn">👁</button></td></tr>
+          <tr><td><input class="input-inline text-w" value="床头柜-隔板小-4" /></td><td><select class="select-inline"><option>床头柜-隔板小</option></select></td><td><input class="input-inline num-w critical" value="4" /></td><td><input class="input-inline num-w critical" value="3h36m" /></td><td class="col-action"><button class="icon-btn">👁</button></td></tr>
+          <tr><td><input class="input-inline text-w" value="床头柜-侧板-2" /></td><td><select class="select-inline"><option>床头柜-侧板</option></select></td><td><input class="input-inline num-w critical" value="2" /></td><td><input class="input-inline num-w critical" value="1h51m" /></td><td class="col-action"><button class="icon-btn">👁</button></td></tr>
+          <tr><td><input class="input-inline text-w" value="床头柜-隔板大-9" /></td><td><select class="select-inline"><option>床头柜-隔板大</option></select></td><td><input class="input-inline num-w critical" value="9" /></td><td><input class="input-inline num-w critical" value="2h18m" /></td><td class="col-action"><button class="icon-btn">👁</button></td></tr>
+          <tr><td><input class="input-inline text-w" value="床头柜-隔板大-12" /></td><td><select class="select-inline"><option>床头柜-隔板大</option></select></td><td><input class="input-inline num-w critical" value="12" /></td><td><input class="input-inline num-w critical" value="3h24m" /></td><td class="col-action"><button class="icon-btn">👁</button></td></tr>
+          <tr><td><input class="input-inline text-w" value="床头柜-抽屉-1" /></td><td><select class="select-inline"><option>床头柜-抽屉</option></select></td><td><input class="input-inline num-w critical" value="1" /></td><td><input class="input-inline num-w critical" value="1h35m" /></td><td class="col-action"><button class="icon-btn">👁</button></td></tr>
+          <tr class="conflict">
+            <td>
+              <input class="input-inline text-w conflict" value="床头柜-把手-40" />
+              <div class="field-hint conflict">目录中已存在同盘号「床头柜-把手-40」</div>
+            </td>
+            <td><select class="select-inline"><option>床头柜-把手</option></select></td>
+            <td><input class="input-inline num-w critical" value="40" /></td>
+            <td><input class="input-inline num-w critical" value="17m45s" /></td>
+            <td class="col-action"><button class="icon-btn">👁</button></td>
+          </tr>
+          <tr><td><input class="input-inline text-w" value="床头柜-装饰球-80" /></td><td><select class="select-inline"><option>床头柜-装饰球</option></select></td><td><input class="input-inline num-w critical" value="80" /></td><td><input class="input-inline num-w critical" value="1h12m" /></td><td class="col-action"><button class="icon-btn">👁</button></td></tr>
+        </tbody>
+      </table>
+      <div class="tbl-add"><button>+ 增加打印盘</button></div>
+    </div>
+
+    <div class="footer-prev-next">
+      <button class="btn-secondary">← 上一步：调整截图</button>
+      <button class="btn-primary">
+        下一步：填写颜色
+        <svg viewBox="64 64 896 896"><path d="M869 487.8L491.2 159.9c-2.9-2.5-6.6-3.9-10.5-3.9h-88.5c-7.4 0-10.8 9.2-5.2 14l350.2 304H152c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h585.1L386.9 854c-5.6 4.9-2.2 14 5.2 14h91.5c1.9 0 3.8-.7 5.2-2L869 536.2a32.07 32.07 0 0 0 0-48.4z"/></svg>
+      </button>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

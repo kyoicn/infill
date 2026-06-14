@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 
 from .database import Base, engine, SessionLocal
 from .routers import catalog, orders, inventory, printers, schedule, config
+from app.routers import intake
 from .services.catalog import load_catalog
 from .services.migrate import auto_migrate
 
@@ -44,6 +45,7 @@ app.include_router(inventory.router)
 app.include_router(printers.router)
 app.include_router(schedule.router)
 app.include_router(config.router)
+app.include_router(intake.router)
 
 
 @app.get("/api/health")

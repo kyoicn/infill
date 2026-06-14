@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>CUJ-5 合并失败（error）</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+
+<div class="layout">
+
+  <aside class="sider">
+    <div class="sider-logo">打印排班</div>
+    <ul class="menu">
+      <li>仪表盘</li>
+      <li>产品目录</li>
+      <li class="active">
+        <svg viewBox="64 64 896 896"><path d="M136 384h56c4.4 0 8-3.6 8-8V200h176c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H149.6c-12 0-21.6 9.6-21.6 21.6V376c0 4.4 3.6 8 8 8zm56 256h-56c-4.4 0-8 3.6-8 8v234.4c0 12 9.6 21.6 21.6 21.6H376c4.4 0 8-3.6 8-8v-56c0-4.4-3.6-8-8-8H200V648c0-4.4-3.6-8-8-8zM896 128H637.6c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8H824v176c0 4.4 3.6 8 8 8h56c4.4 0 8-3.6 8-8V149.6c0-12-9.6-21.6-21.6-21.6zM888 640h-56c-4.4 0-8 3.6-8 8v176H648c-4.4 0-8 3.6-8 8v56c0 4.4 3.6 8 8 8h238.4c12 0 21.6-9.6 21.6-21.6V648c0-4.4-3.6-8-8-8zm-94-294H230c-4.4 0-8 3.6-8 8v60c0 4.4 3.6 8 8 8h564c4.4 0 8-3.6 8-8v-60c0-4.4-3.6-8-8-8z"/></svg>产品录入
+      </li>
+      <li>订单管理</li>
+      <li>库存管理</li>
+      <li>排班中心</li>
+      <li>系统设置</li>
+    </ul>
+  </aside>
+
+  <main class="content">
+    <h1 class="page-title">产品录入 · 合并失败</h1>
+
+    <div class="card result-card">
+      <div class="result-icon error">!</div>
+      <div class="result-title">合并失败 — 已自动回滚</div>
+      <div class="result-desc">
+        重新加载 <b>data/catalog.yaml</b> 时检测到与现有目录的内部冲突，写入已撤销，文件已从备份恢复到合并前状态。你的草稿仍保留在上一步，可调整后重试。
+      </div>
+      <div class="result-detail">
+        错误类型 · CatalogValidationError<br>
+        错误信息 · 打印盘「床头柜-把手-40」引用的组件「床头柜-把手」与目录中已存在的同名组件结构冲突<br>
+        已回滚至 · data/catalog.yaml.bak.20260614-180523<br>
+        建议 · 返回上一步检查命名是否撞名，或在产品基名旁加版本号（如「床头柜 v2」）
+      </div>
+      <div class="result-actions">
+        <button class="btn-secondary">查看后端日志</button>
+        <button class="btn-primary">返回上一步调整</button>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+</body>
+</html>

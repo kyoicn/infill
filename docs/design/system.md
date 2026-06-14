@@ -1,6 +1,6 @@
 # 系统总体设计（System）
 
-> Last updated: 2026-06-13 02:11:44 (UTC+8)
+> Last updated: 2026-06-14 01:38:46 (UTC+8)
 > Serves: 全部 PRD / 全部业务域（本文档为跨切面基础章节，所有 `design-*.md` 在此之上展开）
 >
 > 本文档是「整本设计书」的基础章节，描述跨组件的技术栈、架构、数据模型总览、API 约定与共享模式。
@@ -51,6 +51,9 @@
 | 数据校验 | Pydantic | 2.11 | 请求/响应 schema，`from_attributes` 直接序列化 ORM 对象 |
 | 数据库 | SQLite | — | 单用户、零运维、数据即文件 |
 | 目录格式 | YAML (PyYAML) | 6.0 | 人类可读，用户直接编辑 |
+| 图像处理（intake） | Pillow | 计划 >=10.0 | 启发式分类的灰度均值采样；零 LLM token |
+| 多部分上传（intake） | python-multipart | 计划 >=0.0.9 | FastAPI 0.115 文件上传必装 |
+| LLM 调用（intake） | DeepSeek vision（OpenAI-compatible API） | — | 截图 → 结构化草稿；MVP 单 provider，架构留扩展位（`LLMVisionProvider` 抽象） |
 | 容器 | Docker + docker-compose | — | 单容器交付 + 离线 bundle |
 
 **未采用 / 已偏离规划**：
@@ -241,6 +244,7 @@ erDiagram
   | `printers` | `/api/printers` | 打印机 | 打印机 CRUD |
   | `schedule` | `/api/schedule` | 排班 | 生成/确认/删除排班 + 批次任务编辑 + 执行控制 |
   | `config` | `/api/config` | 配置 | 操作窗口 / 系统配置 / 重置数据库 |
+  | `intake` | `/api/intake` | 产品录入 | 截图上传 + 启发式分类 + LLM 识别 + 合并到 `catalog.yaml`（详见 `design-intake.md`） |
   | （main） | `/api/health` | — | 健康检查 |
 
 - **依赖注入数据库会话**：`db: Session = Depends(get_db)`，`get_db` 为 generator（`database.py`），请求结束自动 `close`。部分需要独立事务的场景（`catalog/reload`、`config/reset-db`、`lifespan` 加载）直接 `SessionLocal()` 手动管理。
@@ -250,8 +254,9 @@ erDiagram
 
 ### 5.2 非典型 REST 的端点（现状记录）
 
-- 部分写操作用动词式 POST 而非纯 REST：`/orders/{id}/ship`、`/schedule/plans/{id}/confirm`、`/schedule/batches/{id}/start`、`/schedule/tasks/{id}/complete|cancel|fail`、`/catalog/reload`、`/config/reset-db`。这是对「业务动作」的直接建模，对单用户系统是合理取舍。
+- 部分写操作用动词式 POST 而非纯 REST：`/orders/{id}/ship`、`/schedule/plans/{id}/confirm`、`/schedule/batches/{id}/start`、`/schedule/tasks/{id}/complete|cancel|fail`、`/catalog/reload`、`/config/reset-db`、`/intake/upload`、`/intake/recognize`、`/intake/merge`。这是对「业务动作」的直接建模，对单用户系统是合理取舍。
 - `catalog` router 的目录读取接口未严格收敛在子前缀下（如 `/components`、`/products`、`/components/configs/all` 直接挂 `/api`）。
+- 部分端点不抛 `HTTPException` 而返回结构化 `{ok: bool, ...}`（`/catalog/reload`、`/intake/recognize`、`/intake/merge`）。这类端点需要把多种业务错误分门别类（带 `error_kind` 枚举）让前端按 kind 分支渲染 UI，比 HTTP 状态码更表达力强。
 
 ### 5.3 跨切面安全说明（现状）
 
@@ -353,6 +358,9 @@ flowchart TB
 |---|---|---|
 | `DATABASE_URL` | `sqlite:///./data.db` | SQLite 文件路径（Docker 设为 `/app/data/data.db`） |
 | `CATALOG_PATH` | `<repo>/data/catalog.yaml` | 目录文件路径（Docker 设为 `/app/data/catalog.yaml`） |
+| `DEEPSEEK_API_KEY` | — | **产品录入（intake）必需**；未配置时 `/intake` 页整页禁用（详见 `design-intake.md` §1 `provider-status`）。不入 DB、不出现在任何 HTTP 响应。 |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek API 端点；可指向 OpenAI-compatible 代理或私有部署。 |
+| `DEEPSEEK_VISION_MODEL` | （见 design-intake.md §11 §1） | DeepSeek vision 模型 ID；实施时确认并默认锁定。 |
 
 ### 7.3 数据持久化
 
@@ -394,6 +402,7 @@ flowchart TB
 | 文档 | 覆盖范围 |
 |---|---|
 | `design-scheduler.md` | 排班算法：DB 服务层 + 纯函数核心层、三种策略、同步强度、操作窗口、富余生产、执行控制 |
-| `design-catalog.md` | `catalog.yaml` 格式与加载链路、与 DB 的差量同步语义 |
+| `design-catalog.md` | `catalog.yaml` 格式与加载链路、与 DB 的差量同步语义（**读源**） |
+| `design-intake.md` | 产品录入：截图上传、启发式分类、LLM provider 抽象（DeepSeek）、颜色矩阵、合并到 `catalog.yaml`（**写源**，备份 + 回滚） |
 | `design-orders-inventory.md` | 订单队列、发货扣减、BOM 折算、库存调整、富余计算 |
 | `design-frontend.md` | 前端路由、`api/client.ts` 封装、各页面职责、甘特图/列表视图实现 |
