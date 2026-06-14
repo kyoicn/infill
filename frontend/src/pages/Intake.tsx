@@ -3,6 +3,7 @@ import { Steps, Typography } from 'antd';
 import { api } from '../api/client';
 import UploadMode from './intake/Upload';
 import RecognizingMode from './intake/Recognizing';
+import ColorMode from './intake/Color';
 import IntakeError from './intake/IntakeError';
 import DraftMode from './intake/Draft';
 
@@ -186,7 +187,11 @@ export default function Intake() {
         />
       )}
       {mode.kind === 'color' && (
-        <div>color mode placeholder — to be implemented by subsequent tasks</div>
+        <ColorMode
+          draft={mode.draft}
+          onBack={() => setMode({ kind: 'draft', draft: mode.draft, conflicts: [] })}
+          onProceedToPreview={(finalDraft) => setMode({ kind: 'previewing', finalDraft })}
+        />
       )}
       {mode.kind === 'previewing' && (
         <div>previewing mode placeholder — to be implemented by subsequent tasks</div>
