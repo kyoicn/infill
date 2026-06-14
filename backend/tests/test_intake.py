@@ -1166,3 +1166,254 @@ class TestRecentLogs:
         resp = client.get("/api/intake/recent-logs")
         body = resp.json()
         assert len(body["lines"]) == 5
+
+
+# ============================================================
+# T11 — 端到端集成冒烟测试：upload → recognize → (color) → merge
+# 把 T3 / T5 / T9 三个端点串成完整 intake 流程，验证整条链路
+# 在 in-memory SQLite + mocked LLM 下打通。
+# ============================================================
+
+class TestEndToEndIntakeFlow:
+    def test_end_to_end_intake_flow(self, tmp_path, monkeypatch):
+        from app import database as db_module
+        from app.models import Product, ProductComponent
+
+        # --- 验证步骤 0：搭建隔离环境 ---
+        # 隔离的内存 SQLite：do_merge 内部 SessionLocal() 也得指向同一 engine
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(bind=engine)
+        TestSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        monkeypatch.setattr(db_module, "SessionLocal", TestSession)
+
+        outer_session = TestSession()
+
+        def _override_get_db():
+            try:
+                yield outer_session
+            finally:
+                pass
+
+        app.dependency_overrides[get_db] = _override_get_db
+
+        # 重定向 catalog.yaml + intake_tmp 到 tmp_path
+        catalog_path = tmp_path / "catalog.yaml"
+        catalog_path.write_text(
+            "组件: []\n打印盘: []\n产品: []\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(catalog_module, "CATALOG_PATH", catalog_path)
+
+        tmp_intake = tmp_path / "intake_tmp"
+        tmp_intake.mkdir()
+        monkeypatch.setattr(intake_service, "INTAKE_TMP_DIR", tmp_intake)
+
+        # 让 provider 视为已配置
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-test-key")
+
+        # mock LLM：固定返回（不依赖网络）
+        def fake_recognize(self, assembly_images, produce_images, product_base_name=None):
+            return {
+                "product_base_name": "床头柜",
+                "components": [
+                    {"name": "侧板", "bom_quantity": 2},
+                    {"name": "把手", "bom_quantity": 4},
+                ],
+                "plates": [
+                    {"source_index": 0, "component_name": "侧板",
+                     "quantity_per_plate": 2, "duration_minutes": 111},
+                    {"source_index": 1, "component_name": "把手",
+                     "quantity_per_plate": 40, "duration_minutes": 18},
+                ],
+            }
+
+        monkeypatch.setattr(DeepSeekVisionProvider, "recognize", fake_recognize)
+
+        try:
+            client = TestClient(app)
+
+            # --- 验证步骤 1：upload — 1 张 assembly 全白 + 2 张 produce 右上深色 ---
+            assembly_png = _make_white_image()
+            produce_png_a = _make_image_with_dark_right_panel()
+            produce_png_b = _make_image_with_dark_right_panel()
+
+            upload_resp = client.post(
+                "/api/intake/upload",
+                files=[
+                    ("files", ("asm.png", assembly_png, "image/png")),
+                    ("files", ("prd_a.png", produce_png_a, "image/png")),
+                    ("files", ("prd_b.png", produce_png_b, "image/png")),
+                ],
+            )
+            assert upload_resp.status_code == 200, upload_resp.text
+            upload_body = upload_resp.json()
+            assert upload_body["ok"] is True
+            session_id = upload_body["session_id"]
+            assert session_id
+            assert len(upload_body["images"]) == 3
+
+            assembly_ids = [
+                img["image_id"] for img in upload_body["images"]
+                if img["suggested_class"] == "assembly"
+            ]
+            produce_ids = [
+                img["image_id"] for img in upload_body["images"]
+                if img["suggested_class"] == "produce"
+            ]
+            assert len(assembly_ids) == 1, f"expected 1 assembly, got {len(assembly_ids)}: {upload_body['images']}"
+            assert len(produce_ids) == 2, f"expected 2 produce, got {len(produce_ids)}: {upload_body['images']}"
+
+            # 落盘文件确实存在
+            session_dir = tmp_intake / session_id
+            assert session_dir.is_dir()
+            assert len(list(session_dir.iterdir())) == 3
+
+            # --- 验证步骤 2：recognize — 拿 draft + 撞名空 ---
+            recognize_resp = client.post(
+                "/api/intake/recognize",
+                json={
+                    "session_id": session_id,
+                    "assembly_image_ids": assembly_ids,
+                    "produce_image_ids": produce_ids,
+                    "product_base_name": "床头柜",
+                },
+            )
+            assert recognize_resp.status_code == 200, recognize_resp.text
+            recognize_body = recognize_resp.json()
+            assert recognize_body["ok"] is True, recognize_body
+            assert recognize_body["conflicts"] == []
+
+            draft = recognize_body["draft"]
+            assert draft["product_base_name"] == "床头柜"
+            # 组件名带产品基名前缀
+            comp_names = [c["name"] for c in draft["components"]]
+            assert comp_names == ["床头柜-侧板", "床头柜-把手"]
+            # 盘号默认 = 组件全名 + -<件数>
+            plate_names = [p["plate_name"] for p in draft["plates"]]
+            assert plate_names == ["床头柜-侧板-2", "床头柜-把手-40"]
+            # source_image_id 反查到 produce_ids
+            assert draft["plates"][0]["source_image_id"] == produce_ids[0]
+            assert draft["plates"][1]["source_image_id"] == produce_ids[1]
+
+            # --- 验证步骤 3：构造 FinalDraft（模拟 color 步骤生成 2 个变体）---
+            final_draft = {
+                "product_base_name": "床头柜",
+                "components": [
+                    {"name": "床头柜-侧板", "assembly_quantity": 2},
+                    {"name": "床头柜-把手", "assembly_quantity": 4},
+                ],
+                "plates": [
+                    {
+                        "plate_name": "床头柜-侧板-2",
+                        "component_name": "床头柜-侧板",
+                        "quantity_per_plate": 2,
+                        "duration_minutes": 111,
+                        "source_image_id": produce_ids[0],
+                    },
+                    {
+                        "plate_name": "床头柜-把手-40",
+                        "component_name": "床头柜-把手",
+                        "quantity_per_plate": 40,
+                        "duration_minutes": 18,
+                        "source_image_id": produce_ids[1],
+                    },
+                ],
+                "variants": [
+                    {
+                        "variant_name": "床头柜 - 灰白",
+                        "color_cells": [
+                            {"component_name": "床头柜-侧板", "color": "灰色"},
+                            {"component_name": "床头柜-把手", "color": "白色"},
+                        ],
+                    },
+                    {
+                        "variant_name": "床头柜 - 白黑",
+                        "color_cells": [
+                            {"component_name": "床头柜-侧板", "color": "白色"},
+                            {"component_name": "床头柜-把手", "color": "黑色"},
+                        ],
+                    },
+                ],
+            }
+
+            # --- 验证步骤 4：merge — 5 阶段事务跑通 ---
+            merge_resp = client.post(
+                "/api/intake/merge",
+                json={"session_id": session_id, "final_draft": final_draft},
+            )
+            assert merge_resp.status_code == 200, merge_resp.text
+            merge_body = merge_resp.json()
+            assert merge_body["ok"] is True, merge_body
+            stats = merge_body["stats"]
+            assert stats["components_added"] == 2
+            assert stats["plates_added"] == 2
+            assert stats["products_added"] == 2
+
+            # 备份文件 + 计时键
+            assert Path(merge_body["backup_path"]).is_file()
+            assert "写入" in merge_body["timing_ms"]
+            assert "重新加载" in merge_body["timing_ms"]
+            assert merge_body["timing_ms"]["写入"] >= 0
+            assert merge_body["timing_ms"]["重新加载"] >= 0
+
+            # --- 验证步骤 5：最终 DB / 文件系统状态 ---
+            # DB 端：新表记录通过 do_merge 内部独立 session 写入，
+            # 这里用一个全新 session 读，避免 outer_session 缓存
+            verify_session = TestSession()
+            try:
+                components = verify_session.query(Component).order_by(Component.name).all()
+                comp_by_name = {c.name: c for c in components}
+                assert set(comp_by_name) == {"床头柜-侧板", "床头柜-把手"}
+                # 颜色 union 正确
+                assert sorted(comp_by_name["床头柜-侧板"].colors) == sorted(["灰色", "白色"])
+                assert sorted(comp_by_name["床头柜-把手"].colors) == sorted(["白色", "黑色"])
+
+                plates = verify_session.query(PrintConfig).order_by(PrintConfig.plate_name).all()
+                plate_by_name = {p.plate_name: p for p in plates}
+                assert set(plate_by_name) == {"床头柜-侧板-2", "床头柜-把手-40"}
+                assert plate_by_name["床头柜-侧板-2"].quantity == 2
+                assert plate_by_name["床头柜-侧板-2"].duration_minutes == 111
+                assert plate_by_name["床头柜-把手-40"].quantity == 40
+                assert plate_by_name["床头柜-把手-40"].duration_minutes == 18
+
+                products = verify_session.query(Product).order_by(Product.name).all()
+                product_names = {p.name for p in products}
+                assert product_names == {"床头柜 - 灰白", "床头柜 - 白黑"}
+
+                pcs = verify_session.query(ProductComponent).all()
+                # 2 产品 × 2 组件 = 4 BOM 行
+                assert len(pcs) == 4
+                # 颜色分布检查
+                product_id_to_name = {p.id: p.name for p in products}
+                color_set_per_product = {name: set() for name in product_names}
+                for pc in pcs:
+                    color_set_per_product[product_id_to_name[pc.product_id]].add(pc.color)
+                assert color_set_per_product["床头柜 - 灰白"] == {"灰色", "白色"}
+                assert color_set_per_product["床头柜 - 白黑"] == {"白色", "黑色"}
+            finally:
+                verify_session.close()
+
+            # session tmp 已清理
+            assert not session_dir.exists()
+
+            # catalog.yaml.bak.<timestamp> 备份存在
+            baks = list(tmp_path.glob("catalog.yaml.bak.*"))
+            assert len(baks) == 1
+
+            # catalog.yaml 含 3 段 + 各 2 条
+            loaded_yaml = _yaml.safe_load(catalog_path.read_text(encoding="utf-8"))
+            assert set(loaded_yaml.keys()) >= {"组件", "打印盘", "产品"}
+            assert len(loaded_yaml["组件"]) == 2
+            assert len(loaded_yaml["打印盘"]) == 2
+            assert len(loaded_yaml["产品"]) == 2
+            # 中文键 + 内容
+            assert loaded_yaml["组件"][0]["名称"] == "床头柜-侧板"
+            assert loaded_yaml["打印盘"][0]["盘号"] == "床头柜-侧板-2"
+            assert loaded_yaml["产品"][0]["名称"] == "床头柜 - 灰白"
+        finally:
+            app.dependency_overrides.clear()
+            outer_session.close()
