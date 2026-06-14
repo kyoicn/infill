@@ -35,8 +35,10 @@ INTAKE_TMP_DIR = Path(os.environ.get("INTAKE_TMP_DIR", str(_DEFAULT_TMP_DIR)))
 # 会话过期时间（秒）— 上传后 1 小时未合并即清理
 TTL_SECONDS = 3600
 
-# 启发式分类：右上面板亮度阈值 — 均值 < 80（暗）认为是切片软件的耗材面板 → produce
-PRODUCE_PANEL_LUMINANCE_THRESHOLD = 80
+# 启发式分类：右上面板亮度阈值 — 均值 < 140（暗）认为是切片软件的耗材面板 → produce
+# 真实样例校准：produce 截图区域均值 ~80-85，assembly 截图区域均值 ~190-200
+# 140 是安全中点，对 1700×1800 拓竹截图稳定区分
+PRODUCE_PANEL_LUMINANCE_THRESHOLD = 140
 
 # 启发式分类：右上面板裁切比例（left, top, right, bottom），相对图片宽高
 PRODUCE_PANEL_REGION = (0.72, 0.02, 0.98, 0.30)

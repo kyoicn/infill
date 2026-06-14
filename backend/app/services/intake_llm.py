@@ -129,7 +129,7 @@ class DeepSeekVisionProvider:
     - `DEEPSEEK_VISION_MODEL`（默认 `deepseek-vl2-chat`）
     """
 
-    name = "deepseek"
+    name = "DeepSeek"
 
     def __init__(self):
         self.api_key = os.environ.get("DEEPSEEK_API_KEY")
