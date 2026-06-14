@@ -127,7 +127,7 @@ def recognize(req: RecognizeRequest, db: Session = Depends(get_db)):
         return {
             "ok": False,
             "error_kind": "no_api_key",
-            "error": "未检测到 LLM 提供商 API key，请在 .env 配置 DEEPSEEK_API_KEY",
+            "error": "未检测到 LLM 提供商 API key，请在 .env 配置 LLM_PROVIDER 及对应 <PROVIDER>_API_KEY",
         }
 
     # 读 session 图片
