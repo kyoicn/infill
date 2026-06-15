@@ -208,11 +208,24 @@ export default function DraftMode(props: DraftModeProps) {
   }
 
   function updatePlateField<K extends keyof PlateRow>(idx: number, key: K, value: PlateRow[K]) {
-    setPlateRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [key]: value } : r)));
+    setPlateRows((prev) =>
+      prev.map((r, i) => {
+        if (i !== idx) return r;
+        const next = { ...r, [key]: value };
+        // 联动：用户改 quantity_per_plate 或 component_name 时，若 plate_name 未被手动编辑过，
+        // 自动重算盘号为 `<component_name>-<quantity>`（与后端 v0.2.x 一致的命名约定）。
+        // dirtyPlates 标记由 updatePlateName 写入 — 用户一旦手改 plate_name 即停止追随。
+        if ((key === 'quantity_per_plate' || key === 'component_name') && !dirtyPlates.has(idx)) {
+          next.plate_name = `${next.component_name}-${next.quantity_per_plate}`;
+        }
+        return next;
+      }),
+    );
   }
 
   function updatePlateName(idx: number, next: string) {
-    updatePlateField(idx, 'plate_name', next);
+    // 直接 set，不走 updatePlateField 避免循环重算
+    setPlateRows((prev) => prev.map((r, i) => (i === idx ? { ...r, plate_name: next } : r)));
     setDirtyPlates((prev) => {
       const ns = new Set(prev);
       ns.add(idx);
@@ -241,7 +254,8 @@ export default function DraftMode(props: DraftModeProps) {
     setPlateRows((prev) => [
       ...prev,
       {
-        plate_name: '',
+        // 新增行默认未 dirty，盘号跟随 component_name + quantity 自动生成
+        plate_name: firstComp ? `${firstComp}-1` : '',
         component_name: firstComp,
         quantity_per_plate: 1,
         duration_minutes: 0,
