@@ -102,7 +102,7 @@ function renamePrefix(name: string, oldBase: string, newBase: string): string {
 // ----- component -----
 
 export default function DraftMode(props: DraftModeProps) {
-  const { draft, conflicts, onBack, onProceedToColor } = props;
+  const { draft, conflicts, sessionId, onBack, onProceedToColor } = props;
 
   const [baseName, setBaseName] = useState<string>(draft.product_base_name || '');
   const [components, setComponents] = useState<DraftComponent[]>(() =>
