@@ -4,6 +4,7 @@ import {
   Alert,
   Button,
   Drawer,
+  Image,
   Input,
   InputNumber,
   Select,
@@ -116,8 +117,7 @@ export default function DraftMode(props: DraftModeProps) {
   // 哪些 plate index 用户手改过盘号
   const [dirtyPlates, setDirtyPlates] = useState<Set<number>>(() => new Set());
 
-  // drawer state
-  const [assemblyDrawerImageId, setAssemblyDrawerImageId] = useState<string | null>(null);
+  // plate-preview drawer state (assembly 使用 AntD Image inline preview，无需 drawer)
   const [plateDrawerIndex, setPlateDrawerIndex] = useState<number | null>(null);
 
   // ---------- derived: conflict lookup sets ----------
@@ -336,12 +336,7 @@ export default function DraftMode(props: DraftModeProps) {
         {props.assemblyImageIds.length > 0 && (
           <div style={styles.thumbRow}>
             {props.assemblyImageIds.map((id) => (
-              <AssemblyThumb
-                key={id}
-                sessionId={sessionId}
-                imageId={id}
-                onClick={() => setAssemblyDrawerImageId(id)}
-              />
+              <AssemblyThumb key={id} sessionId={sessionId} imageId={id} />
             ))}
           </div>
         )}
@@ -585,22 +580,7 @@ export default function DraftMode(props: DraftModeProps) {
         </div>
       </div>
 
-      {/* assembly drawer */}
-      <Drawer
-        title={
-          assemblyDrawerImageId
-            ? `组装图原图 · ${assemblyDrawerImageId.slice(0, 8)}…`
-            : '组装图原图'
-        }
-        placement="right"
-        width="min(900px, 90vw)"
-        open={assemblyDrawerImageId !== null}
-        onClose={() => setAssemblyDrawerImageId(null)}
-      >
-        <ImagePreview sessionId={sessionId} imageId={assemblyDrawerImageId ?? ''} />
-      </Drawer>
-
-      {/* plate drawer */}
+      {/* plate drawer — 组装图通过 inline AntD Image preview 查看，无需 drawer */}
       <Drawer
         title={
           plateDrawerIndex !== null && plateRows[plateDrawerIndex]
@@ -614,7 +594,10 @@ export default function DraftMode(props: DraftModeProps) {
       >
         {plateDrawerIndex !== null && plateRows[plateDrawerIndex] && (
           <div>
-            <ImagePreview sessionId={sessionId} imageId={plateRows[plateDrawerIndex].source_image_id} />
+            <PlateImagePreview
+              sessionId={sessionId}
+              imageId={plateRows[plateDrawerIndex].source_image_id}
+            />
             <MetaRow label="image_id" value={plateRows[plateDrawerIndex].source_image_id || '（无）'} />
             <MetaRow
               label="LLM 识别件数"
@@ -648,80 +631,71 @@ function SectionTitle(p: { title: string; desc: string }) {
   );
 }
 
-function AssemblyThumb(p: { sessionId: string; imageId: string; onClick: () => void }) {
+function AssemblyThumb(p: { sessionId: string; imageId: string }) {
   const [errored, setErrored] = useState(false);
+  const src =
+    p.sessionId && p.imageId && !errored
+      ? `/api/intake/session-image/${p.sessionId}/${p.imageId}`
+      : null;
   return (
     <div
-      onClick={p.onClick}
       style={{
-        width: 280,
+        width: 420,
         border: `1px solid ${C.borderLight}`,
         borderRadius: 4,
-        background: '#fff',
-        cursor: 'zoom-in',
+        background: '#1e1e1e',
         overflow: 'hidden',
-        transition: 'all 0.15s',
       }}
-      title={`点击查看大图 · ${p.imageId}`}
+      title={p.imageId}
     >
-      <div
-        style={{
-          width: '100%',
-          height: 200,
-          background: '#1e1e1e',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          position: 'relative',
-        }}
-      >
-        {p.sessionId && p.imageId && !errored ? (
-          <img
-            src={`/api/intake/session-image/${p.sessionId}/${p.imageId}`}
-            alt={p.imageId}
-            onError={() => setErrored(true)}
-            style={{
-              maxWidth: '100%',
-              maxHeight: '100%',
-              objectFit: 'contain',
-            }}
-          />
-        ) : (
-          <div style={{ color: '#aaa', fontSize: 11, textAlign: 'center' }}>
-            <PictureOutlined style={{ fontSize: 24, opacity: 0.5, display: 'block', marginBottom: 4 }} />
-            {errored ? '加载失败' : '无图'}
-          </div>
-        )}
-        <span
+      {src ? (
+        <Image
+          src={src}
+          alt={p.imageId}
+          onError={() => setErrored(true)}
+          width="100%"
+          height={300}
+          style={{ objectFit: 'contain' }}
+          preview={{ mask: '🔍 点击查看大图' }}
+        />
+      ) : (
+        <div
           style={{
-            position: 'absolute',
-            bottom: 4,
-            right: 4,
-            fontSize: 11,
-            background: 'rgba(0,0,0,0.55)',
-            color: '#fff',
-            padding: '1px 6px',
-            borderRadius: 2,
+            width: '100%',
+            height: 300,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#aaa',
+            fontSize: 12,
+            textAlign: 'center',
           }}
         >
-          🔍 点击放大
-        </span>
-      </div>
+          <div>
+            <PictureOutlined style={{ fontSize: 32, opacity: 0.5, display: 'block', marginBottom: 4 }} />
+            {errored ? '加载失败' : '无图'}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ImagePreview(p: { sessionId: string; imageId: string }) {
+function PlateImagePreview(p: { sessionId: string; imageId: string }) {
   const [errored, setErrored] = useState(false);
+  const src =
+    p.sessionId && p.imageId && !errored
+      ? `/api/intake/session-image/${p.sessionId}/${p.imageId}`
+      : null;
 
-  if (!p.imageId || !p.sessionId || errored) {
+  if (!src) {
     return (
       <div
         style={{
           background: '#1e1e1e',
           borderRadius: 8,
           padding: 16,
-          minHeight: 320,
+          minHeight: 360,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -734,12 +708,6 @@ function ImagePreview(p: { sessionId: string; imageId: string }) {
         <div>
           <PictureOutlined style={{ fontSize: 48, marginBottom: 12, display: 'block' }} />
           {p.imageId ? '原图加载失败或会话已过期' : '无关联图片'}
-          {p.imageId && (
-            <>
-              <br />
-              <span style={{ fontSize: 11 }}>image_id: {p.imageId}</span>
-            </>
-          )}
         </div>
       </div>
     );
@@ -750,22 +718,17 @@ function ImagePreview(p: { sessionId: string; imageId: string }) {
       style={{
         background: '#1e1e1e',
         borderRadius: 8,
-        padding: 16,
-        minHeight: 320,
         marginBottom: 16,
-        textAlign: 'center',
+        overflow: 'hidden',
       }}
     >
-      <img
-        src={`/api/intake/session-image/${p.sessionId}/${p.imageId}`}
+      <Image
+        src={src}
         alt={p.imageId}
         onError={() => setErrored(true)}
-        style={{
-          maxWidth: '100%',
-          maxHeight: '80vh',   // 填满 drawer 高度方向，长截图允许滚动查看
-          objectFit: 'contain',
-          borderRadius: 4,
-        }}
+        width="100%"
+        style={{ maxHeight: '70vh', objectFit: 'contain' }}
+        preview={{ mask: '🔍 点击查看全图（可缩放）' }}
       />
     </div>
   );

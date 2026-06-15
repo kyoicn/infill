@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, ChangeEvent } from 'react';
-import { Alert, Button, Input, Tooltip, message } from 'antd';
+import { Alert, Button, Image, Input, Tooltip, message } from 'antd';
 import {
   InboxOutlined,
   LoadingOutlined,
@@ -342,6 +342,7 @@ export default function UploadMode(props: UploadModeProps) {
           <div style={styles.split}>
             <Column
               kind="assembly"
+              sessionId={sessionId}
               images={assemblyImages}
               dragOver={dragOverCol === 'assembly'}
               uploadingCount={uploadingCount}
@@ -353,6 +354,7 @@ export default function UploadMode(props: UploadModeProps) {
             />
             <Column
               kind="produce"
+              sessionId={sessionId}
               images={produceImages}
               dragOver={dragOverCol === 'produce'}
               uploadingCount={uploadingCount}
@@ -469,6 +471,7 @@ function TopFormRow(p: {
 
 function Column(p: {
   kind: 'assembly' | 'produce';
+  sessionId: string | null;
   images: UploadedImage[];
   dragOver: boolean;
   uploadingCount: number;
@@ -554,6 +557,7 @@ function Column(p: {
           {p.images.map((img) => (
             <Thumb
               key={img.image_id}
+              sessionId={p.sessionId}
               image={img}
               from={p.kind}
               onDragStart={p.onThumbDragStart}
@@ -569,6 +573,7 @@ function Column(p: {
 }
 
 function Thumb(p: {
+  sessionId: string | null;
   image: UploadedImage;
   from: 'assembly' | 'produce';
   onDragStart: (
@@ -579,6 +584,13 @@ function Thumb(p: {
   onRemove: (imageId: string) => void;
 }) {
   const [hover, setHover] = useState(false);
+  const [errored, setErrored] = useState(false);
+  const src =
+    p.sessionId && p.image.image_id && !errored
+      ? `/api/intake/session-image/${p.sessionId}/${p.image.image_id}`
+      : null;
+  const THUMB_W = 140;
+  const THUMB_H = 105;
   return (
     <div
       draggable
@@ -593,21 +605,34 @@ function Thumb(p: {
         overflow: 'hidden',
         cursor: 'grab',
         userSelect: 'none',
+        width: THUMB_W,
       }}
     >
       <div
         style={{
-          width: 64,
-          height: 64,
-          background: 'linear-gradient(135deg, #f0f0f0 0%, #e5e7eb 100%)',
+          width: THUMB_W,
+          height: THUMB_H,
+          background: '#1e1e1e',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: C.text3,
-          fontSize: 10,
         }}
       >
-        {p.from === 'produce' ? '盘' : '装'}
+        {src ? (
+          <Image
+            src={src}
+            alt={p.image.filename}
+            onError={() => setErrored(true)}
+            width={THUMB_W}
+            height={THUMB_H}
+            style={{ objectFit: 'contain' }}
+            preview={{ mask: '🔍 查看大图' }}
+          />
+        ) : (
+          <span style={{ color: '#aaa', fontSize: 11 }}>
+            {p.from === 'produce' ? '盘' : '装'}
+          </span>
+        )}
       </div>
       {hover && (
         <button
@@ -619,20 +644,21 @@ function Thumb(p: {
             position: 'absolute',
             top: 2,
             right: 2,
-            background: 'rgba(0,0,0,0.55)',
+            background: 'rgba(0,0,0,0.65)',
             color: '#fff',
             border: 'none',
-            width: 18,
-            height: 18,
+            width: 20,
+            height: 20,
             borderRadius: 3,
             cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: 0,
+            zIndex: 2,
           }}
         >
-          <CloseOutlined style={{ fontSize: 10 }} />
+          <CloseOutlined style={{ fontSize: 11 }} />
         </button>
       )}
       <div
@@ -645,7 +671,6 @@ function Thumb(p: {
           whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
-          maxWidth: 64,
         }}
         title={p.image.filename}
       >
