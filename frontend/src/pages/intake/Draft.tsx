@@ -338,6 +338,7 @@ export default function DraftMode(props: DraftModeProps) {
             {props.assemblyImageIds.map((id) => (
               <AssemblyThumb
                 key={id}
+                sessionId={sessionId}
                 imageId={id}
                 onClick={() => setAssemblyDrawerImageId(id)}
               />
@@ -592,7 +593,7 @@ export default function DraftMode(props: DraftModeProps) {
             : '组装图原图'
         }
         placement="right"
-        width={560}
+        width="min(900px, 90vw)"
         open={assemblyDrawerImageId !== null}
         onClose={() => setAssemblyDrawerImageId(null)}
       >
@@ -607,7 +608,7 @@ export default function DraftMode(props: DraftModeProps) {
             : '原图复核'
         }
         placement="right"
-        width={560}
+        width="min(900px, 90vw)"
         open={plateDrawerIndex !== null}
         onClose={() => setPlateDrawerIndex(null)}
       >
@@ -647,12 +648,13 @@ function SectionTitle(p: { title: string; desc: string }) {
   );
 }
 
-function AssemblyThumb(p: { imageId: string; onClick: () => void }) {
+function AssemblyThumb(p: { sessionId: string; imageId: string; onClick: () => void }) {
+  const [errored, setErrored] = useState(false);
   return (
     <div
       onClick={p.onClick}
       style={{
-        width: 110,
+        width: 280,
         border: `1px solid ${C.borderLight}`,
         borderRadius: 4,
         background: '#fff',
@@ -660,35 +662,50 @@ function AssemblyThumb(p: { imageId: string; onClick: () => void }) {
         overflow: 'hidden',
         transition: 'all 0.15s',
       }}
-      title={p.imageId}
+      title={`点击查看大图 · ${p.imageId}`}
     >
       <div
         style={{
-          width: 64 + 46,
-          height: 48 + 4,
-          background: 'linear-gradient(135deg, #f0f0f0, #e5e7eb)',
+          width: '100%',
+          height: 200,
+          background: '#1e1e1e',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          color: C.text3,
           position: 'relative',
         }}
       >
-        <PictureOutlined style={{ fontSize: 20, opacity: 0.5 }} />
-        <span style={{ position: 'absolute', bottom: 4, right: 4, fontSize: 11 }}>🔍</span>
-      </div>
-      <div
-        style={{
-          padding: '4px 6px',
-          fontSize: 11,
-          color: C.text3,
-          borderTop: `1px solid ${C.borderLight}`,
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-        }}
-      >
-        {p.imageId.slice(0, 12)}…
+        {p.sessionId && p.imageId && !errored ? (
+          <img
+            src={`/api/intake/session-image/${p.sessionId}/${p.imageId}`}
+            alt={p.imageId}
+            onError={() => setErrored(true)}
+            style={{
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
+            }}
+          />
+        ) : (
+          <div style={{ color: '#aaa', fontSize: 11, textAlign: 'center' }}>
+            <PictureOutlined style={{ fontSize: 24, opacity: 0.5, display: 'block', marginBottom: 4 }} />
+            {errored ? '加载失败' : '无图'}
+          </div>
+        )}
+        <span
+          style={{
+            position: 'absolute',
+            bottom: 4,
+            right: 4,
+            fontSize: 11,
+            background: 'rgba(0,0,0,0.55)',
+            color: '#fff',
+            padding: '1px 6px',
+            borderRadius: 2,
+          }}
+        >
+          🔍 点击放大
+        </span>
       </div>
     </div>
   );
@@ -745,7 +762,7 @@ function ImagePreview(p: { sessionId: string; imageId: string }) {
         onError={() => setErrored(true)}
         style={{
           maxWidth: '100%',
-          maxHeight: 480,
+          maxHeight: '80vh',   // 填满 drawer 高度方向，长截图允许滚动查看
           objectFit: 'contain',
           borderRadius: 4,
         }}

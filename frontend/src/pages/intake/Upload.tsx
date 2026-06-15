@@ -22,6 +22,8 @@ export interface UploadModeProps {
   providerConfigured: boolean;
   productBaseName: string;
   onProductBaseNameChange: (v: string) => void;
+  componentHints: string;
+  onComponentHintsChange: (v: string) => void;
   // Lifted state — owned by Intake.tsx so that 取消 / 返回 navigations preserve uploads.
   assemblyImages: UploadedImage[];
   setAssemblyImages: React.Dispatch<React.SetStateAction<UploadedImage[]>>;
@@ -71,6 +73,8 @@ export default function UploadMode(props: UploadModeProps) {
     providerConfigured,
     productBaseName,
     onProductBaseNameChange,
+    componentHints,
+    onComponentHintsChange,
     assemblyImages,
     setAssemblyImages,
     produceImages,
@@ -244,6 +248,8 @@ export default function UploadMode(props: UploadModeProps) {
           <TopFormRow
             productBaseName={productBaseName}
             onProductBaseNameChange={onProductBaseNameChange}
+            componentHints={componentHints}
+            onComponentHintsChange={onComponentHintsChange}
             disabled
           />
           <div
@@ -294,6 +300,8 @@ export default function UploadMode(props: UploadModeProps) {
         <TopFormRow
           productBaseName={productBaseName}
           onProductBaseNameChange={onProductBaseNameChange}
+          componentHints={componentHints}
+          onComponentHintsChange={onComponentHintsChange}
         />
         {!isEmpty && (
           <div
@@ -399,27 +407,62 @@ export default function UploadMode(props: UploadModeProps) {
 function TopFormRow(p: {
   productBaseName: string;
   onProductBaseNameChange: (v: string) => void;
+  componentHints: string;
+  onComponentHintsChange: (v: string) => void;
   disabled?: boolean;
 }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        marginBottom: 12,
-      }}
-    >
-      <label style={{ color: 'rgba(0,0,0,0.65)', width: 88, flexShrink: 0 }}>
-        产品基名
-      </label>
-      <Input
-        value={p.productBaseName}
-        onChange={(e) => p.onProductBaseNameChange(e.target.value)}
-        placeholder="如：床头柜（识别后可自动推断填入，也可现在手填）"
-        style={{ width: 280 }}
-        disabled={p.disabled}
-      />
+    <div style={{ marginBottom: 12 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
+        <label style={{ color: 'rgba(0,0,0,0.65)', width: 88, flexShrink: 0 }}>
+          产品基名
+        </label>
+        <Input
+          value={p.productBaseName}
+          onChange={(e) => p.onProductBaseNameChange(e.target.value)}
+          placeholder="如：床头柜（识别后可自动推断填入，也可现在手填）"
+          style={{ width: 280 }}
+          disabled={p.disabled}
+        />
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 12,
+        }}
+      >
+        <label
+          style={{
+            color: 'rgba(0,0,0,0.65)',
+            width: 88,
+            flexShrink: 0,
+            paddingTop: 6,
+            lineHeight: '14px',
+          }}
+        >
+          组件粒度<br />
+          <span style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)' }}>（可选）</span>
+        </label>
+        <Input.TextArea
+          value={p.componentHints}
+          onChange={(e) => p.onComponentHintsChange(e.target.value)}
+          placeholder={
+            '可选 — 告诉 LLM 你想分成几个组件、分别叫什么。空着则让 LLM 自由推断（容易过细）。\n' +
+            '例：3 个组件：底柜、抽屉、抽屉把手'
+          }
+          autoSize={{ minRows: 2, maxRows: 4 }}
+          style={{ flex: 1, maxWidth: 640 }}
+          disabled={p.disabled}
+        />
+      </div>
     </div>
   );
 }

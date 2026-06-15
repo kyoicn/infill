@@ -38,6 +38,9 @@ class RecognizeRequest(BaseModel):
     assembly_image_ids: list[str]
     produce_image_ids: list[str]
     product_base_name: Optional[str] = None  # 可留空；LLM 推断
+    # v0.2.5：用户可选的组件粒度提示，例如 "3 个组件：底柜、抽屉、抽屉把手"
+    # 提供时强制 LLM 按用户列表归类，避免细分到打印件级别
+    component_hints: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

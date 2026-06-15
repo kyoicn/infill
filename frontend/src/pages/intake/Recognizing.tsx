@@ -6,6 +6,7 @@ interface RecognizingModeProps {
   assemblyCount: number;
   produceCount: number;
   productBaseName: string;
+  componentHints?: string;
   sessionId: string;
   assemblyImageIds: string[];
   produceImageIds: string[];
@@ -21,6 +22,7 @@ export default function RecognizingMode(props: RecognizingModeProps) {
     assemblyCount,
     produceCount,
     productBaseName,
+    componentHints,
     sessionId,
     assemblyImageIds,
     produceImageIds,
@@ -60,6 +62,7 @@ export default function RecognizingMode(props: RecognizingModeProps) {
           assembly_image_ids: assemblyImageIds,
           produce_image_ids: produceImageIds,
           product_base_name: productBaseName,
+          component_hints: componentHints || undefined,
         },
         controller.signal,
       )

@@ -655,7 +655,7 @@ class TestRecognizeEndpoint:
         # 2. mock provider
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
 
-        def fake_recognize(self, assembly_images, produce_images, product_base_name=None):
+        def fake_recognize(self, assembly_images, produce_images, product_base_name=None, component_hints=None):
             return {
                 "product_base_name": "床头柜",
                 "components": [
@@ -729,7 +729,7 @@ class TestRecognizeEndpoint:
 
         monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
 
-        def fake_recognize(self, assembly_images, produce_images, product_base_name=None):
+        def fake_recognize(self, assembly_images, produce_images, product_base_name=None, component_hints=None):
             raise LLMProviderError("parse_failed", "bad json", raw_preview="<html>")
 
         monkeypatch.setattr(DeepSeekVisionProvider, "recognize", fake_recognize)
@@ -1307,7 +1307,7 @@ class TestEndToEndIntakeFlow:
         monkeypatch.setenv("DEEPSEEK_API_KEY", "fake-test-key")
 
         # mock LLM：固定返回（不依赖网络）
-        def fake_recognize(self, assembly_images, produce_images, product_base_name=None):
+        def fake_recognize(self, assembly_images, produce_images, product_base_name=None, component_hints=None):
             return {
                 "product_base_name": "床头柜",
                 "components": [

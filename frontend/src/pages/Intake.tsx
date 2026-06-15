@@ -19,6 +19,7 @@ type IntakeMode =
       assemblyImageIds: string[];
       produceImageIds: string[];
       productBaseName: string;
+      componentHints?: string;
     }
   | {
       kind: 'draft';
@@ -69,6 +70,7 @@ type IntakeMode =
         assemblyImageIds: string[];
         produceImageIds: string[];
         productBaseName: string;
+        componentHints?: string;
       };
       // CUJ-5 merge 失败时携带：用于「返回上一步」回到 color，以及在错误详情里显示 backup_path
       mergeContext?: {
@@ -139,6 +141,7 @@ export default function Intake() {
   const [mode, setMode] = useState<IntakeMode>({ kind: 'upload' });
   const [providerConfigured, setProviderConfigured] = useState<boolean>(false);
   const [productBaseName, setProductBaseName] = useState<string>('');
+  const [componentHints, setComponentHints] = useState<string>('');
   // Lifted Upload mode state — preserved across 取消 / 返回上一步 navigations
   // (QA HIGH bug fix: previously these lived in Upload.tsx and were lost on remount)
   const [assemblyImages, setAssemblyImages] = useState<UploadedImage[]>([]);
@@ -179,6 +182,8 @@ export default function Intake() {
           providerConfigured={providerConfigured}
           productBaseName={productBaseName}
           onProductBaseNameChange={setProductBaseName}
+          componentHints={componentHints}
+          onComponentHintsChange={setComponentHints}
           assemblyImages={assemblyImages}
           setAssemblyImages={setAssemblyImages}
           produceImages={produceImages}
@@ -196,6 +201,7 @@ export default function Intake() {
               assemblyImageIds,
               produceImageIds,
               productBaseName,
+              componentHints,
             })
           }
         />
@@ -205,6 +211,7 @@ export default function Intake() {
           assemblyCount={mode.assemblyImageIds.length}
           produceCount={mode.produceImageIds.length}
           productBaseName={mode.productBaseName}
+          componentHints={mode.componentHints}
           sessionId={mode.sessionId}
           assemblyImageIds={mode.assemblyImageIds}
           produceImageIds={mode.produceImageIds}
@@ -231,6 +238,7 @@ export default function Intake() {
                 assemblyImageIds: mode.assemblyImageIds,
                 produceImageIds: mode.produceImageIds,
                 productBaseName: mode.productBaseName,
+                componentHints: mode.componentHints,
               },
             })
           }

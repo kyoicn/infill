@@ -172,6 +172,7 @@ def recognize(req: RecognizeRequest, db: Session = Depends(get_db)):
             assembly_images=assembly_bytes,
             produce_images=produce_bytes,
             product_base_name=req.product_base_name,
+            component_hints=req.component_hints,
         )
     except LLMProviderError as exc:
         resp: dict = {

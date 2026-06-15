@@ -195,10 +195,15 @@ class OpenAICompatibleVisionProvider:
         assembly_images: list[bytes],
         produce_images: list[bytes],
         product_base_name: Optional[str] = None,
+        component_hints: Optional[str] = None,
     ) -> dict:
         """调用 vision API，返回 LLM 解析后的 dict（schema 见 SYSTEM_PROMPT）。
 
         失败时抛 LLMProviderError(error_kind, message, raw_preview)。
+
+        v0.2.5 新增 `component_hints`：用户可显式告诉 LLM 想要的组件粒度
+        （如 "3 个组件：底柜、抽屉、抽屉把手"）。提供时强制 LLM 按用户列表归类，
+        避免细分到打印件级别 — 解决"识别太细"问题。
         """
         if not self.is_configured():
             raise LLMProviderError("no_api_key", f"{self.name} API key 未配置")
@@ -211,6 +216,13 @@ class OpenAICompatibleVisionProvider:
         ]
         if product_base_name:
             text_parts.append(f"用户指定的产品基名：{product_base_name}")
+        if component_hints:
+            text_parts.append(
+                "【组件粒度提示 - 高优先级】用户已明确指定本产品的组件构成如下，"
+                "你**必须**严格按此列表归类，不要细分到独立打印件级别 — "
+                "如果某些打印盘里的件构成用户指定的同一个组件，把它们合并归到那个组件名下："
+                f"\n  {component_hints}"
+            )
         text_parts.append(f"组装图索引 0 ~ {max(n_assembly - 1, 0)}（共 {n_assembly} 张）")
         text_parts.append(
             f"打印盘截图索引 0 ~ {max(n_produce - 1, 0)}（共 {n_produce} 张，"
