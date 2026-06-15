@@ -322,11 +322,17 @@ class OpenAICompatibleVisionProvider:
         try:
             parsed = json.loads(cleaned)
         except json.JSONDecodeError as exc:
-            raise LLMProviderError(
-                "parse_failed",
-                f"LLM 输出非合法 JSON：{exc}",
-                cleaned[:200],
-            ) from exc
+            # 兼容模型在合法 JSON 之后追加解释 / 第二个对象等场景（如
+            # qwen3-omni-flash 偶发的 "Extra data: line N column 1"）：
+            # 用 raw_decode 只取第一个有效 JSON value，忽略尾部任何内容。
+            try:
+                parsed, _consumed = json.JSONDecoder().raw_decode(cleaned.lstrip())
+            except (json.JSONDecodeError, ValueError):
+                raise LLMProviderError(
+                    "parse_failed",
+                    f"LLM 输出非合法 JSON：{exc}",
+                    cleaned[:200],
+                ) from exc
 
         # ---- schema 校验 ----
         if not isinstance(parsed, dict):

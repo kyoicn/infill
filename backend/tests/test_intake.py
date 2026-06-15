@@ -286,6 +286,52 @@ def test_upload_session_id_reuse(client, tmp_path, monkeypatch):
     assert len(list(session_dir.iterdir())) == 2
 
 
+# === TestSessionImageEndpoint (v0.2.3 — /api/intake/session-image) ===
+
+def test_session_image_serves_uploaded_png(client, tmp_path, monkeypatch):
+    """快乐路径：上传一张 PNG 后能从 session-image 端点读回相同字节。"""
+    monkeypatch.setattr(intake_service, "INTAKE_TMP_DIR", tmp_path / "intake_tmp")
+    # router 模块也持有 INTAKE_TMP_DIR 引用（路由层 import 进来的常量）
+    from app.routers import intake as intake_router
+    monkeypatch.setattr(intake_router, "INTAKE_TMP_DIR", tmp_path / "intake_tmp")
+
+    content = _make_white_image()
+    up = client.post(
+        "/api/intake/upload",
+        files=[("files", ("test.png", content, "image/png"))],
+    ).json()
+    sid = up["session_id"]
+    iid = up["images"][0]["image_id"]
+
+    resp = client.get(f"/api/intake/session-image/{sid}/{iid}")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    assert resp.content == content
+
+
+def test_session_image_rejects_path_traversal_session_id(client):
+    """路径遍历防御：非 uuid4 hex 的 session_id 返回 404，不尝试任何文件读取。"""
+    resp = client.get("/api/intake/session-image/..%2F..%2Fetc/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    assert resp.status_code == 404
+    # 用合法长度但含非 hex 字符
+    resp = client.get(
+        "/api/intake/session-image/"
+        + "g" * 32 + "/" + "f" * 32
+    )
+    assert resp.status_code == 404
+
+
+def test_session_image_returns_404_for_missing(client, tmp_path, monkeypatch):
+    """合法 uuid4 hex 但文件不存在 → 404，不抛 500。"""
+    monkeypatch.setattr(intake_service, "INTAKE_TMP_DIR", tmp_path / "intake_tmp")
+    from app.routers import intake as intake_router
+    monkeypatch.setattr(intake_router, "INTAKE_TMP_DIR", tmp_path / "intake_tmp")
+    resp = client.get(
+        "/api/intake/session-image/" + "a" * 32 + "/" + "b" * 32
+    )
+    assert resp.status_code == 404
+
+
 # === TestCleanupStaleSessions ===
 
 def test_cleanup_stale_sessions_removes_expired(tmp_path, monkeypatch):
@@ -515,6 +561,30 @@ class TestDeepSeekProviderErrorMapping:
         assert ei.value.error_kind == "parse_failed"
         assert ei.value.raw_preview is not None
         assert "html" in ei.value.raw_preview.lower()
+
+    def test_json_with_trailing_garbage_uses_raw_decode_fallback(self, monkeypatch):
+        """v0.2.3：模型在合法 JSON 后追加解释文字（"Extra data" 错），raw_decode 应救回首个 JSON。
+
+        实测 qwen3-omni-flash 偶发会输出 `{...完整草稿...}\n以上是识别结果。` 这种格式。
+        """
+        provider = self._provider(monkeypatch)
+        valid_json = (
+            '{"product_base_name":"床头柜",'
+            '"components":[{"name":"侧板","bom_quantity":2}],'
+            '"plates":[{"source_index":0,"component_name":"侧板",'
+            '"quantity_per_plate":2,"duration_minutes":120}]}'
+        )
+        trailing_garbage = "\n以上是识别结果，请审阅。\n额外的中文解释。"
+        payload = _llm_json_payload(valid_json + trailing_garbage)
+
+        def fake_post(self, url, json=None, headers=None):  # noqa: A002
+            return _MockResponse(200, json_data=payload)
+
+        monkeypatch.setattr(httpx.Client, "post", fake_post)
+        # 不抛错 — raw_decode 救回首个 JSON
+        result = provider.recognize([b"asm"], [b"prd"])
+        assert result["product_base_name"] == "床头柜"
+        assert result["components"][0]["name"] == "侧板"
 
     def test_missing_components_key_maps_to_schema_invalid(self, monkeypatch):
         provider = self._provider(monkeypatch)

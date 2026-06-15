@@ -596,7 +596,7 @@ export default function DraftMode(props: DraftModeProps) {
         open={assemblyDrawerImageId !== null}
         onClose={() => setAssemblyDrawerImageId(null)}
       >
-        <ImagePlaceholder imageId={assemblyDrawerImageId ?? ''} />
+        <ImagePreview sessionId={sessionId} imageId={assemblyDrawerImageId ?? ''} />
       </Drawer>
 
       {/* plate drawer */}
@@ -613,7 +613,7 @@ export default function DraftMode(props: DraftModeProps) {
       >
         {plateDrawerIndex !== null && plateRows[plateDrawerIndex] && (
           <div>
-            <ImagePlaceholder imageId={plateRows[plateDrawerIndex].source_image_id} />
+            <ImagePreview sessionId={sessionId} imageId={plateRows[plateDrawerIndex].source_image_id} />
             <MetaRow label="image_id" value={plateRows[plateDrawerIndex].source_image_id || '（无）'} />
             <MetaRow
               label="LLM 识别件数"
@@ -694,7 +694,40 @@ function AssemblyThumb(p: { imageId: string; onClick: () => void }) {
   );
 }
 
-function ImagePlaceholder(p: { imageId: string }) {
+function ImagePreview(p: { sessionId: string; imageId: string }) {
+  const [errored, setErrored] = useState(false);
+
+  if (!p.imageId || !p.sessionId || errored) {
+    return (
+      <div
+        style={{
+          background: '#1e1e1e',
+          borderRadius: 8,
+          padding: 16,
+          minHeight: 320,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: 16,
+          color: '#aaa',
+          fontSize: 12,
+          textAlign: 'center',
+        }}
+      >
+        <div>
+          <PictureOutlined style={{ fontSize: 48, marginBottom: 12, display: 'block' }} />
+          {p.imageId ? '原图加载失败或会话已过期' : '无关联图片'}
+          {p.imageId && (
+            <>
+              <br />
+              <span style={{ fontSize: 11 }}>image_id: {p.imageId}</span>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -702,23 +735,21 @@ function ImagePlaceholder(p: { imageId: string }) {
         borderRadius: 8,
         padding: 16,
         minHeight: 320,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
         marginBottom: 16,
-        color: '#aaa',
-        fontSize: 12,
         textAlign: 'center',
       }}
     >
-      <div>
-        <PictureOutlined style={{ fontSize: 48, marginBottom: 12, display: 'block' }} />
-        [原图占位]
-        <br />
-        image_id: {p.imageId || '（无）'}
-        <br />
-        <em style={{ fontSize: 11 }}>真实实现里：从后端获取并渲染缩放图</em>
-      </div>
+      <img
+        src={`/api/intake/session-image/${p.sessionId}/${p.imageId}`}
+        alt={p.imageId}
+        onError={() => setErrored(true)}
+        style={{
+          maxWidth: '100%',
+          maxHeight: 480,
+          objectFit: 'contain',
+          borderRadius: 4,
+        }}
+      />
     </div>
   );
 }

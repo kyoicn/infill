@@ -9,7 +9,8 @@ from __future__ import annotations
 import io
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from PIL import Image
 from sqlalchemy.orm import Session
 
@@ -17,6 +18,7 @@ from app.database import get_db
 from app.schemas_intake import MergeRequest, RecognizeRequest, UploadedImage
 from app.services.intake import (
     ALLOWED_MIME,
+    INTAKE_TMP_DIR,
     MAX_UPLOAD_BYTES,
     _is_safe_id,
     cleanup_stale_sessions,
@@ -37,6 +39,7 @@ _MIME_TO_SUFFIX = {
     "image/jpeg": "jpg",
     "image/webp": "webp",
 }
+_SUFFIX_TO_MIME = {v: k for k, v in _MIME_TO_SUFFIX.items()}
 
 
 @router.get("/provider-status")
@@ -47,6 +50,29 @@ def provider_status():
         "provider_name": provider.name if provider else None,
         "configured": provider is not None,
     }
+
+
+@router.get("/session-image/{session_id}/{image_id}")
+def session_image(session_id: str, image_id: str):
+    """返回上传期临时存放的原图。
+
+    路径安全：session_id / image_id 必须是 uuid4 hex（32 位小写十六进制），
+    否则直接 404 — 杜绝路径遍历（如 `../../etc/passwd`）。
+    用于校对页（Draft）「原图复核」抽屉的真实图像显示。
+    """
+    if not _is_safe_id(session_id) or not _is_safe_id(image_id):
+        raise HTTPException(status_code=404, detail="not found")
+
+    session_dir = INTAKE_TMP_DIR / session_id
+    for suffix in ("png", "jpg", "webp"):
+        path = session_dir / f"{image_id}.{suffix}"
+        if path.is_file():
+            return FileResponse(
+                path,
+                media_type=_SUFFIX_TO_MIME[suffix],
+                headers={"Cache-Control": "private, max-age=3600"},
+            )
+    raise HTTPException(status_code=404, detail="image not found or session expired")
 
 
 @router.post("/upload")
