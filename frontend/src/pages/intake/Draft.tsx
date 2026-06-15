@@ -212,15 +212,24 @@ export default function DraftMode(props: DraftModeProps) {
       prev.map((r, i) => {
         if (i !== idx) return r;
         const next = { ...r, [key]: value };
-        // 联动：用户改 quantity_per_plate 或 component_name 时，若 plate_name 未被手动编辑过，
-        // 自动重算盘号为 `<component_name>-<quantity>`（与后端 v0.2.x 一致的命名约定）。
-        // dirtyPlates 标记由 updatePlateName 写入 — 用户一旦手改 plate_name 即停止追随。
-        if ((key === 'quantity_per_plate' || key === 'component_name') && !dirtyPlates.has(idx)) {
+        // 改 quantity_per_plate 或 component_name 时一律重算 plate_name —
+        // 即使用户之前手改过盘号，这两项变化也会覆盖：用户的意图是新的「组件/数量」组合
+        // 应当对应规范盘号 `<component_name>-<quantity>`（v0.2.7+ 升级行为）。
+        if (key === 'quantity_per_plate' || key === 'component_name') {
           next.plate_name = `${next.component_name}-${next.quantity_per_plate}`;
         }
         return next;
       }),
     );
+    // 若该 plate 之前被标记 dirty（用户手改过盘号），qty/component 改动后视为回归自动跟随
+    // — 清掉 dirty 标记，让后续 BOM 重命名也能正常传播到这行
+    if ((key === 'quantity_per_plate' || key === 'component_name') && dirtyPlates.has(idx)) {
+      setDirtyPlates((prev) => {
+        const ns = new Set(prev);
+        ns.delete(idx);
+        return ns;
+      });
+    }
   }
 
   function updatePlateName(idx: number, next: string) {
