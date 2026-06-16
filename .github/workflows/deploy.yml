@@ -37,6 +37,8 @@ jobs:
           context: .
           platforms: linux/arm64
           push: true
+          build-args: |
+            APP_VERSION=${{ github.event.release.tag_name || github.sha }}
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.event.release.tag_name || github.sha }}

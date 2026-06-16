@@ -106,9 +106,14 @@ export default function Inventory() {
           sortDirections={['ascend', 'descend']}
           onChange={(_p, _f, sorter: any) => {
             // 砍掉 3 态后 sorter.order 总有值；用户点 column 切换升降序，状态写 localStorage
-            if (sorter && !Array.isArray(sorter) && sorter.order && sorter.columnKey) {
-              setSortState({ column: String(sorter.columnKey), order: sorter.order });
-            }
+            if (!sorter || Array.isArray(sorter)) return;
+            if (!sorter.order) return;
+            // 不同版本 / 控制 / 未控制下 AntD 暴露 key 的字段名不同，挨个试
+            const key =
+              sorter.columnKey ||
+              sorter.field ||
+              (sorter.column && (sorter.column.key || sorter.column.dataIndex));
+            if (key) setSortState({ column: String(key), order: sorter.order });
           }}
           rowClassName={(rec: any) => {
             const stock = editing ? (editValues[rec.id] ?? rec.stock) : rec.stock;

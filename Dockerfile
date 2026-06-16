@@ -1,5 +1,7 @@
 # ---- 阶段1: 构建前端 ----
 FROM node:20-alpine AS frontend-build
+ARG APP_VERSION=dev
+ENV VITE_APP_VERSION=$APP_VERSION
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
