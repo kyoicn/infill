@@ -78,6 +78,7 @@ export default function Inventory() {
           rowKey="id"
           size="small"
           pagination={false}
+          sortDirections={['ascend', 'descend']}
           rowClassName={(rec: any) => {
             const stock = editing ? (editValues[rec.id] ?? rec.stock) : rec.stock;
             const val = stock - rec.demand;
