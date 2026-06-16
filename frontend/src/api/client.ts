@@ -79,4 +79,26 @@ export const api = {
     recentLogs: (lines = 100) =>
       request<any>(`/intake/recent-logs?lines=${lines}`),
   },
+
+  // 目录 CRUD（写操作走 /catalog/*，URL 中的中文名需 encodeURIComponent）
+  catalog: {
+    addComponent: (body: any) =>
+      request<any>('/catalog/components', { method: 'POST', body: JSON.stringify(body) }),
+    updateComponent: (name: string, body: any) =>
+      request<any>(`/catalog/components/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    deleteComponent: (name: string) =>
+      request<any>(`/catalog/components/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+    addPlate: (body: any) =>
+      request<any>('/catalog/plates', { method: 'POST', body: JSON.stringify(body) }),
+    updatePlate: (plateName: string, body: any) =>
+      request<any>(`/catalog/plates/${encodeURIComponent(plateName)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    deletePlate: (plateName: string) =>
+      request<any>(`/catalog/plates/${encodeURIComponent(plateName)}`, { method: 'DELETE' }),
+    addProduct: (body: any) =>
+      request<any>('/catalog/products', { method: 'POST', body: JSON.stringify(body) }),
+    updateProduct: (name: string, body: any) =>
+      request<any>(`/catalog/products/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify(body) }),
+    deleteProduct: (name: string) =>
+      request<any>(`/catalog/products/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  },
 };
