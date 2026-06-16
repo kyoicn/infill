@@ -58,7 +58,7 @@ export default function Inventory() {
   };
 
   return (
-    <div>
+    <div style={{ maxWidth: 1280, margin: '0 auto' }}>
       <h2 style={{ marginTop: 0 }}>库存管理</h2>
 
       <Card
@@ -79,14 +79,23 @@ export default function Inventory() {
           size="small"
           pagination={false}
           columns={[
-            { title: '组件', dataIndex: 'component_name' },
-            { title: '颜色', dataIndex: 'color', width: 80,
+            {
+              title: '组件',
+              dataIndex: 'component_name',
+              sorter: (a: any, b: any) => (a.component_name || '').localeCompare(b.component_name || ''),
+            },
+            {
+              title: '颜色',
+              dataIndex: 'color',
+              width: 80,
+              sorter: (a: any, b: any) => (a.color || '').localeCompare(b.color || ''),
               render: (v: string) => v || '-',
             },
             {
               title: '当前库存',
               dataIndex: 'stock',
               width: 140,
+              sorter: (a: any, b: any) => a.stock - b.stock,
               render: (v: number, rec: any) =>
                 editing ? (
                   <InputNumber
@@ -98,10 +107,20 @@ export default function Inventory() {
                   />
                 ) : v,
             },
-            { title: '订单需求', dataIndex: 'demand', width: 100 },
+            {
+              title: '订单需求',
+              dataIndex: 'demand',
+              width: 100,
+              sorter: (a: any, b: any) => a.demand - b.demand,
+            },
             {
               title: '富余',
               width: 100,
+              sorter: (a: any, b: any) => {
+                const sa = editing ? (editValues[a.id] ?? a.stock) : a.stock;
+                const sb = editing ? (editValues[b.id] ?? b.stock) : b.stock;
+                return (sa - a.demand) - (sb - b.demand);
+              },
               render: (_: any, rec: any) => {
                 const stock = editing ? (editValues[rec.id] ?? rec.stock) : rec.stock;
                 const val = stock - rec.demand;
