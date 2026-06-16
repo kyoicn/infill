@@ -78,6 +78,13 @@ export default function Inventory() {
           rowKey="id"
           size="small"
           pagination={false}
+          rowClassName={(rec: any) => {
+            const stock = editing ? (editValues[rec.id] ?? rec.stock) : rec.stock;
+            const val = stock - rec.demand;
+            if (val < 0) return 'inv-row-deficit';
+            if (val > 0) return 'inv-row-surplus';
+            return '';
+          }}
           columns={[
             {
               title: '组件',

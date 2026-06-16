@@ -2,3 +2,17 @@ body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
+
+/* 库存表格按富余值上色 — 富余<0 红，>0 绿，=0 留白（默认） */
+.ant-table-tbody > tr.inv-row-deficit > td {
+  background-color: #fff1f0 !important;
+}
+.ant-table-tbody > tr.inv-row-surplus > td {
+  background-color: #f6ffed !important;
+}
+.ant-table-tbody > tr.inv-row-deficit:hover > td {
+  background-color: #ffd6d4 !important;
+}
+.ant-table-tbody > tr.inv-row-surplus:hover > td {
+  background-color: #d9f7be !important;
+}
