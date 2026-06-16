@@ -22,6 +22,7 @@ export const api = {
   // 订单
   getOrders: (status?: string) => request<any[]>(`/orders${status ? `?status=${status}` : ''}`),
   createOrder: (data: any) => request<any>('/orders', { method: 'POST', body: JSON.stringify(data) }),
+  updateOrder: (id: number, data: { items?: any[]; notes?: string }) => request<any>(`/orders/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   shipOrder: (id: number) => request<any>(`/orders/${id}/ship`, { method: 'POST' }),
   deleteOrder: (id: number) => request<any>(`/orders/${id}`, { method: 'DELETE' }),
 
