@@ -3,6 +3,7 @@ import { Modal, Form, Input, Select, message } from 'antd';
 import { api } from '../../api/client';
 
 export interface ComponentInitial {
+  sku: string;
   name: string;
   description?: string;
   colors?: string[];
@@ -48,7 +49,8 @@ export default function ComponentModal({ open, mode, initial, onCancel, onSucces
           colors,
         });
       } else {
-        res = await api.catalog.updateComponent(initial!.name, {
+        res = await api.catalog.updateComponent(initial!.sku, {
+          name: values.name.trim(),
           description: values.description?.trim() || '',
           colors,
         });
@@ -78,12 +80,21 @@ export default function ComponentModal({ open, mode, initial, onCancel, onSucces
       destroyOnClose
     >
       <Form form={form} layout="vertical">
+        {mode === 'edit' && (
+          <Form.Item label="SKU">
+            <Input
+              value={initial?.sku}
+              disabled
+              style={{ fontFamily: '"SF Mono", Menlo, Consolas, monospace' }}
+            />
+          </Form.Item>
+        )}
         <Form.Item
           label="名称"
           name="name"
           rules={[{ required: true, message: '请输入名称' }]}
         >
-          <Input disabled={mode === 'edit'} placeholder="如：底座" />
+          <Input placeholder="如：底座" />
         </Form.Item>
         <Form.Item label="描述" name="description">
           <Input.TextArea rows={2} placeholder="可选" />

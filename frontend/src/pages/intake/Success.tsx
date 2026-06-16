@@ -3,7 +3,7 @@ import { Button } from 'antd';
 import { ArrowRightOutlined, CheckCircleOutlined } from '@ant-design/icons';
 
 export interface SuccessModeProps {
-  stats: { components_added: number; plates_added: number; products_added: number };
+  stats: { components_added: number; plates_added: number; products_added: number; new_skus: string[] };
   backupPath: string;
   timingMs: Record<string, number>;
   variantNames: string[];
@@ -36,6 +36,12 @@ export default function SuccessMode(props: SuccessModeProps) {
           <div>备份文件：{backupPath || '（未知）'}</div>
           <div>合并耗时：写入 {writeMs} ms · 重新加载 {reloadMs} ms</div>
         </div>
+
+        {stats.new_skus.length > 0 && (
+          <div style={styles.skus}>
+            本次新增条目的 SKU：{stats.new_skus.join(', ')}（可在产品目录页查看）
+          </div>
+        )}
 
         <div style={styles.actions}>
           <Button onClick={onContinue}>继续录入下一个产品</Button>
@@ -85,6 +91,18 @@ const styles: Record<string, CSSProperties> = {
     maxWidth: 520,
     lineHeight: 1.8,
     wordBreak: 'break-all',
+  },
+  skus: {
+    fontFamily: '"SF Mono", Menlo, Consolas, monospace',
+    fontSize: 12,
+    color: 'rgba(0,0,0,0.55)',
+    marginTop: -16,
+    marginBottom: 28,
+    width: '100%',
+    maxWidth: 520,
+    textAlign: 'center',
+    wordBreak: 'break-all',
+    lineHeight: 1.7,
   },
   actions: {
     display: 'flex',

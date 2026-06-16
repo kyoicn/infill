@@ -53,7 +53,7 @@ type IntakeMode =
   | { kind: 'merging' }
   | {
       kind: 'success';
-      stats: { components_added: number; plates_added: number; products_added: number };
+      stats: { components_added: number; plates_added: number; products_added: number; new_skus: string[] };
       backupPath: string;
       timingMs: Record<string, number>;
       variantNames: string[];

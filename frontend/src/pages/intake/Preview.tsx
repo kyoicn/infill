@@ -42,7 +42,7 @@ export interface PreviewModeProps {
   onBack: () => void;
   onMerging: () => void;
   onSuccess: (
-    stats: { components_added: number; plates_added: number; products_added: number },
+    stats: { components_added: number; plates_added: number; products_added: number; new_skus: string[] },
     backupPath: string,
     timingMs: Record<string, number>,
   ) => void;
@@ -352,13 +352,15 @@ export default function PreviewMode(props: PreviewModeProps) {
         details?: any;
       };
       if (res?.ok === true) {
-        const stats = res.stats || {};
+        const stats = (res.stats || {}) as Record<string, unknown>;
+        const newSkus = Array.isArray(stats.new_skus) ? (stats.new_skus as string[]) : [];
         onSuccess(
           {
             // 后端 schema 使用中文键 新增组件 / 新增打印盘 / 新增产品变体（参见 schemas_intake.MergeStats）。
             components_added: Number(stats['新增组件'] ?? stats.components_added ?? 0),
             plates_added: Number(stats['新增打印盘'] ?? stats.plates_added ?? 0),
             products_added: Number(stats['新增产品变体'] ?? stats.products_added ?? 0),
+            new_skus: newSkus,
           },
           res.backup_path || '',
           res.timing_ms || {},

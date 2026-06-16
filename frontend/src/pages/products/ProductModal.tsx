@@ -4,12 +4,13 @@ import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import { api } from '../../api/client';
 
 export interface BomRow {
-  component_name: string;
+  component_sku: string;
   color?: string;
   quantity: number;
 }
 
 export interface ProductInitial {
+  sku: string;
   name: string;
   description?: string;
   bom?: BomRow[];
@@ -40,7 +41,7 @@ export default function ProductModal({ open, mode, initial, components, onCancel
         setBom(initial.bom ? initial.bom.map((b) => ({ ...b })) : []);
       } else {
         form.setFieldsValue({ name: '', description: '' });
-        setBom([{ component_name: '', color: undefined, quantity: 1 }]);
+        setBom([{ component_sku: '', color: undefined, quantity: 1 }]);
       }
     }
   }, [open, mode, initial, form]);
@@ -54,11 +55,11 @@ export default function ProductModal({ open, mode, initial, components, onCancel
   };
 
   const addRow = () => {
-    setBom((prev) => [...prev, { component_name: '', color: undefined, quantity: 1 }]);
+    setBom((prev) => [...prev, { component_sku: '', color: undefined, quantity: 1 }]);
   };
 
-  const getColorOptions = (componentName: string) => {
-    const c = components.find((x) => x.name === componentName);
+  const getColorOptions = (componentSku: string) => {
+    const c = components.find((x) => x.sku === componentSku);
     return (c?.colors || []).map((col: string) => ({ label: col, value: col }));
   };
 
@@ -69,7 +70,7 @@ export default function ProductModal({ open, mode, initial, components, onCancel
       const cleaned: BomRow[] = [];
       for (let i = 0; i < bom.length; i++) {
         const row = bom[i];
-        if (!row.component_name) {
+        if (!row.component_sku) {
           message.error(`BOM 第 ${i + 1} 行：请选择组件`);
           return;
         }
@@ -78,7 +79,7 @@ export default function ProductModal({ open, mode, initial, components, onCancel
           return;
         }
         cleaned.push({
-          component_name: row.component_name,
+          component_sku: row.component_sku,
           color: row.color || undefined,
           quantity: row.quantity,
         });
@@ -96,7 +97,8 @@ export default function ProductModal({ open, mode, initial, components, onCancel
           bom: cleaned,
         });
       } else {
-        res = await api.catalog.updateProduct(initial!.name, {
+        res = await api.catalog.updateProduct(initial!.sku, {
+          name: values.name.trim(),
           description: values.description?.trim() || '',
           bom: cleaned,
         });
@@ -126,12 +128,21 @@ export default function ProductModal({ open, mode, initial, components, onCancel
       destroyOnClose
     >
       <Form form={form} layout="vertical">
+        {mode === 'edit' && (
+          <Form.Item label="SKU">
+            <Input
+              value={initial?.sku}
+              disabled
+              style={{ fontFamily: '"SF Mono", Menlo, Consolas, monospace' }}
+            />
+          </Form.Item>
+        )}
         <Form.Item
           label="名称"
           name="name"
           rules={[{ required: true, message: '请输入名称' }]}
         >
-          <Input disabled={mode === 'edit'} placeholder="如：小恐龙摆件" />
+          <Input placeholder="如：小恐龙摆件" />
         </Form.Item>
         <Form.Item label="描述" name="description">
           <Input.TextArea rows={2} placeholder="可选" />
@@ -153,9 +164,9 @@ export default function ProductModal({ open, mode, initial, components, onCancel
             <Select
               style={{ flex: 2 }}
               placeholder="组件"
-              value={row.component_name || undefined}
-              onChange={(v) => updateRow(idx, { component_name: v, color: undefined })}
-              options={components.map((c) => ({ label: c.name, value: c.name }))}
+              value={row.component_sku || undefined}
+              onChange={(v) => updateRow(idx, { component_sku: v, color: undefined })}
+              options={components.map((c) => ({ label: `${c.name} (${c.sku})`, value: c.sku }))}
               showSearch
               optionFilterProp="label"
             />
@@ -165,8 +176,8 @@ export default function ProductModal({ open, mode, initial, components, onCancel
               value={row.color || undefined}
               onChange={(v) => updateRow(idx, { color: v })}
               allowClear
-              options={getColorOptions(row.component_name)}
-              disabled={!row.component_name}
+              options={getColorOptions(row.component_sku)}
+              disabled={!row.component_sku}
             />
             <InputNumber
               style={{ flex: 1 }}
