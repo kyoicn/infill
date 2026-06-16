@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from .database import Base, engine, SessionLocal
 from .routers import catalog, orders, inventory, printers, schedule, config
 from app.routers import intake
-from .services.catalog import load_catalog
+from .services.catalog import ensure_sku_column_exists, load_catalog
 from .services.migrate import auto_migrate
 
 
@@ -19,7 +19,11 @@ async def lifespan(app: FastAPI):
     auto_migrate(engine)
     # 2. 再创建可能缺失的整张表
     Base.metadata.create_all(bind=engine)
-    # 3. 从 YAML 加载目录
+    # 3. v0.3.0：确保 components / print_configs / products 三表有 sku 列（旧 DB 升级）
+    altered = ensure_sku_column_exists(engine)
+    if altered:
+        print(f"已为 {altered} 表补齐 sku 列")
+    # 4. 从 YAML 加载目录（旧格式 YAML 会自动 backfill SKU）
     db = SessionLocal()
     try:
         stats = load_catalog(db)

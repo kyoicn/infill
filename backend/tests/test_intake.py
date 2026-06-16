@@ -772,11 +772,12 @@ class TestDetectConflicts:
         assert result == []
 
     def test_component_and_plate_conflict(self, db_session):
-        # seed 现有 catalog：组件 + 盘
-        comp = Component(name="床头柜-把手", description="", colors=[])
+        # seed 现有 catalog：组件 + 盘（v0.3.0 SKU 必填）
+        comp = Component(sku="C-9001", name="床头柜-把手", description="", colors=[])
         db_session.add(comp)
         db_session.flush()
         pc = PrintConfig(
+            sku="P-9001",
             plate_name="床头柜-把手-40",
             component_id=comp.id,
             quantity=40,
@@ -802,13 +803,13 @@ class TestDetectConflicts:
 
     def test_no_input_returns_empty(self, db_session):
         # 即便 DB 有数据，传空列表也返回空
-        db_session.add(Component(name="X", description="", colors=[]))
+        db_session.add(Component(sku="C-9001", name="X", description="", colors=[]))
         db_session.commit()
         result = detect_conflicts(db_session, [], [], [])
         assert result == []
 
     def test_existing_name_field_equals_name(self, db_session):
-        db_session.add(Component(name="床头柜-门板", description="", colors=[]))
+        db_session.add(Component(sku="C-9001", name="床头柜-门板", description="", colors=[]))
         db_session.commit()
         conflicts = detect_conflicts(db_session, ["床头柜-门板"], [], [])
         assert len(conflicts) == 1
@@ -892,20 +893,22 @@ def _make_final_draft_3v_4c() -> FinalDraft:
 class TestColorMatrixExpansion:
     def test_three_variants_produce_three_products(self):
         draft = _make_final_draft_3v_4c()
-        comps, plates, products = expand_to_yaml_structures(draft)
+        comps, plates, products, new_skus = expand_to_yaml_structures(draft)
         assert len(products) == 3
         variant_names = [p["名称"] for p in products]
         assert variant_names == ["床头柜 - 灰白", "床头柜 - 黑白", "床头柜 - 黑粉"]
+        # 4 组件 + 4 盘 + 3 产品 = 11 个新 SKU
+        assert len(new_skus) == 11
 
     def test_each_product_has_four_bom_rows(self):
         draft = _make_final_draft_3v_4c()
-        _, _, products = expand_to_yaml_structures(draft)
+        _, _, products, _ = expand_to_yaml_structures(draft)
         for p in products:
             assert len(p["BOM"]) == 4
 
     def test_components_keep_union_of_colors_dedupe(self):
         draft = _make_final_draft_3v_4c()
-        comps, _, _ = expand_to_yaml_structures(draft)
+        comps, _, _, _ = expand_to_yaml_structures(draft)
         comp_map = {c["名称"]: c for c in comps}
 
         # 侧板：灰色（v1）+ 黑色（v2、v3）→ ["灰色", "黑色"]
@@ -919,10 +922,11 @@ class TestColorMatrixExpansion:
 
     def test_plates_have_no_color_field(self):
         draft = _make_final_draft_3v_4c()
-        _, plates, _ = expand_to_yaml_structures(draft)
+        _, plates, _, _ = expand_to_yaml_structures(draft)
         for p in plates:
             assert "颜色" not in p
-            assert set(p.keys()) == {"盘号", "组件", "数量", "耗时分钟"}
+            # v0.3.0：组件 → 组件编号
+            assert set(p.keys()) == {"编号", "盘号", "组件编号", "数量", "耗时分钟"}
 
     def test_component_without_any_color_omits_field(self):
         """所有变体都给某组件填空字符串 → 该组件不带 可选颜色 字段。"""
@@ -937,13 +941,15 @@ class TestColorMatrixExpansion:
         draft = FinalDraft(
             product_base_name="X", components=[comp], plates=[plate], variants=[variant],
         )
-        comps, _, _ = expand_to_yaml_structures(draft)
-        assert comps[0] == {"名称": "X-通用件"}
+        comps, _, _, _ = expand_to_yaml_structures(draft)
+        # v0.3.0：组件含 编号 + 名称
+        assert comps[0]["名称"] == "X-通用件"
+        assert "编号" in comps[0]
         assert "可选颜色" not in comps[0]
 
     def test_bom_quantity_comes_from_assembly_quantity(self):
         draft = _make_final_draft_3v_4c()
-        _, _, products = expand_to_yaml_structures(draft)
+        _, _, products, _ = expand_to_yaml_structures(draft)
         # 第一个变体的 BOM 顺序对应 components 顺序
         bom = products[0]["BOM"]
         # 侧板 assembly_quantity=2 → BOM 数量=2
@@ -952,15 +958,44 @@ class TestColorMatrixExpansion:
         assert bom[2]["数量"] == 4
         assert bom[3]["数量"] == 1
 
+    def test_new_skus_assigned_from_starting_zero(self):
+        """没有 existing_skus 时从 C-0001 起步。"""
+        draft = _make_final_draft_3v_4c()
+        comps, plates, products, new_skus = expand_to_yaml_structures(draft)
+        assert comps[0]["编号"] == "C-0001"
+        assert plates[0]["编号"] == "P-0001"
+        assert products[0]["编号"] == "PR-0001"
+
+    def test_new_skus_skip_existing(self):
+        """existing_skus 提供已用集合，新 SKU 从最大+1 起步。"""
+        draft = _make_final_draft_3v_4c()
+        existing = {"组件": {"C-0001", "C-0005"}, "打印盘": {"P-0003"}, "产品": set()}
+        comps, plates, products, _ = expand_to_yaml_structures(draft, existing_skus=existing)
+        assert comps[0]["编号"] == "C-0006"
+        assert plates[0]["编号"] == "P-0004"
+        assert products[0]["编号"] == "PR-0001"
+
+    def test_plate_and_bom_reference_new_component_sku(self):
+        """plate.组件编号 / product.BOM[].组件编号 引用本次新分配的组件 SKU。"""
+        draft = _make_final_draft_3v_4c()
+        comps, plates, products, _ = expand_to_yaml_structures(draft)
+        # 第一个组件（侧板）= C-0001
+        assert comps[0]["编号"] == "C-0001"
+        # 第一个盘也是侧板 → 组件编号 = C-0001
+        assert plates[0]["组件编号"] == "C-0001"
+        # 第一个产品（灰白）的 BOM 第一项（侧板）
+        assert products[0]["BOM"][0]["组件编号"] == "C-0001"
+
 
 # ---------- TestAppendToCatalog ----------
 
 def _seed_minimal_catalog(path):
-    """写入一个最小合法 catalog.yaml（含 3 段空列表 + 1 个现有组件）。"""
+    """写入一个最小合法 catalog.yaml（含 3 段空列表 + 1 个现有组件，v0.3.0 SKU-keyed）。"""
     initial = {
-        "组件": [{"名称": "旧组件", "可选颜色": ["白色"]}],
-        "打印盘": [{"盘号": "旧盘-1", "组件": "旧组件", "数量": 1, "耗时分钟": 30}],
-        "产品": [{"名称": "旧产品", "BOM": [{"组件": "旧组件", "颜色": "白色", "数量": 1}]}],
+        "组件": [{"编号": "C-0001", "名称": "旧组件", "可选颜色": ["白色"]}],
+        "打印盘": [{"编号": "P-0001", "盘号": "旧盘-1", "组件编号": "C-0001", "数量": 1, "耗时分钟": 30}],
+        "产品": [{"编号": "PR-0001", "名称": "旧产品",
+                  "BOM": [{"组件编号": "C-0001", "颜色": "白色", "数量": 1}]}],
     }
     path.write_text(
         _yaml.safe_dump(initial, allow_unicode=True, sort_keys=False),
@@ -973,46 +1008,46 @@ class TestAppendToCatalog:
         catalog = tmp_path / "catalog.yaml"
         _seed_minimal_catalog(catalog)
 
-        new_comps = [{"名称": "床头柜-侧板", "可选颜色": ["灰色"]}]
-        new_plates = [{"盘号": "床头柜-侧板-2", "组件": "床头柜-侧板", "数量": 2, "耗时分钟": 120}]
-        new_products = [{"名称": "床头柜 - 灰白", "BOM": [{"组件": "床头柜-侧板", "颜色": "灰色", "数量": 2}]}]
+        new_comps = [{"编号": "C-0002", "名称": "床头柜-侧板", "可选颜色": ["灰色"]}]
+        new_plates = [{"编号": "P-0002", "盘号": "床头柜-侧板-2", "组件编号": "C-0002", "数量": 2, "耗时分钟": 120}]
+        new_products = [{"编号": "PR-0002", "名称": "床头柜 - 灰白",
+                         "BOM": [{"组件编号": "C-0002", "颜色": "灰色", "数量": 2}]}]
 
         append_to_catalog(catalog, new_comps, new_plates, new_products)
 
         loaded = _yaml.safe_load(catalog.read_text(encoding="utf-8"))
         # 现有条目保留
-        assert any(c["名称"] == "旧组件" for c in loaded["组件"])
-        assert any(p["盘号"] == "旧盘-1" for p in loaded["打印盘"])
-        assert any(p["名称"] == "旧产品" for p in loaded["产品"])
+        assert any(c["编号"] == "C-0001" for c in loaded["组件"])
+        assert any(p["编号"] == "P-0001" for p in loaded["打印盘"])
+        assert any(p["编号"] == "PR-0001" for p in loaded["产品"])
         # 新条目追加在末尾
-        assert loaded["组件"][-1]["名称"] == "床头柜-侧板"
-        assert loaded["打印盘"][-1]["盘号"] == "床头柜-侧板-2"
-        assert loaded["产品"][-1]["名称"] == "床头柜 - 灰白"
+        assert loaded["组件"][-1]["编号"] == "C-0002"
+        assert loaded["打印盘"][-1]["编号"] == "P-0002"
+        assert loaded["产品"][-1]["编号"] == "PR-0002"
 
     def test_round_trip_yaml_valid(self, tmp_path):
         catalog = tmp_path / "catalog.yaml"
         _seed_minimal_catalog(catalog)
-        append_to_catalog(catalog, [{"名称": "新A"}], [], [])
-        # 不抛 = 合法
+        append_to_catalog(catalog, [{"编号": "C-0009", "名称": "新A"}], [], [])
         _yaml.safe_load(catalog.read_text(encoding="utf-8"))
 
     def test_allow_unicode_preserves_chinese(self, tmp_path):
         catalog = tmp_path / "catalog.yaml"
         _seed_minimal_catalog(catalog)
-        append_to_catalog(catalog, [{"名称": "床头柜-把手"}], [], [])
+        append_to_catalog(catalog, [{"编号": "C-0009", "名称": "床头柜-把手"}], [], [])
         raw = catalog.read_text(encoding="utf-8")
-        # 中文原样出现（未被 escape 成 \uXXXX）
         assert "床头柜-把手" in raw
-        assert "\\u" not in raw  # YAML 不应有 unicode escape
+        assert "\\u" not in raw
 
     def test_empty_file_creates_three_sections(self, tmp_path):
         catalog = tmp_path / "catalog.yaml"
         catalog.write_text("", encoding="utf-8")
         append_to_catalog(
             catalog,
-            [{"名称": "新A"}],
-            [{"盘号": "新-1", "组件": "新A", "数量": 1, "耗时分钟": 30}],
-            [{"名称": "P", "BOM": [{"组件": "新A", "颜色": "", "数量": 1}]}],
+            [{"编号": "C-0001", "名称": "新A"}],
+            [{"编号": "P-0001", "盘号": "新-1", "组件编号": "C-0001", "数量": 1, "耗时分钟": 30}],
+            [{"编号": "PR-0001", "名称": "P",
+              "BOM": [{"组件编号": "C-0001", "颜色": "", "数量": 1}]}],
         )
         loaded = _yaml.safe_load(catalog.read_text(encoding="utf-8"))
         assert len(loaded["组件"]) == 1
@@ -1089,6 +1124,12 @@ class TestMergeSuccess:
         assert result["stats"]["components_added"] == 1
         assert result["stats"]["plates_added"] == 1
         assert result["stats"]["products_added"] == 1
+        # v0.3.0：new_skus 列出本次分配的所有 SKU（1 组件 + 1 盘 + 1 产品 = 3）
+        assert len(result["stats"]["new_skus"]) == 3
+        # 已有 catalog 含 C-0001/P-0001/PR-0001 → 新分配应为 C-0002/P-0002/PR-0002
+        assert "C-0002" in result["stats"]["new_skus"]
+        assert "P-0002" in result["stats"]["new_skus"]
+        assert "PR-0002" in result["stats"]["new_skus"]
         # 备份文件存在
         assert Path(result["backup_path"]).is_file()
         # timing keys present and non-negative
@@ -1115,8 +1156,8 @@ class TestMergeSuccess:
 
 class TestMergeConflict:
     def test_conflict_short_circuits_no_backup(self, db_session, catalog_tmp):
-        # 预置同名组件
-        db_session.add(Component(name="床头柜-侧板", description="", colors=[]))
+        # 预置同名组件（撞名走 name 字段；SKU 是稳定标识，必填）
+        db_session.add(Component(sku="C-9001", name="床头柜-侧板", description="", colors=[]))
         db_session.commit()
 
         draft = _final_draft_minimal()
@@ -1443,6 +1484,12 @@ class TestEndToEndIntakeFlow:
             assert stats["components_added"] == 2
             assert stats["plates_added"] == 2
             assert stats["products_added"] == 2
+            # v0.3.0：返回 new_skus（2 组件 + 2 盘 + 2 产品 = 6）
+            assert len(stats["new_skus"]) == 6
+            # 空 catalog → 从 0001 起步
+            assert "C-0001" in stats["new_skus"]
+            assert "P-0001" in stats["new_skus"]
+            assert "PR-0001" in stats["new_skus"]
 
             # 备份文件 + 计时键
             assert Path(merge_body["backup_path"]).is_file()

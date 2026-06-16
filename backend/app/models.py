@@ -21,7 +21,8 @@ class Component(Base):
     __tablename__ = "components"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
+    sku = Column(String(16), unique=True, nullable=False, index=True)  # 永久不变的稳定标识，如 C-0001
+    name = Column(String, nullable=False)  # 可变展示字段（不再 UNIQUE）
     description = Column(String, default="")
     colors = Column(JSON, default=list, nullable=False)  # ["白色", "红色", ...]
 
@@ -33,7 +34,8 @@ class PrintConfig(Base):
     __tablename__ = "print_configs"
 
     id = Column(Integer, primary_key=True, index=True)
-    plate_name = Column(String, nullable=False)  # 盘号，如"1号盘"
+    sku = Column(String(16), unique=True, nullable=False, index=True)  # 永久不变的稳定标识，如 P-0001
+    plate_name = Column(String, nullable=False)  # 可变展示字段（不再 UNIQUE）
     component_id = Column(Integer, ForeignKey("components.id"), nullable=False)
     quantity = Column(Integer, nullable=False)
     duration_minutes = Column(Integer, nullable=False)
@@ -45,7 +47,8 @@ class Product(Base):
     __tablename__ = "products"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
+    sku = Column(String(16), unique=True, nullable=False, index=True)  # 永久不变的稳定标识，如 PR-0001
+    name = Column(String, nullable=False)  # 可变展示字段（不再 UNIQUE）
     description = Column(String, default="")
 
     bom_items = relationship("ProductComponent", back_populates="product", cascade="all, delete-orphan")

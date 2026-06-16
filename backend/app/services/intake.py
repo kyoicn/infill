@@ -250,14 +250,31 @@ def get_recent_logs(lines: int = 100) -> list[str]:
 
 def expand_to_yaml_structures(
     final_draft: FinalDraft,
-) -> tuple[list[dict], list[dict], list[dict]]:
-    """把 FinalDraft 展开为 catalog YAML 三段结构 (组件列表, 打印盘列表, 产品列表)。
+    existing_skus: dict[str, set[str]] | None = None,
+) -> tuple[list[dict], list[dict], list[dict], list[str]]:
+    """把 FinalDraft 展开为 catalog YAML 三段结构 + 本次新分配的 SKU 列表（v0.3.0）。
 
-    - 组件列表：每条 `{"名称": comp.name, "可选颜色": [...union of colors across variants...]}`，
-      无可选颜色时不输出 `可选颜色` 字段。
-    - 打印盘列表：每条 `{"盘号", "组件", "数量", "耗时分钟"}`，无 `颜色` 字段。
-    - 产品列表：每个变体一条 `{"名称": v.variant_name, "BOM": [{"组件", "颜色", "数量"}, ...]}`。
+    - 组件列表：每条 `{"编号", "名称", "可选颜色"(可选)}`
+    - 打印盘列表：每条 `{"编号", "盘号", "组件编号", "数量", "耗时分钟"}`，无 `颜色` 字段
+    - 产品列表：每个变体一条 `{"编号", "名称", "BOM": [{"组件编号", "颜色", "数量"}, ...]}`
+
+    `existing_skus` 是当前 catalog 中已使用的 SKU（按段），用于生成不冲突的新 SKU；
+    若 None 则从 0001 起步。
+
+    返回：(components_out, plates_out, products_out, new_skus)
+    `new_skus` 按"组件→打印盘→产品"的写入顺序排列，便于前端展示。
     """
+    from .catalog import next_sku  # 延迟 import 避免循环
+
+    if existing_skus is None:
+        existing_skus = {"组件": set(), "打印盘": set(), "产品": set()}
+    # 拷贝避免污染调用方
+    used_comp = set(existing_skus.get("组件", set()))
+    used_plate = set(existing_skus.get("打印盘", set()))
+    used_prod = set(existing_skus.get("产品", set()))
+
+    new_skus: list[str] = []
+
     # 组件 → union(dedupe but keep first-seen order) of colors across all variants
     comp_to_colors: dict[str, list[str]] = {}
     for comp in final_draft.components:
@@ -269,9 +286,15 @@ def expand_to_yaml_structures(
             if cell.color and cell.color not in comp_to_colors[cell.component_name]:
                 comp_to_colors[cell.component_name].append(cell.color)
 
+    # 组件 name → 新分配的 SKU（plate / product BOM 引用要用）
+    comp_name_to_sku: dict[str, str] = {}
     components_out: list[dict] = []
     for comp in final_draft.components:
-        entry: dict = {"名称": comp.name}
+        sku = next_sku("组件", used_comp)
+        used_comp.add(sku)
+        new_skus.append(sku)
+        comp_name_to_sku[comp.name] = sku
+        entry: dict = {"编号": sku, "名称": comp.name}
         colors = comp_to_colors.get(comp.name, [])
         if colors:
             entry["可选颜色"] = colors
@@ -279,9 +302,13 @@ def expand_to_yaml_structures(
 
     plates_out: list[dict] = []
     for p in final_draft.plates:
+        sku = next_sku("打印盘", used_plate)
+        used_plate.add(sku)
+        new_skus.append(sku)
         plates_out.append({
+            "编号": sku,
             "盘号": p.plate_name,
-            "组件": p.component_name,
+            "组件编号": comp_name_to_sku.get(p.component_name, ""),
             "数量": p.quantity_per_plate,
             "耗时分钟": p.duration_minutes,
         })
@@ -293,19 +320,41 @@ def expand_to_yaml_structures(
 
     products_out: list[dict] = []
     for variant in final_draft.variants:
+        sku = next_sku("产品", used_prod)
+        used_prod.add(sku)
+        new_skus.append(sku)
         bom = []
         for cell in variant.color_cells:
             bom.append({
-                "组件": cell.component_name,
+                "组件编号": comp_name_to_sku.get(cell.component_name, ""),
                 "颜色": cell.color,
                 "数量": comp_to_qty.get(cell.component_name, 1),
             })
         products_out.append({
+            "编号": sku,
             "名称": variant.variant_name,
             "BOM": bom,
         })
 
-    return components_out, plates_out, products_out
+    return components_out, plates_out, products_out, new_skus
+
+
+def _existing_skus_from_yaml(catalog_path: Path) -> dict[str, set[str]]:
+    """读 catalog.yaml，返回各段已使用的 SKU 集合。文件不存在/空 → 三段空集。"""
+    result = {"组件": set(), "打印盘": set(), "产品": set()}
+    if not catalog_path.exists():
+        return result
+    raw = catalog_path.read_text(encoding="utf-8")
+    if not raw.strip():
+        return result
+    data = yaml.safe_load(raw) or {}
+    if not isinstance(data, dict):
+        return result
+    for section in result:
+        for item in data.get(section, []) or []:
+            if isinstance(item, dict) and item.get("编号"):
+                result[section].add(item["编号"])
+    return result
 
 
 # ---------- 备份 / append / 回滚 ----------
@@ -402,8 +451,13 @@ def do_merge(
 
     # ---- 阶段 3：append + 复读验证 ----
     write_t0 = time.perf_counter()
+    # v0.3.0：扫已有 SKU 以避免新分配冲突
+    existing_skus = _existing_skus_from_yaml(catalog_path)
+    new_skus: list[str] = []
     try:
-        new_components, new_plates, new_products = expand_to_yaml_structures(final_draft)
+        new_components, new_plates, new_products, new_skus = expand_to_yaml_structures(
+            final_draft, existing_skus=existing_skus,
+        )
         append_to_catalog(catalog_path, new_components, new_plates, new_products)
     except (OSError, yaml.YAMLError) as exc:
         intake_log(f"append 写入失败，rollback 触发：原因 = {exc!r}")
@@ -482,6 +536,7 @@ def do_merge(
             "components_added": len(new_components),
             "plates_added": len(new_plates),
             "products_added": len(new_products),
+            "new_skus": new_skus,
         },
         "backup_path": str(backup_path),
         "timing_ms": {

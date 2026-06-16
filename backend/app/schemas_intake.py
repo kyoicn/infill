@@ -129,6 +129,7 @@ class MergeStats(BaseModel):
     新增组件: int
     新增打印盘: int
     新增产品变体: int
+    new_skus: list[str] = []                # v0.3.0：本次 merge 新分配的所有 SKU
 
     model_config = {"from_attributes": True}
 

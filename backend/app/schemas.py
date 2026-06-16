@@ -13,6 +13,7 @@ class ComponentCreate(ComponentBase):
 
 class ComponentOut(ComponentBase):
     id: int
+    sku: str
     colors: list[str] = []
     model_config = {"from_attributes": True}
 
@@ -29,6 +30,7 @@ class PrintConfigCreate(PrintConfigBase):
 
 class PrintConfigOut(PrintConfigBase):
     id: int
+    sku: str
     component_id: int
     model_config = {"from_attributes": True}
 
@@ -56,6 +58,7 @@ class ProductCreate(ProductBase):
 
 class ProductOut(ProductBase):
     id: int
+    sku: str
     bom_items: list[ProductComponentOut] = []
     model_config = {"from_attributes": True}
 

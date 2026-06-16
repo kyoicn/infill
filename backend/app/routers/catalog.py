@@ -1,7 +1,9 @@
-"""产品目录（GET 只读 + CRUD 编辑端点）
+"""产品目录（GET 只读 + CRUD 编辑端点）— v0.3.0 SKU-keyed
 
 CRUD 端点通过 catalog_edit 服务走 5 阶段事务（备份 / 写盘 / reload / 失败回滚），
 错误情况统一以 HTTP 200 + body.ok=false 返回（与 intake/merge 一致）。
+
+变化：URL 路径用 `{sku}` 而非 `{name}`，name 现在可改。
 """
 
 from fastapi import APIRouter, Depends
@@ -57,6 +59,16 @@ def reload_catalog():
         db.close()
 
 
+@router.post("/catalog/migrate-to-sku")
+def migrate_to_sku_endpoint(db: Session = Depends(get_db)):
+    """v0.3.0：手动触发 SKU backfill + reload（power-user 工具）
+
+    用户手编 yaml 留下不一致（如新行没"编号"）时可调此端点清理。
+    幂等：已是 SKU-keyed 格式 → backfilled=False，照常 reload。
+    """
+    return catalog_edit.migrate_to_sku(db)
+
+
 # ---------- 组件 CRUD ----------
 
 @router.post("/catalog/components")
@@ -64,14 +76,14 @@ def create_component(data: ComponentCreate, db: Session = Depends(get_db)):
     return catalog_edit.add_component(db, data)
 
 
-@router.put("/catalog/components/{name}")
-def edit_component(name: str, data: ComponentUpdate, db: Session = Depends(get_db)):
-    return catalog_edit.update_component(db, name, data)
+@router.put("/catalog/components/{sku}")
+def edit_component(sku: str, data: ComponentUpdate, db: Session = Depends(get_db)):
+    return catalog_edit.update_component(db, sku, data)
 
 
-@router.delete("/catalog/components/{name}")
-def remove_component(name: str, db: Session = Depends(get_db)):
-    return catalog_edit.delete_component(db, name)
+@router.delete("/catalog/components/{sku}")
+def remove_component(sku: str, db: Session = Depends(get_db)):
+    return catalog_edit.delete_component(db, sku)
 
 
 # ---------- 打印盘 CRUD ----------
@@ -81,14 +93,14 @@ def create_plate(data: PlateCreate, db: Session = Depends(get_db)):
     return catalog_edit.add_plate(db, data)
 
 
-@router.put("/catalog/plates/{plate_name}")
-def edit_plate(plate_name: str, data: PlateUpdate, db: Session = Depends(get_db)):
-    return catalog_edit.update_plate(db, plate_name, data)
+@router.put("/catalog/plates/{sku}")
+def edit_plate(sku: str, data: PlateUpdate, db: Session = Depends(get_db)):
+    return catalog_edit.update_plate(db, sku, data)
 
 
-@router.delete("/catalog/plates/{plate_name}")
-def remove_plate(plate_name: str, db: Session = Depends(get_db)):
-    return catalog_edit.delete_plate(db, plate_name)
+@router.delete("/catalog/plates/{sku}")
+def remove_plate(sku: str, db: Session = Depends(get_db)):
+    return catalog_edit.delete_plate(db, sku)
 
 
 # ---------- 产品 CRUD ----------
@@ -98,11 +110,11 @@ def create_product(data: ProductCreate, db: Session = Depends(get_db)):
     return catalog_edit.add_product(db, data)
 
 
-@router.put("/catalog/products/{name}")
-def edit_product(name: str, data: ProductUpdate, db: Session = Depends(get_db)):
-    return catalog_edit.update_product(db, name, data)
+@router.put("/catalog/products/{sku}")
+def edit_product(sku: str, data: ProductUpdate, db: Session = Depends(get_db)):
+    return catalog_edit.update_product(db, sku, data)
 
 
-@router.delete("/catalog/products/{name}")
-def remove_product(name: str, db: Session = Depends(get_db)):
-    return catalog_edit.delete_product(db, name)
+@router.delete("/catalog/products/{sku}")
+def remove_product(sku: str, db: Session = Depends(get_db)):
+    return catalog_edit.delete_product(db, sku)
