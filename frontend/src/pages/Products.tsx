@@ -1,10 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Card, Table, Button, Space, Popconfirm, message } from 'antd';
 import { ReloadOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import ComponentModal, { type ComponentInitial } from './products/ComponentModal';
 import PlateModal, { type PlateInitial } from './products/PlateModal';
 import ProductModal, { type ProductInitial } from './products/ProductModal';
+
+const skuCellStyle: CSSProperties = {
+  fontFamily: '"SF Mono", Menlo, Consolas, monospace',
+  fontSize: 12,
+  color: 'rgba(0,0,0,0.55)',
+};
 
 export default function Products() {
   const [components, setComponents] = useState<any[]>([]);
@@ -43,11 +49,12 @@ export default function Products() {
   };
 
   const getCompName = (id: number) => components.find(c => c.id === id)?.name || `#${id}`;
+  const getCompSku = (id: number) => components.find(c => c.id === id)?.sku || '';
 
   // ---------- 删除处理 ----------
-  const handleDeleteComponent = async (name: string) => {
+  const handleDeleteComponent = async (sku: string, name: string) => {
     try {
-      const res = await api.catalog.deleteComponent(name);
+      const res = await api.catalog.deleteComponent(sku);
       if (res.ok) {
         message.success(`已删除组件 ${name}`);
         reload();
@@ -61,9 +68,9 @@ export default function Products() {
     }
   };
 
-  const handleDeletePlate = async (plateName: string) => {
+  const handleDeletePlate = async (sku: string, plateName: string) => {
     try {
-      const res = await api.catalog.deletePlate(plateName);
+      const res = await api.catalog.deletePlate(sku);
       if (res.ok) {
         message.success(`已删除打印盘 ${plateName}`);
         reload();
@@ -75,9 +82,9 @@ export default function Products() {
     }
   };
 
-  const handleDeleteProduct = async (name: string) => {
+  const handleDeleteProduct = async (sku: string, name: string) => {
     try {
-      const res = await api.catalog.deleteProduct(name);
+      const res = await api.catalog.deleteProduct(sku);
       if (res.ok) {
         message.success(`已删除产品 ${name}`);
         reload();
@@ -91,18 +98,35 @@ export default function Products() {
     }
   };
 
+  const handleMigrateToSku = async () => {
+    setLoading(true);
+    try {
+      const res = await api.catalog.migrateToSku();
+      if (res.ok) {
+        message.success('已迁移到 SKU');
+        reload();
+      } else {
+        message.error(res.error || '迁移失败');
+      }
+    } catch (e: any) {
+      message.error(e.message || '迁移失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // ---------- 编辑：从行数据映射到 Modal initial ----------
   const editProduct = (rec: any) => {
     const bom = (rec.bom_items || []).map((b: any) => ({
-      component_name: getCompName(b.component_id),
+      component_sku: getCompSku(b.component_id),
       color: b.color || undefined,
       quantity: b.quantity,
     }));
-    setProdModal({ open: true, mode: 'edit', initial: { name: rec.name, description: rec.description, bom } });
+    setProdModal({ open: true, mode: 'edit', initial: { sku: rec.sku, name: rec.name, description: rec.description, bom } });
   };
 
   const editComponent = (rec: any) => {
-    setCompModal({ open: true, mode: 'edit', initial: { name: rec.name, description: rec.description, colors: rec.colors || [] } });
+    setCompModal({ open: true, mode: 'edit', initial: { sku: rec.sku, name: rec.name, description: rec.description, colors: rec.colors || [] } });
   };
 
   const editPlate = (rec: any) => {
@@ -110,8 +134,9 @@ export default function Products() {
       open: true,
       mode: 'edit',
       initial: {
+        sku: rec.sku,
         plate_name: rec.plate_name,
-        component_name: getCompName(rec.component_id),
+        component_sku: getCompSku(rec.component_id),
         quantity: rec.quantity,
         duration_minutes: rec.duration_minutes,
       },
@@ -122,9 +147,14 @@ export default function Products() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <h2 style={{ margin: 0 }}>产品目录</h2>
-        <Button icon={<ReloadOutlined />} loading={loading} onClick={reloadCatalog}>
-          重新加载目录
-        </Button>
+        <Space>
+          <Button loading={loading} onClick={handleMigrateToSku}>
+            迁移到 SKU
+          </Button>
+          <Button icon={<ReloadOutlined />} loading={loading} onClick={reloadCatalog}>
+            重新加载目录
+          </Button>
+        </Space>
       </div>
       <p style={{ color: '#999', marginBottom: 16 }}>
         数据源：catalog.yaml — 可在下方直接编辑，或修改文件后点击"重新加载目录"，效果一样
@@ -142,10 +172,11 @@ export default function Products() {
       >
         <Table
           dataSource={products}
-          rowKey="id"
+          rowKey="sku"
           size="small"
           pagination={false}
           columns={[
+            { title: 'SKU', dataIndex: 'sku', width: 90, render: (v: string) => <span style={skuCellStyle}>{v}</span> },
             { title: '名称', dataIndex: 'name' },
             { title: '描述', dataIndex: 'description' },
             {
@@ -164,7 +195,7 @@ export default function Products() {
                   <Button size="small" icon={<EditOutlined />} onClick={() => editProduct(rec)}>
                     编辑
                   </Button>
-                  <Popconfirm title={`删除产品 ${rec.name}？`} onConfirm={() => handleDeleteProduct(rec.name)} okText="删除" cancelText="取消" okButtonProps={{ danger: true }}>
+                  <Popconfirm title={`删除产品 ${rec.name}？`} onConfirm={() => handleDeleteProduct(rec.sku, rec.name)} okText="删除" cancelText="取消" okButtonProps={{ danger: true }}>
                     <Button size="small" danger icon={<DeleteOutlined />}>
                       删除
                     </Button>
@@ -188,10 +219,11 @@ export default function Products() {
       >
         <Table
           dataSource={components}
-          rowKey="id"
+          rowKey="sku"
           size="small"
           pagination={false}
           columns={[
+            { title: 'SKU', dataIndex: 'sku', width: 90, render: (v: string) => <span style={skuCellStyle}>{v}</span> },
             { title: '名称', dataIndex: 'name' },
             { title: '描述', dataIndex: 'description' },
             { title: '可选颜色', render: (_: any, rec: any) =>
@@ -214,7 +246,7 @@ export default function Products() {
                   <Button size="small" icon={<EditOutlined />} onClick={() => editComponent(rec)}>
                     编辑
                   </Button>
-                  <Popconfirm title={`删除组件 ${rec.name}？`} onConfirm={() => handleDeleteComponent(rec.name)} okText="删除" cancelText="取消" okButtonProps={{ danger: true }}>
+                  <Popconfirm title={`删除组件 ${rec.name}？`} onConfirm={() => handleDeleteComponent(rec.sku, rec.name)} okText="删除" cancelText="取消" okButtonProps={{ danger: true }}>
                     <Button size="small" danger icon={<DeleteOutlined />}>
                       删除
                     </Button>
@@ -238,10 +270,11 @@ export default function Products() {
       >
         <Table
           dataSource={allConfigs}
-          rowKey="id"
+          rowKey="sku"
           size="small"
           pagination={false}
           columns={[
+            { title: 'SKU', dataIndex: 'sku', width: 90, render: (v: string) => <span style={skuCellStyle}>{v}</span> },
             { title: '盘号', dataIndex: 'plate_name', width: 120 },
             { title: '组件', dataIndex: 'component_id', render: (v: number) => getCompName(v) },
             { title: '数量', dataIndex: 'quantity', width: 80 },
@@ -254,7 +287,7 @@ export default function Products() {
                   <Button size="small" icon={<EditOutlined />} onClick={() => editPlate(rec)}>
                     编辑
                   </Button>
-                  <Popconfirm title={`删除打印盘 ${rec.plate_name}？`} onConfirm={() => handleDeletePlate(rec.plate_name)} okText="删除" cancelText="取消" okButtonProps={{ danger: true }}>
+                  <Popconfirm title={`删除打印盘 ${rec.plate_name}？`} onConfirm={() => handleDeletePlate(rec.sku, rec.plate_name)} okText="删除" cancelText="取消" okButtonProps={{ danger: true }}>
                     <Button size="small" danger icon={<DeleteOutlined />}>
                       删除
                     </Button>

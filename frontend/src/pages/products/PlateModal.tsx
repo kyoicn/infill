@@ -4,8 +4,9 @@ import { api } from '../../api/client';
 import { parseDuration, formatDuration } from '../intake/durationFormat';
 
 export interface PlateInitial {
+  sku: string;
   plate_name: string;
-  component_name?: string; // 父组件传入（用 components 查 id）
+  component_sku?: string; // 父组件传入（用 components 查 sku）
   quantity: number;
   duration_minutes: number;
 }
@@ -30,12 +31,12 @@ export default function PlateModal({ open, mode, initial, components, onCancel, 
       if (mode === 'edit' && initial) {
         form.setFieldsValue({
           plate_name: initial.plate_name,
-          component_name: initial.component_name,
+          component_sku: initial.component_sku,
           quantity: initial.quantity,
         });
         setDurationText(formatDuration(initial.duration_minutes));
       } else {
-        form.setFieldsValue({ plate_name: '', component_name: undefined, quantity: 1 });
+        form.setFieldsValue({ plate_name: '', component_sku: undefined, quantity: 1 });
         setDurationText('');
       }
     }
@@ -54,13 +55,14 @@ export default function PlateModal({ open, mode, initial, components, onCancel, 
       if (mode === 'create') {
         res = await api.catalog.addPlate({
           plate_name: values.plate_name.trim(),
-          component_name: values.component_name,
+          component_sku: values.component_sku,
           quantity: values.quantity,
           duration_minutes: minutes,
         });
       } else {
-        res = await api.catalog.updatePlate(initial!.plate_name, {
-          component_name: values.component_name,
+        res = await api.catalog.updatePlate(initial!.sku, {
+          plate_name: values.plate_name.trim(),
+          component_sku: values.component_sku,
           quantity: values.quantity,
           duration_minutes: minutes,
         });
@@ -90,21 +92,30 @@ export default function PlateModal({ open, mode, initial, components, onCancel, 
       destroyOnClose
     >
       <Form form={form} layout="vertical">
+        {mode === 'edit' && (
+          <Form.Item label="SKU">
+            <Input
+              value={initial?.sku}
+              disabled
+              style={{ fontFamily: '"SF Mono", Menlo, Consolas, monospace' }}
+            />
+          </Form.Item>
+        )}
         <Form.Item
           label="盘号"
           name="plate_name"
           rules={[{ required: true, message: '请输入盘号' }]}
         >
-          <Input disabled={mode === 'edit'} placeholder="如：底座-A" />
+          <Input placeholder="如：底座-A" />
         </Form.Item>
         <Form.Item
           label="所属组件"
-          name="component_name"
+          name="component_sku"
           rules={[{ required: true, message: '请选择组件' }]}
         >
           <Select
             placeholder="选择组件"
-            options={components.map((c) => ({ label: c.name, value: c.name }))}
+            options={components.map((c) => ({ label: `${c.name} (${c.sku})`, value: c.sku }))}
             showSearch
             optionFilterProp="label"
           />
