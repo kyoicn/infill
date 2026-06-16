@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Order, OrderItem, Inventory, Product, ProductComponent
-from ..schemas import OrderCreate, OrderOut
+from ..schemas import OrderCreate, OrderOut, OrderUpdate
 
 router = APIRouter(prefix="/api/orders", tags=["订单"])
 
@@ -20,11 +20,40 @@ def list_orders(status: str | None = None, db: Session = Depends(get_db)):
 
 @router.post("", response_model=OrderOut)
 def create_order(data: OrderCreate, db: Session = Depends(get_db)):
-    order = Order()
+    order = Order(notes=data.notes or "")
     db.add(order)
     db.flush()
     for item in data.items:
         db.add(OrderItem(order_id=order.id, product_id=item.product_id, quantity=item.quantity))
+    db.commit()
+    db.refresh(order)
+    return order
+
+
+@router.put("/{order_id}", response_model=OrderOut)
+def update_order(order_id: int, body: OrderUpdate, db: Session = Depends(get_db)):
+    """编辑订单：可改 items / notes。
+
+    - 不接受 created_at / shipped_at / status — 这些不变
+    - 允许 status=shipped 时编辑（用于修复孤儿 FK 引用）
+    """
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(404, "订单不存在")
+
+    if body.notes is not None:
+        order.notes = body.notes
+
+    if body.items is not None:
+        # 校验所有 product_id 都存在
+        for it in body.items:
+            if not db.get(Product, it.product_id):
+                raise HTTPException(400, f"产品 {it.product_id} 不存在")
+        # 删旧 OrderItem，添新
+        db.query(OrderItem).filter(OrderItem.order_id == order_id).delete()
+        for it in body.items:
+            db.add(OrderItem(order_id=order_id, product_id=it.product_id, quantity=it.quantity))
+
     db.commit()
     db.refresh(order)
     return order

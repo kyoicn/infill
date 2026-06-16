@@ -109,6 +109,27 @@ def ensure_sku_column_exists(engine: Engine) -> list[str]:
     return altered
 
 
+def ensure_order_notes_column_exists(engine: Engine) -> bool:
+    """v0.3.1：确保 orders 表有 notes 列。
+
+    幂等：列已存在 / 表不存在 → 返回 False（不 ALTER）。
+    实际 ALTER 过返回 True。
+    """
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    if "orders" not in existing_tables:
+        # 整张表不存在 → create_all 会建（带 notes 列）
+        return False
+    existing_cols = {col["name"] for col in inspector.get_columns("orders")}
+    if "notes" in existing_cols:
+        return False
+    sql = "ALTER TABLE orders ADD COLUMN notes TEXT DEFAULT ''"
+    with engine.connect() as conn:
+        conn.execute(text(sql))
+        conn.commit()
+    return True
+
+
 # ---------- YAML SKU backfill ----------
 
 def _has_skus(data: dict) -> bool:
@@ -282,6 +303,14 @@ def load_catalog(db: Session) -> dict:
         name = item["名称"]
         colors = item.get("可选颜色", []) or []
         comp = db.query(Component).filter(Component.sku == sku).first()
+        if comp is None:
+            # v0.3.0 defensive: 老 DB 行 sku=NULL，按 name fallback 找回原 id，避免外键悬空
+            comp = db.query(Component).filter(
+                Component.sku.is_(None),
+                Component.name == name,
+            ).first()
+            if comp is not None:
+                comp.sku = sku
         if comp:
             # name 现在可改：UPDATE 时覆盖
             comp.name = name
@@ -330,6 +359,14 @@ def load_catalog(db: Session) -> dict:
             )
 
         cfg = db.query(PrintConfig).filter(PrintConfig.sku == sku).first()
+        if cfg is None:
+            # v0.3.0 defensive: 老 DB 行 sku=NULL，按 plate_name fallback 找回原 id
+            cfg = db.query(PrintConfig).filter(
+                PrintConfig.sku.is_(None),
+                PrintConfig.plate_name == plate_name,
+            ).first()
+            if cfg is not None:
+                cfg.sku = sku
         if cfg:
             cfg.plate_name = plate_name
             cfg.component_id = sku_to_comp_id[comp_sku]
@@ -359,6 +396,14 @@ def load_catalog(db: Session) -> dict:
         yaml_prod_skus.add(sku)
         name = item["名称"]
         product = db.query(Product).filter(Product.sku == sku).first()
+        if product is None:
+            # v0.3.0 defensive: 老 DB 行 sku=NULL，按 name fallback 找回原 id
+            product = db.query(Product).filter(
+                Product.sku.is_(None),
+                Product.name == name,
+            ).first()
+            if product is not None:
+                product.sku = sku
         if product:
             product.name = name
             product.description = item.get("描述", "")

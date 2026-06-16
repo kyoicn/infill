@@ -10,6 +10,7 @@ from sqlalchemy import (
     Integer,
     JSON,
     String,
+    Text,
     Boolean,
 )
 from sqlalchemy.orm import relationship
@@ -74,6 +75,7 @@ class Order(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     status = Column(String, default="pending", nullable=False)  # pending / shipped
     shipped_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True, default="")  # 备注
 
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
 

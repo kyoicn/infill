@@ -1,4 +1,5 @@
 from datetime import datetime, date
+from typing import Optional
 from pydantic import BaseModel
 
 
@@ -78,12 +79,18 @@ class OrderItemOut(OrderItemBase):
 
 class OrderCreate(BaseModel):
     items: list[OrderItemCreate]
+    notes: Optional[str] = None
+
+class OrderUpdate(BaseModel):
+    items: Optional[list[OrderItemCreate]] = None  # 给了就 REPLACE 所有 OrderItem
+    notes: Optional[str] = None                    # 给了就更新备注
 
 class OrderOut(BaseModel):
     id: int
     created_at: datetime
     status: str
     shipped_at: datetime | None = None
+    notes: Optional[str] = ""
     items: list[OrderItemOut] = []
     model_config = {"from_attributes": True}
 

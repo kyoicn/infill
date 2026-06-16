@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from .database import Base, engine, SessionLocal
 from .routers import catalog, orders, inventory, printers, schedule, config
 from app.routers import intake
-from .services.catalog import ensure_sku_column_exists, load_catalog
+from .services.catalog import ensure_sku_column_exists, ensure_order_notes_column_exists, load_catalog
 from .services.migrate import auto_migrate
 
 
@@ -23,6 +23,9 @@ async def lifespan(app: FastAPI):
     altered = ensure_sku_column_exists(engine)
     if altered:
         print(f"已为 {altered} 表补齐 sku 列")
+    # 3b. v0.3.1：确保 orders 表有 notes 列（旧 DB 升级）
+    if ensure_order_notes_column_exists(engine):
+        print("已为 orders 表补齐 notes 列")
     # 4. 从 YAML 加载目录（旧格式 YAML 会自动 backfill SKU）
     db = SessionLocal()
     try:
