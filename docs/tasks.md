@@ -495,3 +495,25 @@ prd-006「自动导入订单」处于 **not started** 状态（4 个 CUJ 全部�
 - **`docs/status.md` / `docs/design/design-auto-import.md`**：仅 Task 5.4 / Task 5.3 修改，无并行冲突。
 
 **预计效率收益**：15 任务分 5 组（3 + 3 + 2 + 3 + 4），相比纯串行的 15 倍开销，本计划约为 **5 倍组深度**——若每任务 2 小时则总 wall-clock ~10 小时 vs 串行 ~30 小时，节省 ~3 倍。
+
+---
+
+## QA Fix Tasks（iter4 QA Gate FAIL — 下一 iter 优先）
+
+由 iter4 QA gate（2026-06-18 22:20:32 UTC+8）发现，prd-006 端到端首轮 QA 未通过。HIGH/MEDIUM 列入新一轮修复，LOW 与 carry-over 待 PM 取舍。
+
+### HIGH（修复后再合并）
+
+- [ ] **QA-fix [HIGH][BUG]**: probe / test-adb 端点的 `adb_connected` 仅按 `bool(list_devices())` 判定，未校验配置 endpoint — 在 pc_ip="" / 配置 IP 不可达且 USB 真机连着时仍亮绿，UI 误判 ADB 就绪。修法：`xianyu_probe` / `xianyu_test_adb` 用 `diagnostics[3].ok`（device_state 检查）作为 `adb_connected` 真值；或筛 list_devices 中 serial 起始于 pc_ip 且 state=device 的设备 — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)
+- [ ] **QA-fix [HIGH][BUG]**: 前端 XianyuTab 仅基于 `resp.ok && resp.adb_connected` 切 idle/error_adb，不参考 diagnostics — 即便后端修了上一条，前端仍需联动改成「所有 diagnostics ok 才算 idle」。修后补 ≥ 2 个自动化测试（pc_ip="" → adb_connected=false / 配置不可达 IP + 有其它设备 → adb_connected=false） — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)
+
+### MEDIUM（同 iter 或下一 iter 处理）
+
+- [ ] **QA-fix [MEDIUM][BUG]**: 扩展未装态缺少 zip 下载链接 / 按钮（违反 PRD CUJ-1 AC「下载扩展压缩包链接」+ `cuj-1-no-extension.html` 主按钮）— 在 `frontend/src/pages/auto_import/XhsTab.tsx` 蓝色 setup 块底部加 `<Button type="primary"><a href="/static/extensions/infill-xhs-scraper-v0.1.0.zip" download>下载扩展 zip</a></Button>` — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)
+- [ ] **QA-fix [MEDIUM][VISUAL_DEVIATION]**: 与 `cuj-1-no-extension.html` mock 相比缺少「下载扩展 zip (12 KB)」primary 按钮 — 同上修法可一并解决 — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)
+- [ ] **QA-fix [MEDIUM][BUG]**: PreviewTable 缺空 batch 空态 UI「未抓取到任何订单」+「返回扫描页」按钮（违反 PRD CUJ-3 AC #22）— 在 `frontend/src/pages/auto_import/PreviewTable.tsx` items.length === 0 时渲染居中空态卡片 — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)
+
+### LOW（积压）
+
+- [ ] **QA-fix [LOW][BUG]**: `POST /api/auto-import/xhs/probe` 占位实现（永远 has_xhs_tab=true），违反 AC 「探查千帆 tab」语义；或真做或去掉 — backend/app/routers/auto_import.py:99 — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)
+- [ ] **QA-fix [LOW][BUG]**: AntD `Spin tip` deprecation console warning（carry-over from iter3）— 替换 `tip` → `description` 属性 — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)

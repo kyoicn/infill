@@ -1,10 +1,19 @@
 # Dev Loop State
 
-Last updated: 2026-06-14 22:01:51 (UTC+8)
-Iteration: 3
-Status: done
+Last updated: 2026-06-18 22:20:32 (UTC+8)
+Iteration: 4
+Status: in-progress（QA Gate FAIL）
 
-## Last Cycle Summary
+## Iter4 QA Gate (preliminary)
+- Verdict: **FAIL** — 2 HIGH + 3 MEDIUM + 2 LOW(new) + 5 LOW(TL carry-over)
+- Tests: 340 passed / 2 skipped（baseline 330 + 10 new — TestQAGap{XhsExtensionAndProbe / XianyuScreencapEnvelope / CommitAtomicityMidBatchSkuDelete / XianyuConfigRoundtrip}）
+- Tasks rolled back: 0（prd-006 任务 G1~G5 在 QA gate 通过前未被声明 done；本 iter 仍在 in-progress 阶段）
+- CUJ verdicts: CUJ-1 FAIL / CUJ-2 FAIL / CUJ-3 FAIL（缺空态 UI）/ CUJ-4 FAIL（继承 CUJ-2 根因）
+- Fabrication risk: 1 类 HIGH — probe `adb_connected` 为假阳性（有 USB 设备时永远绿灯，与配置 endpoint 解耦），等同伪造「ADB 已连接」状态
+- 详见 docs/qa-report.md（per-CUJ 矩阵 + 截图 + 修复建议）；fix tasks 已写入 docs/tasks.md `## QA Fix Tasks` 段
+- 下一步：执行 QA-fix HIGH 两条 → 重跑 QA → 通过后才能 Phase 7 闭环本 iter
+
+## Last Cycle Summary (Iter3)
 - Scope: 交付 prd-005「产品录入」端到端（5 CUJ：上传分类 / LLM 识别 / 草稿校对 / 颜色矩阵 / 合并 catalog）
 - Tasks executed: 13（4 组 G1=2 / G2=4 / G3=4 / G4=3）
 - Tasks passed QA: 13 — 全部通过（含 2 轮 QA retry 修 3 个 MEDIUM+ bug 后）

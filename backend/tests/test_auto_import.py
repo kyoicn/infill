@@ -999,3 +999,231 @@ class TestE2E_xianyu_screencap_async:
         # the TestClient's event loop is torn down between calls, so chained-call
         # async-await across requests is unreliable in this in-process harness.
         # Live verification covered by Phase 4 QA gate.
+
+
+# ============================================================
+# Iter4 QA gap tests
+# ============================================================
+
+
+class TestQAGapXhsExtensionAndProbe:
+    """CUJ-1: extension-status + xhs/probe endpoints + production-like LLM tuple path."""
+
+    def test_extension_status_returns_ok(self, client, monkeypatch):
+        """端点应返回 200 + {ok:true,installed:bool}，无论是否配置 INFILL_EXT_ID。"""
+        monkeypatch.delenv("INFILL_EXT_ID", raising=False)
+        r = client.get("/api/auto-import/xhs/extension-status")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["ok"] is True
+        assert data["installed"] is False
+
+    def test_extension_status_reflects_configured_env(self, client, monkeypatch):
+        monkeypatch.setenv("INFILL_EXT_ID", "abcdef1234567890abcdef1234567890")
+        monkeypatch.setenv("INFILL_EXT_VERSION", "0.1.0")
+        r = client.get("/api/auto-import/xhs/extension-status")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["ok"] is True
+        assert data["installed"] is True
+        assert data["version"] == "0.1.0"
+
+    def test_xhs_probe_returns_ok(self, client):
+        """xhs/probe 是占位端点（探活在前端走扩展），后端应返回 has_xhs_tab=True。"""
+        r = client.post("/api/auto-import/xhs/probe")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["ok"] is True
+        assert data["has_xhs_tab"] is True
+
+    def test_xhs_scan_with_production_tuple_path(self, client, db_session, products, monkeypatch):
+        """生产路径：match_listing_to_sku 实际返回 tuple (sku|None, conf, reasoning)。
+
+        Router 必须解包 tuple 而不是把它当 dict 用。这一路径直到 TL review 才修；
+        本测试用直接 monkeypatch 的真实 tuple-返回桩，不走老的 dict 桩。
+        """
+        def real_tuple_match(listing_title, catalog):
+            # 模拟真实 LLM provider 行为：返回三元 tuple
+            if listing_title == "床头柜-白色":
+                return ("PR-0003", 0.92, "床头柜直接命中")
+            if listing_title == "龙猫摆件 大号 灰白":
+                return ("PR-0001", 0.78, "中置信度近似")
+            return (None, 0.20, "未匹配")
+
+        monkeypatch.setattr(auto_import_llm, "match_listing_to_sku", real_tuple_match)
+
+        body = {
+            "batch_id": "qa-tuple",
+            "raw_orders": [
+                {
+                    "external_order_id": "X-TUPLE-1",
+                    "buyer_nickname": "买家A",
+                    "external_created_at": "2026-06-18T20:00:00",
+                    "products": [
+                        {"listing_title": "床头柜-白色", "quantity": 1},
+                        {"listing_title": "龙猫摆件 大号 灰白", "quantity": 2},
+                        {"listing_title": "随机不存在的商品标题", "quantity": 1},
+                    ],
+                }
+            ],
+        }
+        r = client.post("/api/auto-import/xhs/scan", json=body)
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["ok"] is True
+        assert len(data["items"]) == 1
+        prods = data["items"][0]["products"]
+        # Tuple 被正确解包：第一个商品高置信度
+        assert prods[0]["matched_sku_code"] == "PR-0003"
+        assert prods[0]["confidence"] == pytest.approx(0.92)
+        assert prods[0]["reasoning"] == "床头柜直接命中"
+        # 第二个中置信度
+        assert prods[1]["matched_sku_code"] == "PR-0001"
+        assert prods[1]["confidence"] == pytest.approx(0.78)
+        # 第三个低置信度
+        assert prods[2]["matched_sku_code"] is None
+        assert prods[2]["confidence"] == pytest.approx(0.20)
+        # stats 计数正确
+        assert data["stats"]["high_conf"] == 1
+        assert data["stats"]["mid_conf"] == 1
+        assert data["stats"]["low_conf"] == 1
+
+
+class TestQAGapXianyuScreencapEnvelope:
+    """CUJ-2: Verify screencap endpoint envelope + scan-status snapshot behavior.
+
+    NOTE: TestClient's event-loop teardown between requests makes await-across-call
+    flows unreliable (see TestE2E_xianyu_screencap_async note). These tests focus on
+    one-shot endpoint contracts that don't span requests.
+    """
+
+    def test_screencap_failure_returns_envelope(self, client, db_session, monkeypatch):
+        """ADB screencap 抛异常时端点应返回 {ok:false, error_kind:screencap_failed}。"""
+        from app.services import auto_import as svc
+
+        def boom(self, config):
+            raise RuntimeError("adb pipe broken")
+
+        monkeypatch.setattr(svc.AdbClient, "screencap", boom)
+        r = client.post("/api/auto-import/xianyu/screencap", json={
+            "batch_id": "qa-xy-fail",
+            "config": {"device_type": "mumu", "pc_ip": "127.0.0.1", "port": 7555},
+        })
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["ok"] is False
+        assert data["error_kind"] == "screencap_failed"
+        assert "adb pipe broken" in data["error"]
+
+    def test_scan_status_empty_batch_returns_empty_lists(self, client):
+        """从未截屏的 batch_id 不应崩；返回空 screens / parsed_orders。"""
+        r = client.get("/api/auto-import/xianyu/scan-status?batch_id=never-existed")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["batch_id"] == "never-existed"
+        assert data["screens"] == []
+        assert data["parsed_orders"] == []
+
+
+class TestQAGapCommitAtomicityMidBatchSkuDelete:
+    """CUJ-3: SKU 在 batch 开始时存在但在 commit 中途被删 → 整批回滚。
+
+    模拟方式：commit 端点是一个事务，但本测试在 commit 内部触发 SKU 不存在
+    （第二条 item 引用一个从未存在过的 SKU）。这等价于「mid-batch SKU 消失」
+    的快照场景：从 router 视角看，校验阶段就拒绝整批。
+    """
+
+    def test_commit_zero_inserts_when_one_sku_missing_mid_batch(
+        self, client, db_session, products
+    ):
+        # 前 3 单 OK，第 4 单引用 PR-DELETED（catalog 里没有），第 5 单 OK
+        items = [
+            {
+                "external_order_id": f"MID-{i}",
+                "buyer_nickname": f"buyer_{i}",
+                "platform": "xhs",
+                "products": [{"sku": "PR-0001", "quantity": 1}],
+            }
+            for i in range(3)
+        ]
+        items.append({
+            "external_order_id": "MID-DEL",
+            "buyer_nickname": "buyer_del",
+            "platform": "xhs",
+            "products": [{"sku": "PR-DELETED-MID-BATCH", "quantity": 1}],
+        })
+        items.append({
+            "external_order_id": "MID-LAST",
+            "buyer_nickname": "buyer_last",
+            "platform": "xhs",
+            "products": [{"sku": "PR-0002", "quantity": 1}],
+        })
+        before = db_session.query(Order).filter(Order.platform == "xhs").count()
+
+        r = client.post(
+            "/api/auto-import/commit",
+            json={"batch_id": "atomic-mid", "items": items},
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["ok"] is False
+        assert data["error_kind"] == "commit_sku_not_found"
+        assert "PR-DELETED-MID-BATCH" in data["error"]
+
+        # 关键：零写入。前 3 条 OK 的也必须回滚。
+        db_session.expire_all()
+        after = db_session.query(Order).filter(Order.platform == "xhs").count()
+        assert after == before, "事务原子性失败：缺失 SKU 时部分订单已落库"
+
+        # 也校验 OrderItem 无遗留
+        leaked = (
+            db_session.query(OrderItem)
+            .join(Order, OrderItem.order_id == Order.id)
+            .filter(Order.external_order_id.like("MID-%"))
+            .count()
+        )
+        assert leaked == 0
+
+
+class TestQAGapXianyuConfigRoundtrip:
+    """CUJ-4: GET / PUT xianyu config 端点的契约 + 持久化往返。"""
+
+    def test_get_config_default_when_unset(self, client, db_session):
+        r = client.get("/api/auto-import/xianyu/config")
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data == {"device_type": "mumu", "pc_ip": "", "port": 7555}
+
+    def test_put_then_get_persists(self, client, db_session):
+        # 1. 写一份新配置
+        payload = {"device_type": "bluestacks", "pc_ip": "192.168.1.42", "port": 5555}
+        r = client.put("/api/auto-import/xianyu/config", json=payload)
+        assert r.status_code == 200, r.text
+        assert r.json() == {"ok": True}
+
+        # 2. 读回应该一致
+        r = client.get("/api/auto-import/xianyu/config")
+        assert r.status_code == 200
+        assert r.json() == payload
+
+        # 3. SystemConfig 表里有三行
+        rows = db_session.query(SystemConfig).filter(SystemConfig.key.in_([
+            "auto_import_adb_device_type",
+            "auto_import_adb_pc_ip",
+            "auto_import_adb_port",
+        ])).all()
+        assert len(rows) == 3
+
+    def test_put_overwrites_existing(self, client, db_session):
+        # 先写一份
+        client.put("/api/auto-import/xianyu/config", json={
+            "device_type": "mumu", "pc_ip": "10.0.0.1", "port": 7555,
+        })
+        # 再覆盖
+        new_payload = {"device_type": "ldplayer", "pc_ip": "10.0.0.2", "port": 5555}
+        r = client.put("/api/auto-import/xianyu/config", json=new_payload)
+        assert r.status_code == 200
+        assert r.json() == {"ok": True}
+
+        r = client.get("/api/auto-import/xianyu/config")
+        assert r.json() == new_payload
