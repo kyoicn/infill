@@ -1,7 +1,7 @@
 # 项目状态
 
 > 自动生成的项目状态摘要。
-> 最后更新：2026-06-18 18:04:17 (UTC+8)
+> 最后更新：2026-06-18 22:05:00 (UTC+8)
 
 ## 概述
 
@@ -66,10 +66,10 @@
 | CUJ-3：草稿校对 BOM + 打印盘 | prd-005 | P0 | merged | PASS | — |
 | CUJ-4：颜色矩阵 + 多配色变体 | prd-005 | P0 | merged | PASS | — |
 | CUJ-5：合并到 catalog.yaml | prd-005 | P0 | merged | PASS | — |
-| CUJ-1：扫描小红书千帆订单 | prd-006 | P0 | not started | — | — |
-| CUJ-2：扫描闲鱼订单 | prd-006 | P0 | not started | — | — |
-| CUJ-3：预览校对 + 一键导入 | prd-006 | P0 | not started | — | — |
-| CUJ-4：自动导入设置 | prd-006 | P1 | not started | — | — |
+| CUJ-1：扫描小红书千帆订单 | prd-006 | P0 | merged | — | — |
+| CUJ-2：扫描闲鱼订单 | prd-006 | P0 | merged | — | — |
+| CUJ-3：预览校对 + 一键导入 | prd-006 | P0 | merged | — | — |
+| CUJ-4：自动导入设置 | prd-006 | P1 | merged | — | — |
 
 **列值说明：**
 - `Impl`：`not started`（无代码）| `in progress`（部分代码）| `merged`（代码已存在并可构建）
@@ -238,6 +238,28 @@ Iter3 全部聚焦 prd-005「产品录入」的从 0 到 1 交付，时间线（
 
 **QA 终判**（详见 `docs/qa-report.md`）：iter3 retry 2 PASS，全部 5 个 CUJ 经 2 轮（initial 发现 1 HIGH + 1 MEDIUM；retry 1 关闭原 bugs 但新发现 1 MEDIUM 取消误触；retry 2 关闭最后 1 MEDIUM）后无 MEDIUM+ 残余。Backend 202/202 pytest 全绿；Frontend `npm run build` 无 TS 错误。
 
+Iter4 聚焦 prd-006「自动导入订单」从 0 到 1 交付（小红书 Chrome 扩展 + 闲鱼 ADB 截屏双通道），按 Group 分次合入：
+
+| 提交 | Group | 摘要 |
+|------|-------|------|
+| `908f9f9` docs | — | 设计 + PRD 落定（4 CUJ × 11 mocks + design-auto-import.md）|
+| `ca8e847` refactor | G1 | LLM provider 抽 `chat_completion()` 给 auto-import 复用（intake 71 测试零回归）|
+| `93227fd` feat | G1 | `Order` schema 4 列 + partial unique index helper `ensure_order_auto_import_schema_exists` |
+| `3dfc17d` feat | G1 | Chrome MV3 扩展 scaffold（manifest + background SW + content_xhs + build 脚本）|
+| `374587b` feat | G2 | ADB client 子进程封装 + 4 项诊断 + SystemConfig CRUD（CUJ-4 后端）|
+| `1bc1e68` feat | G2 | LLM SKU 匹配（`match_listing_to_sku` 全量 catalog 注入）+ 闲鱼截屏解析 + SKU 搜索 |
+| `9404e9f` feat | G2 | `routers/auto_import.py` 13 endpoints + 单事务 commit + `-redoN` override 后缀 |
+| `cbb8bf2` feat | G3 | frontend `api.autoImport.*` + `extension.ts` chrome.runtime 封装 + `@types/chrome` |
+| `b211c94` feat | G3 | CUJ-4 AutoImportSettings 页（双卡 + ADB 测试 + 扩展状态）+ entry buttons |
+| `0040d6d` refactor | G3 | 把 AutoImportSettings 的 local stub 替换为正式的 `api.autoImport` + `extension.ts` |
+| `90d20a6` feat | G4 | CUJ-1：AutoImport 父容器 + XhsTab + ScanningProgress（含 6 个 sibling stub）|
+| `7dd8ead` feat | G4 | CUJ-2：XianyuTab + ScreencapGrid + 1.5s 轮询 |
+| `19ae738` feat | G4 | CUJ-3：PreviewTable + SkuPicker + Success/Failure 面板 |
+| `058aa88` feat | G5 | `main.py.lifespan` 串入 ensure helper + router 注册 + `/static/extensions` 挂载 |
+| `(本提交)` chore | G5 | build-extension.sh 自动镜像到 `backend/static/extensions/` + README + checklist 全勾 |
+
+后端 pytest 327/327 全绿（baseline 202 + iter4 新增 125 个测试）；前端 `npx tsc -b` 通过。
+
 ## 已知问题与待办
 
 **iter3 转入下轮的 LOW 问题（不阻塞）**
@@ -285,5 +307,6 @@ Iter3 全部聚焦 prd-005「产品录入」的从 0 到 1 交付，时间线（
 
 **下一步建议**
 
+- **prd-006 等待首轮 QA gate**：CUJ-1/2/3/4 全部 `Impl=merged`，待功能验证 + 视觉对照（mocks at `docs/ux/prd-006-auto-import-orders/`）。重点关注：(a) `/orders/import` 在浏览器实际加载且 ping 扩展 / probe ADB 行为符合预期；(b) 端到端 scan → preview → commit 链路 happy path + atomicity；(c) `-redoN` override 覆盖与 partial unique index 真正起作用；(d) `/static/extensions/...` 可下载 zip。
 - prd-005 已工程闭环（QA PASS），等待首次 PM Review 给出 5 个 CUJ 的产品判读。若 PM 判 Satisfied，prd-005 可视为完结。
 - prd-003 CUJ-2/3/4/5 与 prd-000/001/002/004 全部 CUJ 仍待首次 PM Review（仅 prd-003 CUJ-1 已完成判读）。
