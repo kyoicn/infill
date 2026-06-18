@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Card, Table, Button, Modal, Input, InputNumber, Space, Popconfirm, TimePicker, message } from 'antd';
 import { PlusOutlined, DeleteOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import dayjs from 'dayjs';
 
 const DAY_NAMES = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
 export default function Settings() {
+  const navigate = useNavigate();
   const [printers, setPrinters] = useState<any[]>([]);
   const [scheduleConfigs, setScheduleConfigs] = useState<any[]>([]);
   const [changeover, setChangeover] = useState('15');
@@ -76,6 +78,12 @@ export default function Settings() {
   return (
     <div>
       <h2 style={{ marginTop: 0 }}>系统设置</h2>
+
+      {/* 自动导入设置 */}
+      <Card title="自动导入设置" style={{ marginBottom: 24 }}>
+        <p>从小红书千帆 Chrome 扩展或闲鱼 Android ADB 截屏导入订单。</p>
+        <Button type="primary" onClick={() => navigate('/settings/auto-import')}>打开自动导入设置 →</Button>
+      </Card>
 
       {/* 打印机 */}
       <Card
