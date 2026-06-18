@@ -386,6 +386,15 @@ function NoExtensionBlock({ onRefresh }: { onRefresh: () => void }) {
             <li>回这页点「已装好，重新检测」</li>
           </ol>
         </div>
+        <Button
+          type="primary"
+          size="large"
+          href="/static/extensions/infill-xhs-scraper-v0.1.0.zip"
+          download
+          style={{ marginTop: 16 }}
+        >
+          下载扩展 zip
+        </Button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <Button type="primary" size="large" block onClick={onRefresh}>

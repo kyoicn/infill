@@ -596,113 +596,125 @@ export default function PreviewTable(props: PreviewTableProps) {
         重复单和未匹配单默认不勾选。
       </div>
 
-      <div
-        style={{
-          display: 'flex',
-          gap: 10,
-          alignItems: 'center',
-          marginBottom: 16,
-          flexWrap: 'wrap',
-        }}
-      >
-        <FilterChip
-          active={filter === 'all'}
-          label="全部"
-          count={counts.all}
-          onClick={() => setFilter('all')}
-        />
-        <FilterChip
-          active={filter === 'new'}
-          label="● 新单"
-          count={counts.new}
-          color="#52c41a"
-          onClick={() => setFilter('new')}
-        />
-        <FilterChip
-          active={filter === 'dup'}
-          label="○ 重复"
-          count={counts.dup}
-          color="rgba(0,0,0,0.45)"
-          onClick={() => setFilter('dup')}
-        />
-        <FilterChip
-          active={filter === 'fix'}
-          label="! 未匹配"
-          count={counts.fix}
-          color="#ff4d4f"
-          onClick={() => setFilter('fix')}
-        />
-        <span
-          style={{
-            marginLeft: 'auto',
-            fontSize: 12,
-            color: 'rgba(0,0,0,0.45)',
-          }}
-        >
-          平均置信度{' '}
-          <code style={{ background: '#fafafa', padding: '1px 6px', borderRadius: 3 }}>
-            {avgConf.toFixed(2)}
-          </code>{' '}
-          · 最低{' '}
-          <code style={{ background: '#fafafa', padding: '1px 6px', borderRadius: 3 }}>
-            {minConf.toFixed(2)}
-          </code>
-        </span>
-      </div>
-
-      <Table
-        columns={columns}
-        dataSource={dataSource}
-        rowClassName={rowClassName}
-        pagination={false}
-        size="middle"
-        bordered={false}
-      />
-
-      <div
-        style={{
-          background: '#fff',
-          border: '1px solid #f0f0f0',
-          borderRadius: 8,
-          padding: '16px 20px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 14,
-          position: 'sticky',
-          bottom: 16,
-          marginTop: 16,
-          boxShadow: '0 -4px 12px rgba(0,0,0,0.04)',
-        }}
-      >
-        <div style={{ color: 'rgba(0,0,0,0.65)', fontSize: 13 }}>
-          将导入{' '}
-          <b style={{ color: 'rgba(0,0,0,0.88)', fontSize: 16 }}>{summary.orderCount}</b>{' '}
-          单 · 共{' '}
-          <b style={{ color: 'rgba(0,0,0,0.88)', fontSize: 16 }}>{summary.totalQty}</b>{' '}
-          件商品
+      {rows.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 64, color: 'var(--text3, rgba(0,0,0,0.45))' }}>
+          <div style={{ fontSize: 16, marginBottom: 12 }}>未抓取到任何订单</div>
+          <div style={{ fontSize: 13, marginBottom: 24 }}>
+            请检查千帆 tab 是否打开，或闲鱼是否截取到订单页
+          </div>
+          <Button onClick={onCancel}>返回扫描页</Button>
         </div>
-        <span
-          style={{ marginLeft: 'auto', color: 'rgba(0,0,0,0.45)', fontSize: 12 }}
-        >
-          <a onClick={bulkSelectNew} style={{ marginLeft: 8 }}>
-            全选新单
-          </a>
-          <a onClick={bulkNone} style={{ marginLeft: 8 }}>
-            全不选
-          </a>
-          <a onClick={bulkInvert} style={{ marginLeft: 8 }}>
-            反选
-          </a>
-        </span>
-        <Button onClick={onCancel}>取消，丢弃本批</Button>
-        <Button
-          type="primary"
-          disabled={summary.orderCount === 0}
-          onClick={handleCommit}
-        >
-          导入勾选的 {summary.orderCount} 单
-        </Button>
-      </div>
+      ) : (
+        <>
+          <div
+            style={{
+              display: 'flex',
+              gap: 10,
+              alignItems: 'center',
+              marginBottom: 16,
+              flexWrap: 'wrap',
+            }}
+          >
+            <FilterChip
+              active={filter === 'all'}
+              label="全部"
+              count={counts.all}
+              onClick={() => setFilter('all')}
+            />
+            <FilterChip
+              active={filter === 'new'}
+              label="● 新单"
+              count={counts.new}
+              color="#52c41a"
+              onClick={() => setFilter('new')}
+            />
+            <FilterChip
+              active={filter === 'dup'}
+              label="○ 重复"
+              count={counts.dup}
+              color="rgba(0,0,0,0.45)"
+              onClick={() => setFilter('dup')}
+            />
+            <FilterChip
+              active={filter === 'fix'}
+              label="! 未匹配"
+              count={counts.fix}
+              color="#ff4d4f"
+              onClick={() => setFilter('fix')}
+            />
+            <span
+              style={{
+                marginLeft: 'auto',
+                fontSize: 12,
+                color: 'rgba(0,0,0,0.45)',
+              }}
+            >
+              平均置信度{' '}
+              <code style={{ background: '#fafafa', padding: '1px 6px', borderRadius: 3 }}>
+                {avgConf.toFixed(2)}
+              </code>{' '}
+              · 最低{' '}
+              <code style={{ background: '#fafafa', padding: '1px 6px', borderRadius: 3 }}>
+                {minConf.toFixed(2)}
+              </code>
+            </span>
+          </div>
+
+          <Table
+            columns={columns}
+            dataSource={dataSource}
+            rowClassName={rowClassName}
+            pagination={false}
+            size="middle"
+            bordered={false}
+          />
+
+          <div
+            style={{
+              background: '#fff',
+              border: '1px solid #f0f0f0',
+              borderRadius: 8,
+              padding: '16px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 14,
+              position: 'sticky',
+              bottom: 16,
+              marginTop: 16,
+              boxShadow: '0 -4px 12px rgba(0,0,0,0.04)',
+            }}
+          >
+            <div style={{ color: 'rgba(0,0,0,0.65)', fontSize: 13 }}>
+              将导入{' '}
+              <b style={{ color: 'rgba(0,0,0,0.88)', fontSize: 16 }}>{summary.orderCount}</b>{' '}
+              单 · 共{' '}
+              <b style={{ color: 'rgba(0,0,0,0.88)', fontSize: 16 }}>{summary.totalQty}</b>{' '}
+              件商品
+            </div>
+            <span
+              style={{ marginLeft: 'auto', color: 'rgba(0,0,0,0.45)', fontSize: 12 }}
+            >
+              <a onClick={bulkSelectNew} style={{ marginLeft: 8 }}>
+                全选新单
+              </a>
+              <a onClick={bulkNone} style={{ marginLeft: 8 }}>
+                全不选
+              </a>
+              <a onClick={bulkInvert} style={{ marginLeft: 8 }}>
+                反选
+              </a>
+            </span>
+            <Button onClick={onCancel}>取消，丢弃本批</Button>
+            <Button
+              type="primary"
+              disabled={summary.orderCount === 0}
+              onClick={handleCommit}
+            >
+              导入勾选的 {summary.orderCount} 单
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
