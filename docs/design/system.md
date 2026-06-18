@@ -1,6 +1,6 @@
 # 系统总体设计（System）
 
-> Last updated: 2026-06-14 01:38:46 (UTC+8)
+> Last updated: 2026-06-18 18:54:18 (UTC+8)
 > Serves: 全部 PRD / 全部业务域（本文档为跨切面基础章节，所有 `design-*.md` 在此之上展开）
 >
 > 本文档是「整本设计书」的基础章节，描述跨组件的技术栈、架构、数据模型总览、API 约定与共享模式。
@@ -53,7 +53,8 @@
 | 目录格式 | YAML (PyYAML) | 6.0 | 人类可读，用户直接编辑 |
 | 图像处理（intake） | Pillow | 计划 >=10.0 | 启发式分类的灰度均值采样；零 LLM token |
 | 多部分上传（intake） | python-multipart | 计划 >=0.0.9 | FastAPI 0.115 文件上传必装 |
-| LLM 调用（intake） | DeepSeek vision（OpenAI-compatible API） | — | 截图 → 结构化草稿；MVP 单 provider，架构留扩展位（`LLMVisionProvider` 抽象） |
+| LLM 调用（共享） | OpenAI-compatible chat API（DeepSeek / Qwen DashScope / Doubao / 等可切换） | — | 多业务复用一套 provider 抽象：intake 用 vision 解析截图、auto-import 用 chat 匹配 SKU。详见 §6.5 |
+| 外部集成（auto-import）| Chrome 扩展（Manifest V3 `externally_connectable`）+ ADB CLI（局域网） | — | 小红书千帆抓 DOM / 闲鱼模拟器截屏；prd-006 范围。详见 [design-auto-import.md](design-auto-import.md) §1 §4 §5 |
 | 容器 | Docker + docker-compose | — | 单容器交付 + 离线 bundle |
 
 **未采用 / 已偏离规划**：
@@ -150,9 +151,14 @@ erDiagram
     }
     Order {
         int id PK
-        datetime created_at
+        datetime created_at "infill 接收时间"
         string status "pending / shipped"
         datetime shipped_at
+        string notes "备注"
+        string platform "xhs / xianyu / NULL（人工录入）"
+        string external_order_id "平台订单号 / NULL；含 -redoN 后缀"
+        string buyer_nickname "平台买家昵称 / NULL"
+        datetime external_created_at "平台下单时间 / NULL"
     }
     OrderItem {
         int id PK
@@ -213,7 +219,7 @@ erDiagram
 | 分组 | 表 | 数据来源 | 文档归属 |
 |---|---|---|---|
 | 目录（catalog） | `Component` · `PrintConfig` · `Product` · `ProductComponent` | `catalog.yaml`（只读镜像） | `design-catalog.md` |
-| 订单与库存 | `Order` · `OrderItem` · `Inventory` | 用户录入 / 发货扣减 / 手动调整 | `design-orders-inventory.md` |
+| 订单与库存 | `Order` · `OrderItem` · `Inventory` | 用户录入 / **自动导入（prd-006）** / 发货扣减 / 手动调整 | `design-orders-inventory.md`（schema 主源） + `design-auto-import.md`（新增 4 列 + partial unique index） |
 | 排班产物 | `PrintPlan` · `PrintBatch` · `PrintTask` | 排班算法生成 + 执行控制更新 | `design-scheduler.md` |
 | 配置 | `Printer` · `ScheduleConfig` · `SystemConfig` | 系统设置页 | `design-frontend.md` / 本文档 |
 
@@ -226,6 +232,7 @@ erDiagram
   - 转换在 `scheduler.py` 边界完成。
 - **状态枚举用字符串而非 DB Enum**：尽管 `models.py` 注释写 enum，实际全部用 `String`（`status` 列）。取值靠约定，无 DB 级约束。
 - **软删级联**：通过 SQLAlchemy `cascade="all, delete-orphan"` 在关系上实现父删子删（如删 `PrintPlan` 连带删 `PrintBatch`/`PrintTask`）。
+- **Partial unique index（prd-006 引入）**：`orders` 表 `(platform, external_order_id)` 有 `WHERE platform IS NOT NULL AND external_order_id IS NOT NULL` 的 partial unique index，仅对自动导入订单去重，不影响人工录入（两字段为 NULL）。SQLAlchemy 模型层不直接表达此约束，由 `services/catalog.py::ensure_order_auto_import_schema_exists` 在启动期补建。详见 [design-auto-import.md §1](design-auto-import.md)。
 
 ---
 
@@ -245,6 +252,7 @@ erDiagram
   | `schedule` | `/api/schedule` | 排班 | 生成/确认/删除排班 + 批次任务编辑 + 执行控制 |
   | `config` | `/api/config` | 配置 | 操作窗口 / 系统配置 / 重置数据库 |
   | `intake` | `/api/intake` | 产品录入 | 截图上传 + 启发式分类 + LLM 识别 + 合并到 `catalog.yaml`（详见 `design-intake.md`） |
+  | `auto_import` | `/api/auto-import` | 自动导入 | 小红书千帆 Chrome 扩展抓单 + 闲鱼 ADB 截屏 + LLM SKU 匹配 + 批量 commit（详见 `design-auto-import.md`） |
   | （main） | `/api/health` | — | 健康检查 |
 
 - **依赖注入数据库会话**：`db: Session = Depends(get_db)`，`get_db` 为 generator（`database.py`），请求结束自动 `close`。部分需要独立事务的场景（`catalog/reload`、`config/reset-db`、`lifespan` 加载）直接 `SessionLocal()` 手动管理。
@@ -321,6 +329,71 @@ flowchart TB
 
 适合本项目「单文件 SQLite + 频繁加字段」的演进节奏，但不是通用迁移方案（见风险）。
 
+**演进补丁模式**：复杂迁移（含 partial unique index / 多列 + 索引组合等 `auto_migrate` 不覆盖的场景）由 `services/catalog.py` 中按 schema 演进版本号命名的 `ensure_<feature>_schema_exists(engine)` 函数承担（如 `ensure_sku_column_exists`、`ensure_order_notes_column_exists`、prd-006 引入的 `ensure_order_auto_import_schema_exists`）。这些函数：
+
+- 幂等（已存在列 / 索引 → return False）。
+- 在 `app/main.py.lifespan` 中显式排序调用，紧接 `auto_migrate(engine)`。
+- 每个绑定一个具体的 schema 演进版本，命名包含语义（不是 `migrate_v031`）。
+
+适用范围：仅当 `auto_migrate` 的「ADD COLUMN」能力不足时新增（如 partial index、组合列变更）；简单加列仍由 `auto_migrate` 自动处理。
+
+### 6.5 LLM Provider 抽象（跨业务复用）
+
+LLM 是当前两个业务域（intake 产品录入、auto-import 自动导入）的共享外部依赖。**单一 provider 抽象**让 .env 配一份 key 即可同时支持两个域。
+
+**核心抽象**（位于 `backend/app/services/intake_llm.py`，未来重构时可考虑改名 `llm.py`）：
+
+- `OpenAICompatibleVisionProvider`：通用 OpenAI Chat Completions 协议 client（构造参数 `name / api_key / base_url / model`）。
+- `PROVIDERS: dict[str, dict]`：注册表（key 为 provider 标识符，value 含 env 变量前缀 + 默认 base_url + 默认 model）。当前注册：`qwen` / `deepseek` / `doubao` / `siliconflow` / `kimi` / `openai`。
+- `get_active_provider() -> OpenAICompatibleVisionProvider | None`：按 `LLM_PROVIDER` env 变量切换激活的 provider；未设置时回退 `deepseek`。读 `<PREFIX>_API_KEY` 判断是否就绪。
+- `LLMProviderError(error_kind, message, raw_preview?)`：统一异常。
+
+**多业务复用模式**：
+
+```mermaid
+flowchart LR
+    Env[".env<br/>LLM_PROVIDER=qwen<br/>QWEN_API_KEY=..."]
+    Reg["PROVIDERS 注册表"]
+    Get["get_active_provider()"]
+    Prov["OpenAICompatibleVisionProvider 实例"]
+    Chat["chat_completion(messages, json_object)"]
+
+    Env --> Get
+    Reg --> Get
+    Get --> Prov
+    Prov --> Chat
+
+    Intake["intake：vision recognize<br/>(多图 base64 + 解析草稿 prompt)"]
+    AutoImport["auto-import：SKU 匹配<br/>(text-only + 全 catalog 注入 prompt)"]
+    Intake --> Chat
+    AutoImport --> Chat
+```
+
+**重构状态（必做，prd-006 实施前完成）**：当前 `OpenAICompatibleVisionProvider` 的唯一公开方法 `recognize(assembly_images, produce_images, ...)` 强耦合 intake 的多图 + JSON 草稿语义。auto-import 复用前需抽出底层 `chat_completion(messages, *, json_object=True, ...) -> str` 方法，让 `recognize` 内部委托给 `chat_completion`。详见 [design-auto-import.md §6.1](design-auto-import.md)。
+
+**Provider 切换策略**：
+
+- MVP 取「单 provider 切换」而非「多 provider fallback chain」：`LLM_PROVIDER` 选定一家后两个业务共用，简化配置。
+- 不同业务用不同模型时（如 intake vision 用 `qwen-vl-max`、auto-import chat 用 `qwen-omni-turbo`）由各业务在调用 `chat_completion` 时通过 `model` 覆盖参数（**未来扩展**，本轮设计未引入）。当前共享同一 `QWEN_MODEL` env 变量。
+
+### 6.6 外部集成模式（Chrome 扩展 + ADB）
+
+prd-006 引入两类新的外部集成，与「同进程内部模块」「外部 HTTP API」都不同：
+
+| 集成 | 通信协议 | 启动者 | 信任边界 |
+|---|---|---|---|
+| Chrome 扩展（小红书抓单）| `chrome.runtime.sendMessage(<EXT_ID>, msg)`（`externally_connectable.matches`） + 扩展 → infill 后端 HTTP POST | 前端 → 扩展 → 后端 | 用户已装、Chrome 同源策略 + `externally_connectable` 白名单约束 |
+| ADB（闲鱼截屏） | infill 后端 spawn 子进程 `adb connect/devices/screencap/pull` → TCP 5037/5555/7555 → 用户 PC | 后端 | Mac mini 与 PC 同局域网；端口由用户主动开放 |
+
+**通用约定**：
+
+- 每个外部集成入页前先 **probe**：HTTP `GET/POST` 探查就绪状态，返回详细诊断（不是黑盒 ok/fail）。
+- 每个 CUJ 都有「就绪 / 未就绪 / 故障」三种 UI 状态，每种带具体修复 hint（与用户能力对齐 — 「`brew install adb`」「重新检测扩展」等）。
+- **后端无独立的外部集成服务**：扩展 message 直接打 HTTP 端点、ADB 子进程同步调用，不引入消息队列 / 异步 worker（单用户场景，串行 OK）。
+- 错误归类用 `error_kind` 枚举（如 `extension_not_responding` / `adb_connection_refused`）让前端按 kind 渲染。
+
+详见 [design-auto-import.md §4](design-auto-import.md)（Chrome 扩展）+ §5（ADB）。
+
 ---
 
 ## 7. 部署与基础设施
@@ -358,9 +431,11 @@ flowchart TB
 |---|---|---|
 | `DATABASE_URL` | `sqlite:///./data.db` | SQLite 文件路径（Docker 设为 `/app/data/data.db`） |
 | `CATALOG_PATH` | `<repo>/data/catalog.yaml` | 目录文件路径（Docker 设为 `/app/data/catalog.yaml`） |
-| `DEEPSEEK_API_KEY` | — | **产品录入（intake）必需**；未配置时 `/intake` 页整页禁用（详见 `design-intake.md` §1 `provider-status`）。不入 DB、不出现在任何 HTTP 响应。 |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek API 端点；可指向 OpenAI-compatible 代理或私有部署。 |
-| `DEEPSEEK_VISION_MODEL` | （见 design-intake.md §11 §1） | DeepSeek vision 模型 ID；实施时确认并默认锁定。 |
+| `LLM_PROVIDER` | `deepseek` | 共享 LLM provider 切换（值见 §6.5 `PROVIDERS` 注册表 keys：`qwen` / `deepseek` / `doubao` / 等）。intake + auto-import 共用。 |
+| `<PREFIX>_API_KEY`（如 `QWEN_API_KEY` / `DEEPSEEK_API_KEY`）| — | 对应 provider 的 key；未配置时 `/intake` + `/orders/import` 页内 LLM 步骤会归类为 `no_api_key` 错误状态。不入 DB、不出现在任何 HTTP 响应。 |
+| `<PREFIX>_BASE_URL` / `<PREFIX>_MODEL` | 各 provider 默认 | 覆盖 base URL / model 名；不设则用注册表默认。 |
+| `ADB_PATH` | `adb`（从 PATH 找） | 可选；显式指定 `adb` CLI 路径（prd-006 闲鱼扫单用）。Mac mini 默认 `/usr/local/bin/adb`。 |
+| `VITE_INFILL_EXT_ID` | — | **前端构建期注入**的 Chrome 扩展 ID（prd-006 小红书扫单用）。开发期与生产期可能不同（见 design-auto-import.md §Open Questions §3）。 |
 
 ### 7.3 数据持久化
 
@@ -403,6 +478,7 @@ flowchart TB
 |---|---|
 | `design-scheduler.md` | 排班算法：DB 服务层 + 纯函数核心层、三种策略、同步强度、操作窗口、富余生产、执行控制 |
 | `design-catalog.md` | `catalog.yaml` 格式与加载链路、与 DB 的差量同步语义（**读源**） |
-| `design-intake.md` | 产品录入：截图上传、启发式分类、LLM provider 抽象（DeepSeek）、颜色矩阵、合并到 `catalog.yaml`（**写源**，备份 + 回滚） |
+| `design-intake.md` | 产品录入：截图上传、启发式分类、LLM provider 抽象（共享）、颜色矩阵、合并到 `catalog.yaml`（**写源**，备份 + 回滚） |
 | `design-orders-inventory.md` | 订单队列、发货扣减、BOM 折算、库存调整、富余计算 |
+| `design-auto-import.md` | 自动导入订单：Chrome 扩展抓小红书 DOM、ADB 截屏闲鱼、LLM SKU 匹配、批次预览 + 单事务 commit（**自动写源**之一） |
 | `design-frontend.md` | 前端路由、`api/client.ts` 封装、各页面职责、甘特图/列表视图实现 |

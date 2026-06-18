@@ -1,9 +1,10 @@
 # 订单与库存（Orders & Inventory）
 
-> Last updated: 2026-06-13 02:11:44 (UTC+8)
-> Serves: 订单管理、组件库存管理、富余情况展示（specs.md 第 1、6 节，§8.3、§8.4）
+> Last updated: 2026-06-18 18:54:18 (UTC+8)
+> Serves: 订单管理（prd-001）、组件库存管理（prd-002）、富余情况展示（specs.md 第 1、6 节，§8.3、§8.4）
 >
 > 业务规格见 [docs/specs.md](../specs.md)。库存与排班的入库闭环另见 [design-scheduler.md](design-scheduler.md)。
+> **自动导入（prd-006）写入 `Order` 的链路** — Chrome 扩展抓 DOM / ADB 截屏 / LLM SKU 匹配 / 批次预览 / 单事务 commit — 见 [design-auto-import.md](design-auto-import.md)。本文档维护 `Order` 表 schema 的完整定义（含 prd-006 新增 4 列），auto-import 是其写源之一。
 
 ## Overview
 
@@ -35,7 +36,8 @@
 flowchart LR
     FE_O["前端 Orders.tsx"] --> RO["orders.py"]
     FE_I["前端 Inventory.tsx / Dashboard.tsx"] --> RI["inventory.py"]
-    RO --> Ord[("Order / OrderItem")]
+    AutoImport["自动导入<br/>(design-auto-import)<br/>POST /auto-import/commit"] -->|单事务批量创建| Ord[("Order / OrderItem")]
+    RO --> Ord
     RO -->|发货扣减(按 BOM)| Inv[("Inventory")]
     RI --> Inv
     RI -->|读 BOM 算需求| Bom[("ProductComponent")]
@@ -47,7 +49,36 @@ flowchart LR
 
 ### 数据模型（详见 `system.md` §4）
 
-- `Order(created_at, status: pending|shipped, shipped_at)` 1—N `OrderItem(product_id, quantity)`。
+#### `Order` 表（含 prd-006 扩展）
+
+| 字段 | 类型 | Nullable | 说明 |
+|---|---|---|---|
+| `id` | INTEGER PK | — | |
+| `created_at` | DATETIME | ❌ | infill 接收时间（人工录入是点提交时；自动导入是 commit 落库时） |
+| `status` | VARCHAR | ❌ | `pending` / `shipped` |
+| `shipped_at` | DATETIME | ✅ | 发货时间 |
+| `notes` | TEXT | ✅ | 备注（人工录入可填） |
+| `platform` | VARCHAR(16) | ✅ | **prd-006 新增**：`xhs` / `xianyu` / NULL（NULL = 人工录入） |
+| `external_order_id` | VARCHAR(64) | ✅ | **prd-006 新增**：平台原始订单号；override 时追加 `-redoN` 后缀 |
+| `buyer_nickname` | VARCHAR(128) | ✅ | **prd-006 新增**：平台买家昵称 |
+| `external_created_at` | DATETIME | ✅ | **prd-006 新增**：平台侧下单时间（LLM 未识别时落 `now()` fallback） |
+
+**新增唯一约束**（**prd-006 引入**，partial unique index）：
+
+```sql
+CREATE UNIQUE INDEX uq_orders_platform_external
+  ON orders(platform, external_order_id)
+  WHERE platform IS NOT NULL AND external_order_id IS NOT NULL;
+```
+
+- 仅对自动导入订单（两字段都非 NULL）去重；人工录入订单（两字段都 NULL）不受约束、可任意创建多条。
+- 由 `services/catalog.py::ensure_order_auto_import_schema_exists` 在启动期幂等补建（`auto_migrate` 不覆盖 partial index）。
+
+**`-redoN` 后缀 override 约定**：用户在 prd-006 CUJ-3 把重复订单点「改判为新单」时，后端在写入前给原 `external_order_id` 追加 `-redoN` 后缀（首次 `-redo1`、二次 `-redo2`，按 `SELECT external_order_id LIKE 'original-redo%'` 取最大数字 +1）。详见 [design-auto-import.md §3.4](design-auto-import.md)。
+
+#### 其他表
+
+- `OrderItem(order_id, product_id, quantity)` —— 订单明细。
 - `Inventory(component_id, color, quantity)` —— 唯一性逻辑上是 `(component_id, color)`，由目录加载保证每组合一条（**注意：DB 层无 unique 约束，见风险**）。
 - `ProductComponent(product_id, component_id, color, quantity)` —— BOM，折算依据。
 
@@ -58,10 +89,13 @@ flowchart LR
 | 方法 + 路径 | 请求/响应 | 说明 |
 |---|---|---|
 | `GET /api/orders?status=` | `list[OrderOut]` | 按 `created_at` 升序；可按状态过滤 |
-| `POST /api/orders` | `OrderCreate` → `OrderOut` | 新建订单（含多 item） |
+| `POST /api/orders` | `OrderCreate` → `OrderOut` | 新建订单（含多 item），人工录入路径；`platform / external_*` 字段均留 NULL |
+| `PUT /api/orders/{id}` | `OrderUpdate` → `OrderOut` | 编辑订单（items / notes） |
 | `GET /api/orders/{id}` | `OrderOut` | 取单 |
 | `POST /api/orders/{id}/ship` | — | 标记发货 + 扣库存（见下） |
 | `DELETE /api/orders/{id}` | — | 删除订单（级联删 item） |
+
+> **自动导入路径**：prd-006 通过 `POST /api/auto-import/commit` 创建 `Order(platform=..., external_order_id=..., ...)` —— 走单事务批量写。详见 [design-auto-import.md §2](design-auto-import.md)。本组件**不**接收 auto-import 流量，但创建的 `Order` 行立即可被本组件的 `GET /api/orders?status=pending` 查询到。
 
 #### 库存（`/api/inventory`）
 
@@ -155,6 +189,7 @@ sequenceDiagram
 - **依赖**：目录表（`Product`/`ProductComponent`/`Component`，由 `design-catalog.md` 维护）。
 - **与排班闭环**：库存增加来自排班任务 complete（`design-scheduler.md` 的 `complete_task`）；库存减少来自本组件发货扣减。两者共同维护 `Inventory`。
 - **被依赖**：排班的需求计算读 `Order`，富余/Dashboard 读 surplus。
+- **`Order` 写源**：本组件（人工录入 `POST /api/orders`）+ **自动导入 `POST /api/auto-import/commit`**（详见 [design-auto-import.md](design-auto-import.md)）。两者写入的 `Order` 行通过 `platform` 字段区分（NULL = 人工 / `xhs` / `xianyu` = 自动），但后续生命周期（待处理队列 / 发货 / 历史）完全统一在本组件。
 
 ## Open Questions & Risks
 

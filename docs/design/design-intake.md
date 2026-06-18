@@ -1,9 +1,11 @@
 # 产品录入（Intake）
 
-> Last updated: 2026-06-14 01:38:46 (UTC+8)
+> Last updated: 2026-06-18 18:54:18 (UTC+8)
 > Serves: prd-005（产品录入：截图上传 + 启发式分类 + LLM 识别 + 颜色矩阵 + 合并到 catalog.yaml）
 >
 > **上下游关系**：本组件是 `data/catalog.yaml` 的**写源**（write-source）。读源（read + sync 到 DB）由 [design-catalog.md](design-catalog.md) 维护。合并成功后必须直接复用 `load_catalog(db)` 链路（同进程函数调用，不走 HTTP 边界），让 prd-000 `/products` 页面立刻可见新产品。
+>
+> **LLM provider 抽象共享**：本组件定义的 `services/intake_llm.OpenAICompatibleVisionProvider` + `PROVIDERS` 注册表 + `get_active_provider()` 已跨业务复用 —— prd-006 自动导入（[design-auto-import.md](design-auto-import.md)）也走这套抽象做 SKU 匹配。跨切面的约定见 [system.md §6.5](system.md#65-llm-provider-抽象跨业务复用)。本轮 prd-006 实施前需做的重构（抽出底层 `chat_completion` 方法）见 design-auto-import.md §6.1，行为对 intake 零变更。
 >
 > 业务规格见 [docs/prd/prd-005-intake.md](../prd/prd-005-intake.md)。所有交互细节、视觉规范、文案口径以 PRD 为权威；本文档描述**工程实现**、数据契约、关键算法、与其它组件的集成。
 
