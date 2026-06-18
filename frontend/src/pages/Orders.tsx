@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card, Table, Button, Modal, Select, InputNumber, Space, Popconfirm, Tag, Tabs, message, Divider, Input, Tooltip, Typography } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 
 interface OrderDraft {
@@ -18,6 +19,7 @@ interface EditState {
 }
 
 export default function Orders() {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [modal, setModal] = useState(false);
@@ -199,7 +201,12 @@ export default function Orders() {
 
   return (
     <div>
-      <h2 style={{ marginTop: 0 }}>订单管理</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ marginTop: 0 }}>订单管理</h2>
+        <Button type="primary" onClick={() => navigate('/orders/import')}>
+          自动导入 →
+        </Button>
+      </div>
 
       <Card
         extra={<Button type="primary" icon={<PlusOutlined />} onClick={openModal}>新增订单</Button>}
