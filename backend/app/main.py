@@ -9,7 +9,13 @@ from fastapi.responses import FileResponse
 from .database import Base, engine, SessionLocal
 from .routers import catalog, orders, inventory, printers, schedule, config
 from app.routers import intake
-from .services.catalog import ensure_sku_column_exists, ensure_order_notes_column_exists, load_catalog
+from app.routers import auto_import as auto_import_router
+from .services.catalog import (
+    ensure_sku_column_exists,
+    ensure_order_notes_column_exists,
+    ensure_order_auto_import_schema_exists,
+    load_catalog,
+)
 from .services.migrate import auto_migrate
 
 
@@ -26,6 +32,10 @@ async def lifespan(app: FastAPI):
     # 3b. v0.3.1：确保 orders 表有 notes 列（旧 DB 升级）
     if ensure_order_notes_column_exists(engine):
         print("已为 orders 表补齐 notes 列")
+    # 3c. v0.4.0 (prd-006)：补齐 orders 表 platform/external_order_id/buyer_nickname/external_created_at
+    #     + 创建 (platform, external_order_id) partial unique index
+    if ensure_order_auto_import_schema_exists(engine):
+        print("已为 orders 表补齐 auto-import 字段 + partial unique index")
     # 4. 从 YAML 加载目录（旧格式 YAML 会自动 backfill SKU）
     db = SessionLocal()
     try:
@@ -53,6 +63,7 @@ app.include_router(printers.router)
 app.include_router(schedule.router)
 app.include_router(config.router)
 app.include_router(intake.router)
+app.include_router(auto_import_router.router)
 
 
 @app.get("/api/health")
@@ -62,7 +73,11 @@ def health_check():
 
 # 生产模式下托管前端静态文件
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-if STATIC_DIR.is_dir():
+# Chrome 扩展分发目录（CUJ-4 下载链接走这里）
+EXTENSIONS_DIR = STATIC_DIR / "extensions"
+if EXTENSIONS_DIR.is_dir():
+    app.mount("/static/extensions", StaticFiles(directory=EXTENSIONS_DIR), name="static-extensions")
+if STATIC_DIR.is_dir() and (STATIC_DIR / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="static-assets")
 
     @app.get("/{path:path}")

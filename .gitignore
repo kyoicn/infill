@@ -12,6 +12,9 @@ backend/app/__pycache__/
 backend/app/**/__pycache__/
 backend/data.db
 backend/static/
+!backend/static/extensions/
+backend/static/extensions/*
+!backend/static/extensions/.gitkeep
 *.pyc
 
 # 前端
