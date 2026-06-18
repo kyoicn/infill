@@ -39,6 +39,26 @@ API 契约（与 design-orders-inventory.md §API 一致）：
 
 `OrderOut` 字段：`{id, created_at, status, shipped_at, items:[{id, product_id, quantity}]}`。注意：明细只返回 `product_id`，**不返回产品名** —— 前端用单独拉取的产品列表 `getProducts()` 在内存里做 id→name 映射展示。
 
+### Order 表字段扩展（新增，prd-006 自动导入需要）
+
+为支持 [PRD-006 自动导入订单](./prd-006-auto-import-orders.md)（小红书千帆 + 闲鱼），`Order` 表追加以下 4 个字段。**所有字段均 nullable，人工录入订单保持原行为（全部留空），向后兼容**：
+
+| 字段 | 类型 | 可空 | 说明 |
+|---|---|---|---|
+| `platform` | VARCHAR | 是 | 值域 `'xhs'`（小红书千帆） / `'xianyu'`（闲鱼） / `NULL`。NULL = 人工录入的本地订单。 |
+| `external_order_id` | VARCHAR(64) | 是 | 平台侧原始订单号（如 `XHS-2026-001250`）；人工录入留空。 |
+| `buyer_nickname` | VARCHAR(128) | 是 | 平台买家昵称；人工录入留空。 |
+| `external_created_at` | DATETIME | 是 | 平台侧下单时间，区别于 `created_at`（infill 系统接收时间）。人工录入留空。 |
+
+**新增唯一约束**：`UNIQUE (platform, external_order_id) WHERE platform IS NOT NULL AND external_order_id IS NOT NULL` —— SQLite 支持的 partial unique index，**人工录入订单（两字段均为 NULL）不参与去重**，可以重复创建。
+
+**重复订单 override 约定**：当用户在自动导入预览阶段把一条被识别为「重复」的订单点「改判为新单」（典型场景：买家退货后下了同一份订单的复刻单，平台沿用了同一个 `external_order_id`），后端在写入前给原 ID 追加 `-redoN` 后缀（首次 `-redo1`、二次 `-redo2`，依此类推），例如 `XHS-2026-001250` 改写为 `XHS-2026-001250-redo1` 再落库。这样：
+- 去重逻辑无需任何 schema 改动（唯一约束天然放行后缀化后的 ID）；
+- 历史可追溯（原 ID 仍可从后缀反推）；
+- 自动导入侧的「重复检测」只需按完整 `external_order_id`（含后缀）查 DB 即可。
+
+详见 [prd-006 CUJ-2 的重复订单处理](./prd-006-auto-import-orders.md)。
+
 本 PRD 范围：
 - CUJ-1：录入新订单（一次可批量创建多个订单）
 - CUJ-2：查看与管理待处理订单队列（含待处理需求汇总、删除订单）
@@ -111,7 +131,7 @@ No mocks (backfilled from existing impl — run /design-feature Route D to add m
 - 可在一张草稿订单内通过「添加产品」增加多行明细；可通过「再加一个订单」增加多张草稿订单。
 - 草稿订单数 > 1 时每张订单标题旁出现「删除此订单」按钮；删某订单的最后一行明细会整张移除该订单。
 - 点「创建 N 个订单」后，N 个有效订单全部成功时模态框关闭、弹「已创建 N 个订单」、列表新增 N 行待处理订单。
-- 新建订单 `status` 为 `pending`、`created_at` 为创建时刻、明细与录入的产品/数量一致。
+- 新建订单 `status` 为 `pending`、`created_at` 为创建时刻、明细与录入的产品/数量一致。本 CUJ 的人工录入路径下，`platform / external_order_id / buyer_nickname / external_created_at` 四个字段均留空（自动导入订单还有 `platform / external_order_id / buyer_nickname / external_created_at` 几个字段，由 PRD-006 负责填充）。
 - 无有效订单时按钮禁用，无法提交空内容。
 
 ---

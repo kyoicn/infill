@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CUJ-2 订单导入 — 闲鱼 Tab 初始（空队列就绪）</title>
+<style>
+  :root {
+    --primary: #1677ff;
+    --primary-soft: #e6f4ff;
+    --xhs-red: #ff2442;
+    --xhs-red-soft: #fff1f3;
+    --xy-orange: #ff7a00;
+    --xy-orange-soft: #fff5e6;
+    --success: #52c41a;
+    --warning: #faad14;
+    --danger: #ff4d4f;
+    --text1: rgba(0,0,0,0.88);
+    --text2: rgba(0,0,0,0.65);
+    --text3: rgba(0,0,0,0.45);
+    --text4: rgba(0,0,0,0.25);
+    --border: #e8e8e8;
+    --border-light: #f0f0f0;
+    --bg-gray: #fafafa;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; color: var(--text1); font-size: 14px; }
+  .layout { display: flex; min-height: 100vh; }
+  .sider { width: 200px; background: #001529; color: #fff; flex-shrink: 0; display: flex; flex-direction: column; }
+  .logo { height: 56px; line-height: 56px; text-align: center; font-weight: 600; font-size: 18px; }
+  .menu { flex: 1; padding-top: 4px; }
+  .menu-item { height: 40px; line-height: 40px; padding: 0 24px; color: rgba(255,255,255,0.65); display: flex; align-items: center; gap: 10px; }
+  .menu-item.active { background: var(--primary); color: #fff; }
+  .menu-item .ico { width: 14px; opacity: 0.7; }
+  .version { text-align: center; padding: 8px 0; font-size: 11px; color: rgba(255,255,255,0.45); font-family: monospace; border-top: 1px solid rgba(255,255,255,0.08); }
+  .content { flex: 1; padding: 24px 32px; max-width: 1480px; }
+  .crumb { color: var(--text3); font-size: 13px; margin-bottom: 6px; }
+  .page-title { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+  .page-subtitle { color: var(--text2); font-size: 13px; margin-bottom: 20px; }
+  .page-subtitle a { color: var(--primary); text-decoration: none; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-light); }
+  .tab {
+    padding: 12px 24px; cursor: pointer; color: var(--text2);
+    font-size: 15px; font-weight: 500;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tab.active { color: var(--xy-orange); border-bottom-color: var(--xy-orange); }
+  .tab .platform-icon {
+    width: 22px; height: 22px; border-radius: 4px;
+    color: #fff; font-weight: 700; font-size: 11px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .icon-xhs { background: var(--xhs-red); }
+  .icon-xy { background: var(--xy-orange); }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .dot-ready { background: var(--success); }
+  .tab-status-label { font-size: 11px; color: var(--text3); font-weight: normal; }
+
+  .tab-panel {
+    background: #fff;
+    border: 1px solid var(--border-light); border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .panel-intro {
+    color: var(--text2);
+    font-size: 13px;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+  .panel-intro b { color: var(--text1); }
+  .panel-intro .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    background: var(--xy-orange-soft); color: var(--xy-orange);
+    border-radius: 4px;
+    font-size: 11px;
+    margin-left: 6px;
+    font-weight: 500;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 20px;
+  }
+
+  /* 左控制区 */
+  .control {
+    background: var(--bg-gray);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 16px;
+    height: fit-content;
+  }
+  .control h3 {
+    margin: 0; font-size: 13px; font-weight: 600;
+    color: var(--text2);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .control h3 .step-num {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--xy-orange); color: #fff;
+    font-size: 11px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+
+  .status {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text2);
+    background: #fff; padding: 4px 10px; border-radius: 100px;
+    width: fit-content;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text4); }
+
+  .meta { font-size: 12px; color: var(--text2); display: flex; flex-direction: column; gap: 4px; }
+  .meta-row { display: flex; gap: 8px; }
+  .meta-key { color: var(--text3); min-width: 64px; }
+  .meta-val { color: var(--text1); }
+  .meta-val .mono {
+    font-family: monospace; font-size: 11px;
+    background: #fff; padding: 1px 5px; border-radius: 3px;
+    color: var(--text2); border: 1px solid var(--border-light);
+  }
+
+  .capture-btn {
+    background: var(--xy-orange); color: #fff; border: none;
+    padding: 22px 16px; border-radius: 10px;
+    font-size: 17px; font-weight: 600; cursor: pointer;
+    text-align: center;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .capture-btn:hover { background: #e26b00; }
+  .capture-btn .icon { font-size: 22px; }
+  .capture-hint {
+    font-size: 11px;
+    color: var(--text3);
+    text-align: center;
+    line-height: 1.6;
+  }
+  .counter {
+    background: #fff;
+    border: 1px dashed var(--border);
+    padding: 12px 14px; border-radius: 6px;
+    text-align: center;
+    color: var(--text2); font-size: 13px;
+  }
+  .counter .num {
+    color: var(--text1); font-weight: 600; font-size: 20px;
+    margin: 0 4px;
+  }
+
+  .footer-action {
+    display: flex; flex-direction: column; gap: 6px;
+    border-top: 1px solid var(--border-light);
+    padding-top: 14px;
+  }
+  .btn {
+    padding: 12px 16px; border-radius: 6px;
+    font-size: 13.5px; font-weight: 500; cursor: pointer;
+    text-align: center; border: none; width: 100%;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary.disabled {
+    background: var(--bg-gray); color: var(--text3); cursor: not-allowed;
+    border: 1px solid var(--border);
+  }
+  .btn-secondary {
+    background: #fff; color: var(--text2); border: 1px solid var(--border);
+  }
+
+  /* 右队列区 */
+  .queue {
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 24px;
+    min-height: 500px;
+  }
+  .queue-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .queue-head h3 {
+    margin: 0; font-size: 13px; font-weight: 600; color: var(--text2);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .queue-head h3 .step-num {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--text4); color: #fff;
+    font-size: 11px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .queue-head .hint { color: var(--text3); font-size: 12px; }
+
+  .empty {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 64px 32px;
+    text-align: center;
+    color: var(--text3);
+  }
+  .empty .empty-icon {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--bg-gray);
+    margin: 0 auto 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    color: var(--text3);
+  }
+  .empty .empty-title { color: var(--text2); font-size: 14px; margin-bottom: 6px; }
+  .empty .empty-sub { color: var(--text3); font-size: 12px; line-height: 1.6; }
+
+  .tip-card {
+    margin-top: 16px;
+    background: var(--xy-orange-soft);
+    border: 1px solid #ffd591;
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-size: 12.5px;
+    color: var(--text2);
+    line-height: 1.7;
+  }
+  .tip-card b { color: var(--text1); }
+  .tip-card ol { margin: 8px 0 0; padding-left: 18px; }
+  .tip-card li { margin-bottom: 4px; }
+
+  /* history panel */
+  .panel { background: #fff; border: 1px solid var(--border-light); border-radius: 8px; padding: 20px 24px; }
+  .panel h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .panel h2 a { color: var(--primary); font-size: 13px; font-weight: normal; text-decoration: none; }
+  .panel-sub { color: var(--text3); font-size: 12px; margin-bottom: 12px; }
+  .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table th, .table td { padding: 8px 0; text-align: left; border-bottom: 1px solid var(--border-light); }
+  .table th { color: var(--text3); font-weight: normal; font-size: 12px; }
+  .table td.mono { font-family: monospace; font-size: 12px; color: var(--text2); }
+  .table tr:last-child td { border-bottom: none; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .tag-xhs { background: var(--xhs-red-soft); color: var(--xhs-red); }
+  .tag-xy { background: var(--xy-orange-soft); color: var(--xy-orange); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sider">
+    <div class="logo">打印排班</div>
+    <nav class="menu">
+      <div class="menu-item"><span class="ico">▣</span>仪表盘</div>
+      <div class="menu-item"><span class="ico">▣</span>产品目录</div>
+      <div class="menu-item"><span class="ico">▣</span>产品录入</div>
+      <div class="menu-item active"><span class="ico">▣</span>订单管理</div>
+      <div class="menu-item"><span class="ico">▣</span>库存管理</div>
+      <div class="menu-item"><span class="ico">▣</span>排班中心</div>
+      <div class="menu-item"><span class="ico">▣</span>系统设置</div>
+    </nav>
+    <div class="version">v0.4.0</div>
+  </aside>
+
+  <main class="content">
+    <div class="crumb">订单管理 · 自动导入</div>
+    <h1 class="page-title">订单导入</h1>
+    <div class="page-subtitle">
+      从小红书千帆 Chrome 扩展或闲鱼 Android 设备 ADB 截屏导入订单 · 自动匹配 catalog SKU · 预览后入队。
+    </div>
+
+    <div class="tabs">
+      <div class="tab">
+        <span class="platform-icon icon-xhs">小</span>
+        小红书千帆
+        <span class="status-dot dot-ready"></span>
+        <span class="tab-status-label">就绪</span>
+      </div>
+      <div class="tab active">
+        <span class="platform-icon icon-xy">闲</span>
+        闲鱼
+        <span class="status-dot dot-ready"></span>
+        <span class="tab-status-label">就绪</span>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <div class="panel-intro">
+        通过 ADB 截屏 Android 设备的闲鱼订单列表 · 多次截屏后 LLM 解析
+        <span class="badge">v1 半自动</span>
+      </div>
+
+      <div class="grid">
+        <aside class="control">
+          <h3><span class="step-num">1</span>设备就绪</h3>
+          <div class="status">
+            <span class="dot" style="background: var(--success);"></span>
+            ADB 已连接
+          </div>
+          <div class="meta">
+            <div class="meta-row">
+              <span class="meta-key">设备</span>
+              <span class="meta-val">MuMu 模拟器</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-key">端点</span>
+              <span class="meta-val mono">192.168.31.45:7555</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-key">分辨率</span>
+              <span class="meta-val mono">1080 × 1920</span>
+            </div>
+          </div>
+
+          <h3 style="margin-top: 8px"><span class="step-num">2</span>截屏</h3>
+
+          <button class="capture-btn">
+            <span class="icon">⊕</span>
+            截当前屏
+          </button>
+          <div class="capture-hint">
+            确认 Android 设备已打开闲鱼 → 订单列表<br>
+            每次点击捕获当前画面，约 1-2 秒
+          </div>
+
+          <div class="counter">
+            已捕获 <span class="num">0</span> 张
+          </div>
+
+          <div class="footer-action">
+            <button class="btn btn-primary disabled" disabled>解析并导入 (需先截至少 1 张)</button>
+          </div>
+        </aside>
+
+        <section class="queue">
+          <div class="queue-head">
+            <h3><span class="step-num">3</span>已捕获队列</h3>
+            <span class="hint">捕获后缩略图按顺序在此显示</span>
+          </div>
+
+          <div class="empty">
+            <div class="empty-icon">📷</div>
+            <div class="empty-title">还没有捕获任何屏幕</div>
+            <div class="empty-sub">
+              点左侧「截当前屏」按钮开始<br>
+              建议先在 Android 设备上把闲鱼滚到订单列表顶部
+            </div>
+          </div>
+
+          <div class="tip-card">
+            <b>典型操作（5 张截屏约 30 秒）：</b>
+            <ol>
+              <li>切到 Android 设备 / 模拟器，把闲鱼滚到订单列表顶部</li>
+              <li>切回这页，点「截当前屏」→ 右侧出现第 1 张缩略图</li>
+              <li>切回设备，手指 / 鼠标向上滑一屏</li>
+              <li>切回这页，再点「截当前屏」→ 第 2 张</li>
+              <li>重复直到看完所有订单，点「解析并导入」</li>
+            </ol>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <section class="panel">
+      <h2>
+        近 7 天导入
+        <a href="#">查看全部历史 →</a>
+      </h2>
+      <div class="panel-sub">两平台导入记录混排 · 仅本机</div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width: 140px">时间</th>
+            <th style="width: 80px">平台</th>
+            <th style="width: 80px">本次扫描</th>
+            <th style="width: 80px">新单</th>
+            <th style="width: 80px">已跳过</th>
+            <th>耗时 / 备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>06-17 18:11</td>
+            <td><span class="tag tag-xy">闲鱼</span></td>
+            <td class="mono">31</td>
+            <td class="mono"><b>23</b></td>
+            <td class="mono">8</td>
+            <td>解析 26s · 5 张图</td>
+          </tr>
+          <tr>
+            <td>06-17 18:07</td>
+            <td><span class="tag tag-xhs">小红书</span></td>
+            <td class="mono">15</td>
+            <td class="mono"><b>12</b></td>
+            <td class="mono">3</td>
+            <td>解析 6s</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+</div>
+</body>
+</html>

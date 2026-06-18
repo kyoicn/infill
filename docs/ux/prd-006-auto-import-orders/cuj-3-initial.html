@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CUJ-3 订单导入 — 预览校对（inline 编辑 · 多商品）</title>
+<style>
+  :root {
+    --primary: #1677ff;
+    --primary-soft: #e6f4ff;
+    --xhs-red: #ff2442;
+    --xhs-red-soft: #fff1f3;
+    --xy-orange: #ff7a00;
+    --xy-orange-soft: #fff5e6;
+    --success: #52c41a;
+    --success-soft: #f6ffed;
+    --warning: #faad14;
+    --warning-soft: #fffbe6;
+    --warning-deep: #ffe7ba;
+    --danger: #ff4d4f;
+    --danger-soft: #fff1f0;
+    --danger-deep: #ffccc7;
+    --text1: rgba(0,0,0,0.88);
+    --text2: rgba(0,0,0,0.65);
+    --text3: rgba(0,0,0,0.45);
+    --text4: rgba(0,0,0,0.25);
+    --border: #d9d9d9;
+    --border-light: #f0f0f0;
+    --bg-gray: #fafafa;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; color: var(--text1); font-size: 14px; }
+  .layout { display: flex; min-height: 100vh; }
+  .sider { width: 200px; background: #001529; color: #fff; flex-shrink: 0; display: flex; flex-direction: column; }
+  .logo { height: 56px; line-height: 56px; text-align: center; font-weight: 600; font-size: 18px; }
+  .menu { flex: 1; padding-top: 4px; }
+  .menu-item { height: 40px; line-height: 40px; padding: 0 24px; color: rgba(255,255,255,0.65); display: flex; align-items: center; gap: 10px; }
+  .menu-item.active { background: var(--primary); color: #fff; }
+  .menu-item .ico { width: 14px; opacity: 0.7; }
+  .version { text-align: center; padding: 8px 0; font-size: 11px; color: rgba(255,255,255,0.45); font-family: monospace; border-top: 1px solid rgba(255,255,255,0.08); }
+
+  .content { flex: 1; padding: 24px 32px; max-width: 1480px; }
+  .crumb { color: var(--text3); font-size: 13px; margin-bottom: 6px; }
+  .crumb a { color: var(--text3); text-decoration: none; }
+  .crumb .mono { font-family: monospace; font-size: 12px; }
+  .page-title { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 4px; }
+  .page-title h1 { font-size: 22px; margin: 0; font-weight: 600; }
+  .page-title .source-meta { font-size: 13px; color: var(--text3); }
+  .page-title .source-meta .tag {
+    display: inline-block; padding: 1px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 500;
+    background: var(--xhs-red-soft); color: var(--xhs-red);
+    margin-right: 4px;
+  }
+  .page-subtitle { color: var(--text2); font-size: 13px; margin-bottom: 18px; }
+
+  /* summary chips */
+  .chips { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .chip {
+    background: #fff; border: 1px solid var(--border-light);
+    padding: 6px 12px; border-radius: 100px;
+    font-size: 13px; cursor: pointer; color: var(--text2);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chip:hover { border-color: var(--primary); color: var(--primary); }
+  .chip.active { background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 500; }
+  .chip .num { font-weight: 600; }
+  .chip-new { color: var(--success); border-color: #b7eb8f; }
+  .chip-dup { color: var(--text3); }
+  .chip-fix { color: var(--danger); border-color: #ffccc7; background: var(--danger-soft); }
+  .meta-strip {
+    margin-left: auto; font-size: 12px; color: var(--text3);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .meta-strip .mono {
+    font-family: monospace; background: var(--bg-gray);
+    padding: 1px 6px; border-radius: 3px; color: var(--text2);
+  }
+
+  .table-card {
+    background: #fff; border: 1px solid var(--border-light);
+    border-radius: 8px; overflow: visible; margin-bottom: 16px;
+  }
+  table.preview { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.preview thead th {
+    background: var(--bg-gray);
+    color: var(--text3); font-weight: 500;
+    padding: 10px 12px;
+    text-align: left;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  table.preview tbody td {
+    padding: 14px 12px;
+    border-bottom: 1px solid var(--border-light);
+    vertical-align: top;
+  }
+  table.preview tbody tr.dup { background: #f0f0f0; }
+  table.preview tbody tr.dup td { color: var(--text4); }
+  table.preview tbody tr.dup .raw-title,
+  table.preview tbody tr.dup .nick { text-decoration: line-through; }
+  table.preview tbody tr.fix-mid { background: var(--warning-soft); }
+  table.preview tbody tr.fix-mid:hover { background: #fff5d6; }
+  table.preview tbody tr.fix-low { background: var(--danger-soft); }
+  table.preview tbody tr.fix-low:hover { background: #ffd6d4; }
+  table.preview tbody tr:hover:not(.dup):not(.fix-mid):not(.fix-low) { background: #fafbff; }
+
+  /* checkbox */
+  .check {
+    width: 18px; height: 18px;
+    border: 1.5px solid var(--border);
+    border-radius: 3px;
+    background: #fff;
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    cursor: pointer;
+    color: #fff; font-size: 12px; font-weight: 700;
+    margin-top: 4px;
+  }
+  .check.checked { background: var(--primary); border-color: var(--primary); }
+  .check.disabled {
+    background: var(--bg-gray); border-color: var(--border);
+    cursor: not-allowed; color: var(--text4);
+  }
+  th .check { border-color: var(--text3); margin-top: 0; }
+
+  .platform-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 500;
+    margin-top: 2px;
+  }
+  .tag-xhs { background: var(--xhs-red-soft); color: var(--xhs-red); }
+  .tag-xy { background: var(--xy-orange-soft); color: var(--xy-orange); }
+  tr.dup .platform-tag { opacity: 0.5; }
+
+  .order-id { font-family: monospace; font-size: 11.5px; color: var(--text2); }
+  .buyer { font-size: 13px; line-height: 1.4; }
+  .buyer .nick { color: var(--text1); font-weight: 500; }
+  .buyer .time {
+    color: var(--text3); font-size: 11px; margin-top: 2px;
+    font-family: monospace;
+  }
+
+  /* dup info inside order-id column */
+  .dup-tag {
+    display: inline-block;
+    padding: 1px 6px;
+    background: rgba(0,0,0,0.08);
+    color: var(--text2);
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    margin-top: 4px;
+  }
+  .dup-info {
+    color: var(--text3);
+    font-size: 11px;
+    margin-top: 4px;
+    line-height: 1.5;
+  }
+  .dup-info a {
+    color: var(--primary);
+    text-decoration: none;
+    display: block;
+    margin-top: 2px;
+  }
+  .dup-info a:hover { text-decoration: underline; }
+
+  /* SKU cell — inline editable */
+  .product-cell { min-width: 360px; }
+  .raw-title {
+    color: var(--text2);
+    font-size: 12.5px;
+    line-height: 1.4;
+    margin-bottom: 8px;
+  }
+  .raw-title .quotes { color: var(--text4); font-family: monospace; }
+  .raw-title .multi-flag {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--primary-soft);
+    color: var(--primary);
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-left: 4px;
+    letter-spacing: 0.3px;
+  }
+
+  /* sku-line: one SKU + qty per product */
+  .sku-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .sku-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sku-line .bullet {
+    color: var(--text4);
+    font-size: 11px;
+    width: 12px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .sku-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    cursor: pointer;
+    background: #fff;
+    transition: all 0.12s;
+  }
+  .sku-picker:hover {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-soft);
+  }
+  .sku-picker::after {
+    content: '▾';
+    color: var(--text2);
+    font-size: 11px;
+    margin-left: 4px;
+  }
+  .conf-icon {
+    width: 16px; height: 16px; border-radius: 50%;
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 11px; font-weight: 700;
+    line-height: 1;
+  }
+  .conf-icon.high { background: var(--success); }
+  .conf-icon.mid { background: var(--warning); }
+  .conf-icon.low { background: var(--danger); }
+  .sku-name {
+    color: var(--text1);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .sku-name.missing { color: var(--danger); font-style: italic; }
+  .sku-code {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text3);
+    background: rgba(0,0,0,0.04);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+  .conf-tiny {
+    font-family: monospace;
+    font-size: 10px;
+    color: var(--text3);
+    margin-left: 2px;
+  }
+  tr.dup .sku-picker {
+    cursor: not-allowed;
+    background: transparent;
+    border-color: rgba(0,0,0,0.06);
+  }
+  tr.dup .sku-picker:hover { border-color: rgba(0,0,0,0.06); box-shadow: none; }
+  tr.dup .sku-name { color: var(--text4); font-weight: normal; }
+  tr.dup .sku-code { background: transparent; color: var(--text4); }
+
+  .qty-sep {
+    color: var(--text3);
+    font-size: 12px;
+    user-select: none;
+  }
+  .qty-input {
+    width: 52px;
+    padding: 5px 6px;
+    text-align: center;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 13px;
+    font-weight: 500;
+    background: #fff;
+    color: var(--text1);
+  }
+  .qty-input:hover { border-color: var(--primary); }
+  .qty-input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft); }
+
+  .sku-del {
+    width: 22px; height: 22px;
+    display: inline-flex;
+    align-items: center; justify-content: center;
+    color: var(--text3);
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 4px;
+    margin-left: 4px;
+    user-select: none;
+    transition: all 0.12s;
+  }
+  .sku-del:hover {
+    color: var(--danger);
+    background: var(--danger-soft);
+  }
+  tr.dup .sku-del { display: none; }
+
+  tr.dup .qty-input {
+    background: transparent;
+    border-color: rgba(0,0,0,0.06);
+    color: var(--text4);
+    cursor: not-allowed;
+    text-decoration: line-through;
+  }
+
+  .add-sku-link {
+    color: var(--primary);
+    font-size: 12px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 20px;
+    margin-top: 2px;
+  }
+  .add-sku-link:hover { text-decoration: underline; }
+  tr.dup .add-sku-link { display: none; }
+
+  /* sku picker dropdown */
+  .picker-popover {
+    position: absolute;
+    z-index: 100;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+    width: 360px;
+    padding: 6px;
+  }
+  .picker-search {
+    padding: 8px 10px;
+    background: var(--bg-gray);
+    border-radius: 4px;
+    margin-bottom: 4px;
+    font-size: 13px;
+    color: var(--text1);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .picker-search .ico { color: var(--text3); }
+  .picker-search input {
+    flex: 1; border: none; background: transparent;
+    font-size: 13px; outline: none;
+    color: var(--text1);
+  }
+  .picker-options { max-height: 260px; overflow-y: auto; }
+  .picker-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .picker-option:hover { background: var(--primary-soft); }
+  .picker-option.current { background: #f6ffed; border: 1px solid #b7eb8f; }
+  .picker-option .o-name { color: var(--text1); flex: 1; }
+  .picker-option .o-code {
+    font-family: monospace; font-size: 11px;
+    background: var(--bg-gray);
+    padding: 1px 5px; border-radius: 3px;
+    color: var(--text2);
+  }
+  .picker-option .o-conf {
+    font-family: monospace; font-size: 10px;
+    color: var(--success);
+  }
+  .picker-divider {
+    border-top: 1px solid var(--border-light);
+    margin: 4px 0;
+  }
+  .picker-create {
+    padding: 8px 10px;
+    color: var(--primary);
+    font-size: 12.5px;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  .picker-create:hover { background: var(--primary-soft); }
+
+  /* footer */
+  .footer-bar {
+    background: #fff; border: 1px solid var(--border-light);
+    border-radius: 8px; padding: 16px 20px;
+    display: flex; align-items: center; gap: 14px;
+    position: sticky; bottom: 16px;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.04);
+  }
+  .footer-bar .summary { color: var(--text2); font-size: 13px; }
+  .footer-bar .summary b { color: var(--text1); font-size: 16px; }
+  .footer-bar .summary .badge {
+    margin-left: 8px; display: inline-block;
+    padding: 1px 8px;
+    background: var(--warning-soft); color: var(--warning);
+    border-radius: 4px; font-size: 11px;
+  }
+  .footer-bar .bulk { margin-left: auto; color: var(--text3); font-size: 12px; }
+  .footer-bar .bulk a {
+    color: var(--primary); text-decoration: none;
+    cursor: pointer; margin-left: 8px;
+  }
+  .btn {
+    padding: 12px 20px; border-radius: 6px; border: none;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: #0958d9; }
+  .btn-secondary {
+    background: #fff; color: var(--text2);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { color: var(--danger); border-color: var(--danger); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sider">
+    <div class="logo">打印排班</div>
+    <nav class="menu">
+      <div class="menu-item"><span class="ico">▣</span>仪表盘</div>
+      <div class="menu-item"><span class="ico">▣</span>产品目录</div>
+      <div class="menu-item"><span class="ico">▣</span>产品录入</div>
+      <div class="menu-item active"><span class="ico">▣</span>订单管理</div>
+      <div class="menu-item"><span class="ico">▣</span>库存管理</div>
+      <div class="menu-item"><span class="ico">▣</span>排班中心</div>
+      <div class="menu-item"><span class="ico">▣</span>系统设置</div>
+    </nav>
+    <div class="version">v0.4.0</div>
+  </aside>
+
+  <main class="content">
+    <div class="crumb">
+      <a href="#">订单管理</a> · <a href="#">自动导入</a> · 预览批次 <span class="mono">#a3f7c2</span>
+    </div>
+    <div class="page-title">
+      <h1>预览导入 — 50 单</h1>
+      <span class="source-meta">
+        <span class="tag">小红书千帆</span>
+        2026-06-18 18:07 扫描 · 解析 6.2s
+      </span>
+    </div>
+    <div class="page-subtitle">
+      点 SKU 框可换品 · 点件数可改数量 · 一单可有多商品 · 重复单和未匹配单默认不勾选。
+    </div>
+
+    <div class="chips">
+      <div class="chip active"><span>全部</span><span class="num">50</span></div>
+      <div class="chip chip-new"><span>● 新单</span><span class="num">38</span></div>
+      <div class="chip chip-dup"><span>○ 重复</span><span class="num">8</span></div>
+      <div class="chip chip-fix"><span>! 未匹配</span><span class="num">4</span></div>
+      <div class="meta-strip">
+        平均置信度 <span class="mono">0.87</span> · 最低 <span class="mono">0.32</span>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <table class="preview">
+        <thead>
+          <tr>
+            <th style="width: 40px"><span class="check checked">✓</span></th>
+            <th style="width: 72px">平台</th>
+            <th style="width: 140px">外部订单号</th>
+            <th style="width: 160px">买家 / 下单</th>
+            <th>商品（点 SKU 框可换品 · 件数可改）</th>
+          </tr>
+        </thead>
+        <tbody>
+
+          <tr>
+            <td><span class="check checked">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td><span class="order-id">XHS-2026-001245</span></td>
+            <td class="buyer">
+              <div class="nick">@小张同学</div>
+              <div class="time">2026-06-18 18:03</div>
+            </td>
+            <td class="product-cell">
+              <div class="raw-title"><span class="quotes">"</span>复古实木床头柜白色款 包邮<span class="quotes">"</span></div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon high">✓</span>
+                    <span class="sku-name">床头柜-白色</span>
+                    <span class="sku-code">PR-0016</span>
+                    <span class="conf-tiny">0.95</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="1" min="1">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <a class="add-sku-link">+ 添加商品</a>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="check checked">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td><span class="order-id">XHS-2026-001246</span></td>
+            <td class="buyer">
+              <div class="nick">@米雪儿</div>
+              <div class="time">2026-06-18 18:01</div>
+            </td>
+            <td class="product-cell">
+              <div class="raw-title"><span class="quotes">"</span>三层收纳柜 蓝白配色 大容量<span class="quotes">"</span></div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon high">✓</span>
+                    <span class="sku-name">三层收纳柜蓝白</span>
+                    <span class="sku-code">PR-0020</span>
+                    <span class="conf-tiny">0.93</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="2" min="1">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <a class="add-sku-link">+ 添加商品</a>
+              </div>
+            </td>
+          </tr>
+
+          <tr class="fix-mid">
+            <td><span class="check checked">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td><span class="order-id">XHS-2026-001247</span></td>
+            <td class="buyer">
+              <div class="nick">@黎明的曙光</div>
+              <div class="time">2026-06-18 17:58</div>
+            </td>
+            <td class="product-cell" style="position: relative;">
+              <div class="raw-title"><span class="quotes">"</span>床头柜 白色 简约风<span class="quotes">"</span></div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker" style="border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-soft);">
+                    <span class="conf-icon mid">?</span>
+                    <span class="sku-name">床头柜-白色</span>
+                    <span class="sku-code">PR-0016</span>
+                    <span class="conf-tiny">0.72</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="1" min="1">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <a class="add-sku-link">+ 添加商品</a>
+              </div>
+
+              <!-- 示意：picker 展开 -->
+              <div class="picker-popover" style="top: 64px; left: 24px;">
+                <div class="picker-search">
+                  <span class="ico">🔍</span>
+                  <input value="床头柜" />
+                </div>
+                <div class="picker-options">
+                  <div class="picker-option current">
+                    <span class="o-name">床头柜-白色 (当前)</span>
+                    <span class="o-conf">0.72</span>
+                    <span class="o-code">PR-0016</span>
+                  </div>
+                  <div class="picker-option">
+                    <span class="o-name">床头柜-棕色</span>
+                    <span class="o-code">PR-0017</span>
+                  </div>
+                  <div class="picker-option">
+                    <span class="o-name">床头柜-灰色</span>
+                    <span class="o-code">PR-0018</span>
+                  </div>
+                  <div class="picker-option">
+                    <span class="o-name">小床头柜-纯白</span>
+                    <span class="o-code">PR-0019</span>
+                  </div>
+                </div>
+                <div class="picker-divider"></div>
+                <div class="picker-create">+ 跳过此单（不导入）</div>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="check checked">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td><span class="order-id">XHS-2026-001248</span></td>
+            <td class="buyer">
+              <div class="nick">@momo</div>
+              <div class="time">2026-06-18 17:55</div>
+            </td>
+            <td class="product-cell">
+              <div class="raw-title">
+                <span class="quotes">"</span>套餐：百叶窗 + 草莓挂钩<span class="quotes">"</span>
+                <span class="multi-flag">2 件商品</span>
+              </div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon high">✓</span>
+                    <span class="sku-name">百叶窗-白色</span>
+                    <span class="sku-code">PR-0012</span>
+                    <span class="conf-tiny">0.91</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="3" min="1">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon high">✓</span>
+                    <span class="sku-name">草莓挂钩-单颗</span>
+                    <span class="sku-code">PR-0022</span>
+                    <span class="conf-tiny">0.89</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="2" min="1">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <a class="add-sku-link">+ 添加商品</a>
+              </div>
+            </td>
+          </tr>
+
+          <tr class="fix-low">
+            <td><span class="check disabled">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td><span class="order-id">XHS-2026-001249</span></td>
+            <td class="buyer">
+              <div class="nick">@MichelleW</div>
+              <div class="time">2026-06-18 17:52</div>
+            </td>
+            <td class="product-cell">
+              <div class="raw-title"><span class="quotes">"</span>这个网红家具我想买一下<span class="quotes">"</span></div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker" style="border-color: var(--danger);">
+                    <span class="conf-icon low">!</span>
+                    <span class="sku-name missing">未匹配 — 点此选 SKU</span>
+                    <span class="conf-tiny">0.32</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="1" min="1" disabled style="background: var(--bg-gray); color: var(--text3); cursor: not-allowed;">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <a class="add-sku-link">+ 添加商品</a>
+              </div>
+            </td>
+          </tr>
+
+          <tr class="dup">
+            <td><span class="check disabled">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td>
+              <div class="order-id">XHS-2026-001250</div>
+              <span class="dup-tag">重复</span>
+              <div class="dup-info">
+                于 06-17 已导入 · order #87
+                <a href="#">改判为新单 →</a>
+              </div>
+            </td>
+            <td class="buyer">
+              <div class="nick">@hello</div>
+              <div class="time">2026-06-18 17:48</div>
+            </td>
+            <td class="product-cell">
+              <div class="raw-title">床头柜-白色款</div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon high" style="background: var(--text4);">✓</span>
+                    <span class="sku-name">床头柜-白色</span>
+                    <span class="sku-code">PR-0016</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="1" disabled>
+                </div>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="check checked">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td><span class="order-id">XHS-2026-001251</span></td>
+            <td class="buyer">
+              <div class="nick">@阳光女孩</div>
+              <div class="time">2026-06-18 17:42</div>
+            </td>
+            <td class="product-cell">
+              <div class="raw-title"><span class="quotes">"</span>JK制服鞋 白色 38码<span class="quotes">"</span></div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon high">✓</span>
+                    <span class="sku-name">JK制服鞋-配色1-白色</span>
+                    <span class="sku-code">PR-0005</span>
+                    <span class="conf-tiny">0.96</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="1" min="1">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <a class="add-sku-link">+ 添加商品</a>
+              </div>
+            </td>
+          </tr>
+
+          <tr class="fix-mid">
+            <td><span class="check checked">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td><span class="order-id">XHS-2026-001252</span></td>
+            <td class="buyer">
+              <div class="nick">@飞鸟</div>
+              <div class="time">2026-06-18 17:38</div>
+            </td>
+            <td class="product-cell">
+              <div class="raw-title"><span class="quotes">"</span>挂钩 草莓 拍单<span class="quotes">"</span></div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon mid">?</span>
+                    <span class="sku-name">草莓挂钩-单颗</span>
+                    <span class="sku-code">PR-0022</span>
+                    <span class="conf-tiny">0.68</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="4" min="1">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <a class="add-sku-link">+ 添加商品</a>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="check checked">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td><span class="order-id">XHS-2026-001253</span></td>
+            <td class="buyer">
+              <div class="nick">@小雨点</div>
+              <div class="time">2026-06-18 17:31</div>
+            </td>
+            <td class="product-cell">
+              <div class="raw-title"><span class="quotes">"</span>芭蕾风女鞋 粉色<span class="quotes">"</span></div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon high">✓</span>
+                    <span class="sku-name">芭蕾风鞋子-配色2-粉色</span>
+                    <span class="sku-code">PR-0008</span>
+                    <span class="conf-tiny">0.94</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="1" min="1">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <a class="add-sku-link">+ 添加商品</a>
+              </div>
+            </td>
+          </tr>
+
+          <tr class="dup">
+            <td><span class="check disabled">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td>
+              <div class="order-id">XHS-2026-001254</div>
+              <span class="dup-tag">重复</span>
+              <div class="dup-info">
+                于 06-17 已导入 · order #92
+                <a href="#">改判为新单 →</a>
+              </div>
+            </td>
+            <td class="buyer">
+              <div class="nick">@嘟嘟</div>
+              <div class="time">2026-06-18 17:25</div>
+            </td>
+            <td class="product-cell">
+              <div class="raw-title">书立-白色</div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon high" style="background: var(--text4);">✓</span>
+                    <span class="sku-name">书立-白色</span>
+                    <span class="sku-code">PR-0024</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="2" disabled>
+                </div>
+              </div>
+            </td>
+          </tr>
+
+          <tr class="fix-mid">
+            <td><span class="check checked">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td><span class="order-id">XHS-2026-001255</span></td>
+            <td class="buyer">
+              <div class="nick">@刘小姐</div>
+              <div class="time">2026-06-18 17:18</div>
+            </td>
+            <td class="product-cell">
+              <div class="raw-title">
+                <span class="quotes">"</span>转角书桌+床头柜 套购<span class="quotes">"</span>
+                <span class="multi-flag">2 件商品</span>
+              </div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon high">✓</span>
+                    <span class="sku-name">转角书桌-配色1-纯白</span>
+                    <span class="sku-code">PR-0001</span>
+                    <span class="conf-tiny">0.97</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="1" min="1">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon mid">?</span>
+                    <span class="sku-name">床头柜-白色</span>
+                    <span class="sku-code">PR-0016</span>
+                    <span class="conf-tiny">0.69</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="1" min="1">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <a class="add-sku-link">+ 添加商品</a>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td><span class="check checked">✓</span></td>
+            <td><span class="platform-tag tag-xhs">小红书</span></td>
+            <td><span class="order-id">XHS-2026-001256</span></td>
+            <td class="buyer">
+              <div class="nick">@猫宁</div>
+              <div class="time">2026-06-18 17:12</div>
+            </td>
+            <td class="product-cell">
+              <div class="raw-title"><span class="quotes">"</span>浴室置物架 白色<span class="quotes">"</span></div>
+              <div class="sku-list">
+                <div class="sku-line">
+                  <span class="bullet">·</span>
+                  <span class="sku-picker">
+                    <span class="conf-icon high">✓</span>
+                    <span class="sku-name">浴室置物架-白色</span>
+                    <span class="sku-code">PR-0023</span>
+                    <span class="conf-tiny">0.95</span>
+                  </span>
+                  <span class="qty-sep">×</span>
+                  <input class="qty-input" type="number" value="1" min="1">
+                  <span class="sku-del" title="删除此商品">✕</span>
+                </div>
+                <a class="add-sku-link">+ 添加商品</a>
+              </div>
+            </td>
+          </tr>
+
+        </tbody>
+      </table>
+    </div>
+
+    <div class="footer-bar">
+      <div class="summary">
+        将导入 <b>38</b> 单 · 共 <b>52</b> 件商品
+        <span class="badge">已勾选 / 共 50</span>
+      </div>
+      <span class="bulk">
+        <a>全选新单</a><a>全不选</a><a>反选</a>
+      </span>
+      <button class="btn btn-secondary">取消，丢弃本批</button>
+      <button class="btn btn-primary">导入勾选的 38 单</button>
+    </div>
+
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CUJ-4 自动导入 — 初次配置</title>
+<style>
+  :root {
+    --primary: #1677ff;
+    --primary-soft: #e6f4ff;
+    --xhs-red: #ff2442;
+    --xhs-red-soft: #fff1f3;
+    --xy-orange: #ff7a00;
+    --xy-orange-soft: #fff5e6;
+    --success: #52c41a;
+    --success-soft: #f6ffed;
+    --warning: #faad14;
+    --danger: #ff4d4f;
+    --text1: rgba(0,0,0,0.88);
+    --text2: rgba(0,0,0,0.65);
+    --text3: rgba(0,0,0,0.45);
+    --text4: rgba(0,0,0,0.25);
+    --border: #e8e8e8;
+    --border-light: #f0f0f0;
+    --bg-gray: #fafafa;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; color: var(--text1); font-size: 14px; }
+  .layout { display: flex; min-height: 100vh; }
+  .sider { width: 200px; background: #001529; color: #fff; flex-shrink: 0; display: flex; flex-direction: column; }
+  .logo { height: 56px; line-height: 56px; text-align: center; font-weight: 600; font-size: 18px; }
+  .menu { flex: 1; padding-top: 4px; }
+  .menu-item { height: 40px; line-height: 40px; padding: 0 24px; color: rgba(255,255,255,0.65); display: flex; align-items: center; gap: 10px; }
+  .menu-item.active { background: var(--primary); color: #fff; }
+  .menu-item .ico { width: 14px; opacity: 0.7; }
+  .version { text-align: center; padding: 8px 0; font-size: 11px; color: rgba(255,255,255,0.45); font-family: monospace; border-top: 1px solid rgba(255,255,255,0.08); }
+  .content { flex: 1; padding: 24px 32px; max-width: 1280px; }
+  .crumb { color: var(--text3); font-size: 13px; margin-bottom: 6px; }
+  .crumb a { color: var(--text3); text-decoration: none; }
+  .page-title { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+  .page-subtitle { color: var(--text2); font-size: 13px; margin-bottom: 24px; }
+
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: #fff;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 24px;
+  }
+  .card-head {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 16px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .card-head .platform-logo {
+    width: 36px; height: 36px; border-radius: 6px;
+    color: #fff; font-weight: 700; font-size: 14px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .logo-xhs { background: var(--xhs-red); }
+  .logo-xy { background: var(--xy-orange); }
+  .card-head .title {
+    font-size: 16px; font-weight: 600;
+  }
+  .card-head .sub {
+    font-size: 12px; color: var(--text3); margin-top: 1px;
+  }
+  .card-head .status {
+    margin-left: auto;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 100px;
+    background: var(--bg-gray); color: var(--text3);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .card-head .status.ok { background: var(--success-soft); color: var(--success); }
+  .card-head .status .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text4);
+  }
+  .card-head .status.ok .dot { background: var(--success); }
+
+  /* sections within card */
+  .section {
+    margin-bottom: 18px;
+  }
+  .section-label {
+    font-size: 12px;
+    color: var(--text3);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+  .field label {
+    font-size: 12.5px;
+    color: var(--text2);
+  }
+  .field .input {
+    background: var(--bg-gray);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-family: monospace;
+    color: var(--text1);
+  }
+  .field .input.placeholder { color: var(--text4); }
+  .field .input.select {
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .field .input.select::after {
+    content: '▾'; color: var(--text3);
+  }
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 120px;
+    gap: 10px;
+  }
+  .field-hint {
+    font-size: 11px;
+    color: var(--text3);
+    margin-top: 4px;
+  }
+  .field-hint code {
+    font-family: monospace;
+    background: var(--bg-gray);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--text2);
+  }
+
+  /* setup steps inside card */
+  .steps-list {
+    background: var(--primary-soft);
+    border: 1px solid #91caff;
+    border-radius: 6px;
+    padding: 14px 18px;
+    font-size: 12.5px;
+    color: var(--text2);
+    line-height: 1.7;
+    margin-bottom: 16px;
+  }
+  .steps-list ol { margin: 0; padding-left: 16px; }
+  .steps-list li { margin-bottom: 4px; }
+  .steps-list li:last-child { margin-bottom: 0; }
+  .steps-list code {
+    font-family: monospace;
+    background: #fff;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+
+  /* action buttons */
+  .actions { display: flex; gap: 8px; }
+  .btn {
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    flex: 1;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-xhs { background: var(--xhs-red); color: #fff; }
+  .btn-xy { background: var(--xy-orange); color: #fff; }
+  .btn-secondary {
+    background: #fff; color: var(--text2);
+    border: 1px solid var(--border);
+  }
+
+  /* notice card 一次性顶部 */
+  .notice {
+    background: #fff;
+    border-left: 4px solid var(--primary);
+    border-radius: 0 6px 6px 0;
+    padding: 14px 18px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    color: var(--text2);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .notice .ico {
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--primary); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px;
+    flex-shrink: 0;
+  }
+  .notice b { color: var(--text1); }
+
+  /* shared LLM section */
+  .llm-card {
+    background: #fff;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 20px 24px;
+  }
+  .llm-card h2 {
+    margin: 0 0 12px;
+    font-size: 14px; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .llm-card h2 a {
+    color: var(--primary);
+    font-size: 13px; font-weight: normal; text-decoration: none;
+  }
+  .llm-meta { font-size: 13px; color: var(--text2); }
+  .llm-meta .mono {
+    font-family: monospace; font-size: 11px;
+    background: var(--bg-gray); padding: 1px 6px; border-radius: 3px;
+    color: var(--text2); margin-left: 4px;
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sider">
+    <div class="logo">打印排班</div>
+    <nav class="menu">
+      <div class="menu-item"><span class="ico">▣</span>仪表盘</div>
+      <div class="menu-item"><span class="ico">▣</span>产品目录</div>
+      <div class="menu-item"><span class="ico">▣</span>产品录入</div>
+      <div class="menu-item"><span class="ico">▣</span>订单管理</div>
+      <div class="menu-item"><span class="ico">▣</span>库存管理</div>
+      <div class="menu-item"><span class="ico">▣</span>排班中心</div>
+      <div class="menu-item active"><span class="ico">▣</span>系统设置</div>
+    </nav>
+    <div class="version">v0.4.0</div>
+  </aside>
+
+  <main class="content">
+    <div class="crumb">
+      <a href="#">系统设置</a> · 自动导入
+    </div>
+    <h1 class="page-title">自动导入配置</h1>
+    <div class="page-subtitle">
+      一次性配置两个平台 · 之后每天 18:00 在「订单管理 → 自动导入」点按钮即可。
+    </div>
+
+    <div class="notice">
+      <span class="ico">i</span>
+      <span>
+        <b>隐私说明：</b>
+        所有数据流均本地（你 PC ↔ mini）。Chrome 扩展不上传，ADB 截屏不出局域网，LLM 解析仅传商品标题用于 SKU 匹配。
+      </span>
+    </div>
+
+    <div class="cards">
+
+      <!-- 小红书千帆配置 -->
+      <div class="card">
+        <div class="card-head">
+          <div class="platform-logo logo-xhs">小</div>
+          <div>
+            <div class="title">小红书千帆</div>
+            <div class="sub">Chrome 扩展 · 直读 DOM</div>
+          </div>
+          <span class="status ok">
+            <span class="dot"></span>
+            已配置
+          </span>
+        </div>
+
+        <div class="section">
+          <div class="section-label">安装步骤（一次性）</div>
+          <div class="steps-list">
+            <ol>
+              <li>点下方「下载扩展 zip」按钮，解压到本地（如 <code>~/Downloads/infill-xhs-ext/</code>）</li>
+              <li>Chrome 地址栏输入 <code>chrome://extensions/</code></li>
+              <li>右上角打开「开发者模式」开关</li>
+              <li>点「加载已解压扩展程序」，选刚解压的文件夹</li>
+              <li>看扩展状态变绿 ✓</li>
+            </ol>
+          </div>
+          <div class="actions">
+            <button class="btn btn-xhs">下载扩展 zip (12 KB)</button>
+            <button class="btn btn-secondary">测一下</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-label">扩展状态</div>
+          <div class="field">
+            <label>版本</label>
+            <div class="input">v0.4.0 (latest)</div>
+          </div>
+          <div class="field">
+            <label>千帆订单页 URL（自动检测，无需改）</label>
+            <div class="input">https://qfh.xiaohongshu.com/seller/order</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 闲鱼 ADB 配置 -->
+      <div class="card">
+        <div class="card-head">
+          <div class="platform-logo logo-xy">闲</div>
+          <div>
+            <div class="title">闲鱼</div>
+            <div class="sub">Android 设备 · ADB 截屏 · LLM OCR</div>
+          </div>
+          <span class="status ok">
+            <span class="dot"></span>
+            已连接
+          </span>
+        </div>
+
+        <div class="section">
+          <div class="section-label">设备 ADB 端点</div>
+
+          <div class="field">
+            <label>设备类型</label>
+            <div class="input select">
+              <span>MuMu 模拟器</span>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label>PC 内网 IP</label>
+              <div class="input">192.168.31.45</div>
+            </div>
+            <div class="field">
+              <label>ADB 端口</label>
+              <div class="input">7555</div>
+            </div>
+          </div>
+          <div class="field-hint">
+            常用端口：MuMu 默认 <code>7555</code> · 蓝叠 <code>5555</code> · 雷电 <code>5555</code> · USB 真机 <code>5037</code>
+          </div>
+
+          <div class="actions" style="margin-top: 12px;">
+            <button class="btn btn-xy">测试连接</button>
+            <button class="btn btn-secondary">查看连通诊断</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-label">设置一次性指引</div>
+          <div class="steps-list">
+            <ol>
+              <li>PC 上启动 MuMu 模拟器</li>
+              <li>多开窗口右上角「设置」→ 启用「USB 调试 / ADB」</li>
+              <li>核对端口号（一般 7555，可在 MuMu 设置里看到）</li>
+              <li>填进上面的「PC 内网 IP」+「端口」</li>
+              <li>点「测试连接」验证</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 共用 LLM 配置（已存在的设置） -->
+    <div class="llm-card">
+      <h2>
+        LLM 供应商（共享 v0.3 的 intake 配置）
+        <a href="#">前往 LLM 配置 →</a>
+      </h2>
+      <div class="llm-meta">
+        当前激活：<b>Qwen3-Omni-Flash</b>
+        <span class="mono">qwen3-omni-flash · qwen.dashscope.api · sk-ws-H...</span>
+      </div>
+      <div class="llm-meta" style="margin-top: 6px; color: var(--text3);">
+        闲鱼截屏 OCR + 商品名 → SKU 匹配都用这家 · 50 单/天约消耗 ¥0.3
+      </div>
+    </div>
+
+  </main>
+</div>
+</body>
+</html>

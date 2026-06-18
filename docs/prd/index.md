@@ -11,8 +11,8 @@
 ## 范围边界
 
 - **核心**：产品目录（catalog.yaml 单一数据源）、订单队列、组件库存、排班生成（三种策略）、系统配置
-- **规划中**：甘特图视图、排班手动调整、Dashboard 深化
-- **明确不做**：云端多用户、打印机实时监控、电商平台对接
+- **规划中**：甘特图视图、排班手动调整、Dashboard 深化、自动导入订单（小红书千帆 Chrome 扩展 + 闲鱼 ADB 截屏）
+- **明确不做**：云端多用户、打印机实时监控
 
 ## PRD 列表
 
@@ -24,6 +24,7 @@
 | [prd-003-schedule](prd-003-schedule.md) | 打印机排班（生成排班·三策略+同步强度+富余+产品过滤 / 列表与甘特图视图 / 批次执行状态流转 / 草稿手动编辑 / 收菜闹钟） | active |
 | [prd-004-settings](prd-004-settings.md) | 系统配置（打印机管理·批量增删 / 操作时间窗口按星期几多时段 / 换版时间 / 数据库重置） | active |
 | [prd-005-intake](prd-005-intake.md) | 产品录入（从切片截图识别 BOM + 打印盘 + 颜色变体 / 合并入 catalog.yaml） | completed |
+| [prd-006-auto-import-orders](prd-006-auto-import-orders.md) | 自动导入订单（小红书千帆 Chrome 扩展 + 闲鱼 ADB 截屏 / LLM 匹配 catalog SKU / 预览校对去重导入） | active |
 
 ## 参考文档（Reference docs）
 

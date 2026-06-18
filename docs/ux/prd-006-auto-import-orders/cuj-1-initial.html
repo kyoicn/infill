@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CUJ-1 订单导入 — 小红书 Tab（就绪态）</title>
+<style>
+  :root {
+    --primary: #1677ff;
+    --primary-soft: #e6f4ff;
+    --xhs-red: #ff2442;
+    --xhs-red-soft: #fff1f3;
+    --xy-orange: #ff7a00;
+    --xy-orange-soft: #fff5e6;
+    --success: #52c41a;
+    --warning: #faad14;
+    --danger: #ff4d4f;
+    --text1: rgba(0,0,0,0.88);
+    --text2: rgba(0,0,0,0.65);
+    --text3: rgba(0,0,0,0.45);
+    --text4: rgba(0,0,0,0.25);
+    --border: #e8e8e8;
+    --border-light: #f0f0f0;
+    --bg-gray: #fafafa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f5f5;
+    color: var(--text1);
+    font-size: 14px;
+  }
+  .layout { display: flex; min-height: 100vh; }
+  .sider {
+    width: 200px; background: #001529; color: #fff; flex-shrink: 0;
+    display: flex; flex-direction: column;
+  }
+  .logo { height: 56px; line-height: 56px; text-align: center; font-weight: 600; font-size: 18px; }
+  .menu { flex: 1; padding-top: 4px; }
+  .menu-item {
+    height: 40px; line-height: 40px; padding: 0 24px;
+    color: rgba(255,255,255,0.65); display: flex; align-items: center; gap: 10px;
+  }
+  .menu-item.active { background: var(--primary); color: #fff; }
+  .menu-item .ico { width: 14px; opacity: 0.7; }
+  .version {
+    text-align: center; padding: 8px 0; font-size: 11px;
+    color: rgba(255,255,255,0.45); font-family: monospace;
+    border-top: 1px solid rgba(255,255,255,0.08);
+  }
+
+  .content { flex: 1; padding: 24px 32px; max-width: 1280px; }
+  .crumb { color: var(--text3); font-size: 13px; margin-bottom: 6px; }
+  .page-title { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+  .page-subtitle { color: var(--text2); font-size: 13px; margin-bottom: 20px; }
+  .page-subtitle a { color: var(--primary); text-decoration: none; }
+
+  /* tabs */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--border-light);
+    margin-bottom: 0;
+  }
+  .tab {
+    padding: 12px 24px;
+    cursor: pointer;
+    color: var(--text2);
+    font-size: 15px;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab:hover { color: var(--text1); }
+  .tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+  }
+  .tab .platform-icon {
+    width: 22px; height: 22px; border-radius: 4px;
+    color: #fff; font-weight: 700; font-size: 11px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .icon-xhs { background: var(--xhs-red); }
+  .icon-xy { background: var(--xy-orange); }
+  .tab .status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+  }
+  .dot-ready { background: var(--success); }
+  .dot-warn { background: var(--warning); }
+  .dot-err { background: var(--danger); }
+  .dot-gray { background: var(--text4); }
+  .tab-status-label {
+    font-size: 11px;
+    color: var(--text3);
+    font-weight: normal;
+  }
+
+  /* tab content card */
+  .tab-panel {
+    background: #fff;
+    border: 1px solid var(--border-light);
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 32px;
+    margin-bottom: 24px;
+  }
+  .panel-intro {
+    color: var(--text2);
+    font-size: 13px;
+    margin-bottom: 24px;
+    text-align: center;
+  }
+  .panel-intro b { color: var(--text1); }
+
+  /* hero zone — meta + button */
+  .hero {
+    max-width: 560px;
+    margin: 0 auto;
+  }
+
+  .checks {
+    background: var(--bg-gray);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+  }
+  .check-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    font-size: 13px;
+  }
+  .check-line .check-ico {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--success);
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .check-line .check-label {
+    color: var(--text2);
+    min-width: 100px;
+  }
+  .check-line .check-value {
+    color: var(--text1);
+  }
+  .check-line .check-value .mono {
+    font-family: monospace; font-size: 11px;
+    background: #fff; padding: 1px 6px; border-radius: 3px;
+    color: var(--text2); border: 1px solid var(--border-light);
+  }
+  .check-line .check-value.dim { color: var(--text3); }
+
+  .big-btn {
+    background: var(--xhs-red);
+    color: #fff;
+    border: none;
+    padding: 18px 32px;
+    border-radius: 10px;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    transition: background 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .big-btn:hover { background: #e0182f; }
+  .big-btn .arrow { font-size: 22px; }
+  .big-btn-hint {
+    text-align: center;
+    color: var(--text3);
+    font-size: 12px;
+    margin-top: 10px;
+  }
+  .big-btn-hint a { color: var(--primary); text-decoration: none; }
+
+  /* history panel — 共用 */
+  .panel {
+    background: #fff;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 20px 24px;
+  }
+  .panel h2 {
+    margin: 0 0 12px;
+    font-size: 15px; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .panel h2 a {
+    color: var(--primary);
+    font-size: 13px; font-weight: normal;
+    text-decoration: none;
+  }
+  .panel-sub {
+    color: var(--text3);
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .table th, .table td {
+    padding: 8px 0;
+    text-align: left;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .table th {
+    color: var(--text3);
+    font-weight: normal;
+    font-size: 12px;
+  }
+  .table td.mono { font-family: monospace; font-size: 12px; color: var(--text2); }
+  .table tr:last-child td { border-bottom: none; }
+  .tag {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .tag-xhs { background: var(--xhs-red-soft); color: var(--xhs-red); }
+  .tag-xy { background: var(--xy-orange-soft); color: var(--xy-orange); }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <aside class="sider">
+    <div class="logo">打印排班</div>
+    <nav class="menu">
+      <div class="menu-item"><span class="ico">▣</span>仪表盘</div>
+      <div class="menu-item"><span class="ico">▣</span>产品目录</div>
+      <div class="menu-item"><span class="ico">▣</span>产品录入</div>
+      <div class="menu-item active"><span class="ico">▣</span>订单管理</div>
+      <div class="menu-item"><span class="ico">▣</span>库存管理</div>
+      <div class="menu-item"><span class="ico">▣</span>排班中心</div>
+      <div class="menu-item"><span class="ico">▣</span>系统设置</div>
+    </nav>
+    <div class="version">v0.4.0</div>
+  </aside>
+
+  <main class="content">
+    <div class="crumb">订单管理 · 自动导入</div>
+    <h1 class="page-title">订单导入</h1>
+    <div class="page-subtitle">
+      从小红书千帆 Chrome 扩展或闲鱼 Android 设备 ADB 截屏导入订单 · 自动匹配 catalog SKU · 预览后入队。
+      需要重新配置？前往 <a href="#">系统设置 → 自动导入</a>。
+    </div>
+
+    <!-- tabs -->
+    <div class="tabs">
+      <div class="tab active">
+        <span class="platform-icon icon-xhs">小</span>
+        小红书千帆
+        <span class="status-dot dot-ready"></span>
+        <span class="tab-status-label">就绪</span>
+      </div>
+      <div class="tab">
+        <span class="platform-icon icon-xy">闲</span>
+        闲鱼
+        <span class="status-dot dot-ready"></span>
+        <span class="tab-status-label">就绪</span>
+      </div>
+    </div>
+
+    <!-- tab panel content (小红书 active) -->
+    <div class="tab-panel">
+      <div class="panel-intro">
+        Chrome 扩展直接读千帆订单页 DOM · <b>无 OCR · 无 LLM</b> · 5~10 秒完成
+      </div>
+
+      <div class="hero">
+        <!-- 状态检查列表 -->
+        <div class="checks">
+          <div class="check-line">
+            <span class="check-ico">✓</span>
+            <span class="check-label">扩展</span>
+            <span class="check-value">已装 <span class="mono">v0.4.0</span></span>
+          </div>
+          <div class="check-line">
+            <span class="check-ico">✓</span>
+            <span class="check-label">千帆 Tab</span>
+            <span class="check-value"><span class="mono">qfh.xiaohongshu.com/seller/order</span></span>
+          </div>
+          <div class="check-line">
+            <span class="check-ico">✓</span>
+            <span class="check-label">上次导入</span>
+            <span class="check-value">昨天 18:07 · 12 单</span>
+          </div>
+        </div>
+
+        <!-- 大动作按钮 -->
+        <button class="big-btn">
+          捕捉千帆订单
+          <span class="arrow">→</span>
+        </button>
+        <div class="big-btn-hint">
+          扫描后自动跳转预览页 · 你可逐单核对再确认导入<br>
+          扩展抓不到？<a href="#">改用文本粘贴 fallback</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 近 7 天导入（两 tab 共用） -->
+    <section class="panel">
+      <h2>
+        近 7 天导入
+        <a href="#">查看全部历史 →</a>
+      </h2>
+      <div class="panel-sub">
+        两平台导入记录混排 · 仅本机
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width: 140px">时间</th>
+            <th style="width: 80px">平台</th>
+            <th style="width: 80px">本次扫描</th>
+            <th style="width: 80px">新单</th>
+            <th style="width: 80px">已跳过</th>
+            <th>耗时 / 备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>06-17 18:11</td>
+            <td><span class="tag tag-xy">闲鱼</span></td>
+            <td class="mono">31</td>
+            <td class="mono"><b>23</b></td>
+            <td class="mono">8</td>
+            <td>解析 26s · 5 张图</td>
+          </tr>
+          <tr>
+            <td>06-17 18:07</td>
+            <td><span class="tag tag-xhs">小红书</span></td>
+            <td class="mono">15</td>
+            <td class="mono"><b>12</b></td>
+            <td class="mono">3</td>
+            <td>解析 6s</td>
+          </tr>
+          <tr>
+            <td>06-16 18:23</td>
+            <td><span class="tag tag-xy">闲鱼</span></td>
+            <td class="mono">29</td>
+            <td class="mono"><b>19</b></td>
+            <td class="mono">10</td>
+            <td>解析 31s · 4 张图</td>
+          </tr>
+          <tr>
+            <td>06-16 18:05</td>
+            <td><span class="tag tag-xhs">小红书</span></td>
+            <td class="mono">17</td>
+            <td class="mono"><b>17</b></td>
+            <td class="mono">0</td>
+            <td>解析 7s</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+</div>
+</body>
+</html>

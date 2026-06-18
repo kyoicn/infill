@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CUJ-3 订单导入 — 导入成功</title>
+<style>
+  :root {
+    --primary: #1677ff;
+    --primary-soft: #e6f4ff;
+    --xhs-red: #ff2442;
+    --xhs-red-soft: #fff1f3;
+    --xy-orange: #ff7a00;
+    --xy-orange-soft: #fff5e6;
+    --success: #52c41a;
+    --success-soft: #f6ffed;
+    --warning: #faad14;
+    --danger: #ff4d4f;
+    --text1: rgba(0,0,0,0.88);
+    --text2: rgba(0,0,0,0.65);
+    --text3: rgba(0,0,0,0.45);
+    --text4: rgba(0,0,0,0.25);
+    --border: #e8e8e8;
+    --border-light: #f0f0f0;
+    --bg-gray: #fafafa;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; color: var(--text1); font-size: 14px; }
+  .layout { display: flex; min-height: 100vh; }
+  .sider { width: 200px; background: #001529; color: #fff; flex-shrink: 0; display: flex; flex-direction: column; }
+  .logo { height: 56px; line-height: 56px; text-align: center; font-weight: 600; font-size: 18px; }
+  .menu { flex: 1; padding-top: 4px; }
+  .menu-item { height: 40px; line-height: 40px; padding: 0 24px; color: rgba(255,255,255,0.65); display: flex; align-items: center; gap: 10px; }
+  .menu-item.active { background: var(--primary); color: #fff; }
+  .menu-item .ico { width: 14px; opacity: 0.7; }
+  .version { text-align: center; padding: 8px 0; font-size: 11px; color: rgba(255,255,255,0.45); font-family: monospace; border-top: 1px solid rgba(255,255,255,0.08); }
+  .content { flex: 1; padding: 24px 32px; max-width: 1280px; }
+  .crumb { color: var(--text3); font-size: 13px; margin-bottom: 6px; }
+  .page-title { font-size: 22px; margin: 0 0 24px; font-weight: 600; }
+
+  .success-hero {
+    background: #fff;
+    border: 1px solid var(--border-light);
+    border-radius: 12px;
+    padding: 48px 32px;
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  .success-icon {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: var(--success-soft);
+    border: 3px solid var(--success);
+    color: var(--success);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px; font-weight: 700;
+    margin: 0 auto 18px;
+  }
+  .success-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text1);
+    margin-bottom: 8px;
+  }
+  .success-subtitle {
+    font-size: 14px;
+    color: var(--text2);
+    margin-bottom: 28px;
+  }
+
+  /* stats grid */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    max-width: 720px;
+    margin: 0 auto 32px;
+  }
+  .stat {
+    background: var(--bg-gray);
+    border-radius: 8px;
+    padding: 18px 16px;
+  }
+  .stat .stat-label {
+    font-size: 12px;
+    color: var(--text3);
+    margin-bottom: 6px;
+  }
+  .stat .stat-value {
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--text1);
+    font-family: monospace;
+    line-height: 1;
+  }
+  .stat.highlight {
+    background: var(--success-soft);
+    border: 1px solid #b7eb8f;
+  }
+  .stat.highlight .stat-value { color: var(--success); }
+
+  /* primary actions */
+  .actions {
+    display: flex; gap: 12px;
+    justify-content: center;
+  }
+  .btn {
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-secondary {
+    background: #fff; color: var(--text2);
+    border: 1px solid var(--border);
+  }
+  .btn-secondary:hover { color: var(--primary); border-color: var(--primary); }
+
+  /* details panel */
+  .details {
+    background: #fff;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 20px 24px;
+  }
+  .details h2 {
+    margin: 0 0 12px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text2);
+  }
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 24px;
+    font-size: 13px;
+  }
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-light);
+  }
+  .detail-row .key { color: var(--text3); }
+  .detail-row .val { color: var(--text1); }
+  .detail-row .val.mono {
+    font-family: monospace;
+    background: var(--bg-gray);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* mini list of imported orders */
+  .imported-list {
+    margin-top: 16px;
+    background: var(--bg-gray);
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 12.5px;
+    color: var(--text2);
+    line-height: 1.7;
+  }
+  .imported-list b { color: var(--text1); }
+  .imported-list .id {
+    font-family: monospace;
+    color: var(--primary);
+    margin-right: 8px;
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sider">
+    <div class="logo">打印排班</div>
+    <nav class="menu">
+      <div class="menu-item"><span class="ico">▣</span>仪表盘</div>
+      <div class="menu-item"><span class="ico">▣</span>产品目录</div>
+      <div class="menu-item"><span class="ico">▣</span>产品录入</div>
+      <div class="menu-item active"><span class="ico">▣</span>订单管理</div>
+      <div class="menu-item"><span class="ico">▣</span>库存管理</div>
+      <div class="menu-item"><span class="ico">▣</span>排班中心</div>
+      <div class="menu-item"><span class="ico">▣</span>系统设置</div>
+    </nav>
+    <div class="version">v0.4.0</div>
+  </aside>
+
+  <main class="content">
+    <div class="crumb">订单管理 · 自动导入 · 完成</div>
+    <h1 class="page-title">导入完成</h1>
+
+    <!-- success hero -->
+    <div class="success-hero">
+      <div class="success-icon">✓</div>
+      <div class="success-title">42 单已入待处理队列</div>
+      <div class="success-subtitle">
+        来自小红书千帆 · 06-18 18:07 批次 <span style="font-family: monospace;">#a3f7c2</span> · 用时 1m 12s
+      </div>
+
+      <div class="stats">
+        <div class="stat highlight">
+          <div class="stat-label">新增订单</div>
+          <div class="stat-value">42</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">跳过重复</div>
+          <div class="stat-value">8</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">手动跳过</div>
+          <div class="stat-value">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">SKU 匹配率</div>
+          <div class="stat-value">100%</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary">前往订单管理 →</button>
+        <button class="btn btn-secondary">继续导入闲鱼</button>
+      </div>
+    </div>
+
+    <!-- details -->
+    <div class="details">
+      <h2>本批详情</h2>
+      <div class="detail-grid">
+        <div class="detail-row">
+          <span class="key">来源平台</span>
+          <span class="val">小红书千帆</span>
+        </div>
+        <div class="detail-row">
+          <span class="key">扫描时间</span>
+          <span class="val">06-18 18:07:12</span>
+        </div>
+        <div class="detail-row">
+          <span class="key">扫描方式</span>
+          <span class="val">Chrome 扩展直读 DOM</span>
+        </div>
+        <div class="detail-row">
+          <span class="key">耗时</span>
+          <span class="val">扫描 6.2s · LLM 匹配 4.3s · 写库 0.7s</span>
+        </div>
+        <div class="detail-row">
+          <span class="key">批次号</span>
+          <span class="val mono">a3f7c2</span>
+        </div>
+        <div class="detail-row">
+          <span class="key">平均置信度</span>
+          <span class="val">0.91 · 最低 0.62（手动改 4 单）</span>
+        </div>
+      </div>
+
+      <div class="imported-list">
+        <b>本次新增的订单 ID（前 5 个）：</b><br>
+        <span class="id">#1247</span>
+        <span class="id">#1248</span>
+        <span class="id">#1249</span>
+        <span class="id">#1250</span>
+        <span class="id">#1251</span>
+        ... <a href="#" style="color: var(--primary); text-decoration: none;">查看全部 42 单 →</a>
+      </div>
+    </div>
+
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>CUJ-2 订单导入 — 闲鱼 Tab 已截 5 张</title>
+<style>
+  :root {
+    --primary: #1677ff;
+    --primary-soft: #e6f4ff;
+    --xhs-red: #ff2442;
+    --xhs-red-soft: #fff1f3;
+    --xy-orange: #ff7a00;
+    --xy-orange-soft: #fff5e6;
+    --success: #52c41a;
+    --warning: #faad14;
+    --danger: #ff4d4f;
+    --text1: rgba(0,0,0,0.88);
+    --text2: rgba(0,0,0,0.65);
+    --text3: rgba(0,0,0,0.45);
+    --text4: rgba(0,0,0,0.25);
+    --border: #e8e8e8;
+    --border-light: #f0f0f0;
+    --bg-gray: #fafafa;
+    --bg-dark: #1e1e1e;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f5f5; color: var(--text1); font-size: 14px; }
+  .layout { display: flex; min-height: 100vh; }
+  .sider { width: 200px; background: #001529; color: #fff; flex-shrink: 0; display: flex; flex-direction: column; }
+  .logo { height: 56px; line-height: 56px; text-align: center; font-weight: 600; font-size: 18px; }
+  .menu { flex: 1; padding-top: 4px; }
+  .menu-item { height: 40px; line-height: 40px; padding: 0 24px; color: rgba(255,255,255,0.65); display: flex; align-items: center; gap: 10px; }
+  .menu-item.active { background: var(--primary); color: #fff; }
+  .menu-item .ico { width: 14px; opacity: 0.7; }
+  .version { text-align: center; padding: 8px 0; font-size: 11px; color: rgba(255,255,255,0.45); font-family: monospace; border-top: 1px solid rgba(255,255,255,0.08); }
+  .content { flex: 1; padding: 24px 32px; max-width: 1480px; }
+  .crumb { color: var(--text3); font-size: 13px; margin-bottom: 6px; }
+  .page-title { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+  .page-subtitle { color: var(--text2); font-size: 13px; margin-bottom: 20px; }
+  .page-subtitle a { color: var(--primary); text-decoration: none; }
+
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-light); }
+  .tab {
+    padding: 12px 24px; cursor: pointer; color: var(--text2);
+    font-size: 15px; font-weight: 500;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .tab.active { color: var(--xy-orange); border-bottom-color: var(--xy-orange); }
+  .tab .platform-icon {
+    width: 22px; height: 22px; border-radius: 4px;
+    color: #fff; font-weight: 700; font-size: 11px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .icon-xhs { background: var(--xhs-red); }
+  .icon-xy { background: var(--xy-orange); }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .dot-ready { background: var(--success); }
+  .tab-status-label { font-size: 11px; color: var(--text3); font-weight: normal; }
+
+  .tab-panel {
+    background: #fff;
+    border: 1px solid var(--border-light); border-top: none;
+    border-radius: 0 0 8px 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .panel-intro {
+    color: var(--text2);
+    font-size: 13px;
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 20px;
+  }
+
+  .control {
+    background: var(--bg-gray);
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 16px;
+    height: fit-content;
+    position: sticky; top: 24px;
+  }
+  .control h3 {
+    margin: 0; font-size: 13px; font-weight: 600; color: var(--text2);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .control h3 .step-num {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--xy-orange); color: #fff;
+    font-size: 11px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .control h3.done .step-num {
+    background: var(--success);
+  }
+
+  .status {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--text2);
+    background: #fff; padding: 4px 10px; border-radius: 100px;
+    width: fit-content;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text4); }
+
+  .meta { font-size: 12px; color: var(--text2); display: flex; flex-direction: column; gap: 4px; }
+  .meta-row { display: flex; gap: 8px; }
+  .meta-key { color: var(--text3); min-width: 64px; }
+  .meta-val { color: var(--text1); }
+  .meta-val .mono {
+    font-family: monospace; font-size: 11px;
+    background: #fff; padding: 1px 5px; border-radius: 3px;
+    color: var(--text2); border: 1px solid var(--border-light);
+  }
+
+  .capture-btn {
+    background: var(--xy-orange); color: #fff; border: none;
+    padding: 22px 16px; border-radius: 10px;
+    font-size: 17px; font-weight: 600; cursor: pointer;
+    text-align: center;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .capture-btn:hover { background: #e26b00; }
+  .capture-btn .icon { font-size: 22px; }
+  .capture-hint {
+    font-size: 11px;
+    color: var(--text3);
+    text-align: center;
+    line-height: 1.6;
+  }
+  .counter {
+    background: #fff;
+    border: 1px solid var(--xy-orange);
+    padding: 12px 14px; border-radius: 6px;
+    text-align: center;
+    color: var(--text2); font-size: 13px;
+  }
+  .counter .num {
+    color: var(--xy-orange); font-weight: 600; font-size: 22px;
+    margin: 0 4px;
+  }
+
+  .footer-action {
+    display: flex; flex-direction: column; gap: 6px;
+    border-top: 1px solid var(--border-light);
+    padding-top: 14px;
+  }
+  .btn {
+    padding: 12px 16px; border-radius: 6px;
+    font-size: 13.5px; font-weight: 500; cursor: pointer;
+    text-align: center; border: none; width: 100%;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: #0958d9; }
+  .btn-primary .big { font-size: 14px; font-weight: 600; }
+  .btn-secondary { background: #fff; color: var(--text2); border: 1px solid var(--border); }
+  .btn-secondary:hover { color: var(--danger); border-color: var(--danger); }
+
+  /* 右队列区 */
+  .queue {
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    padding: 24px;
+    min-height: 500px;
+  }
+  .queue-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .queue-head h3 {
+    margin: 0; font-size: 13px; font-weight: 600; color: var(--text2);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .queue-head h3 .step-num {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--xy-orange); color: #fff;
+    font-size: 11px; font-weight: 600;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .queue-head .hint { color: var(--text3); font-size: 12px; }
+  .queue-head .clear {
+    color: var(--danger);
+    font-size: 12px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+
+  .thumbs-wrap {
+    max-height: 600px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+  .thumbs-wrap::-webkit-scrollbar { width: 8px; }
+  .thumbs-wrap::-webkit-scrollbar-thumb {
+    background: var(--border); border-radius: 4px;
+  }
+  .thumbs-wrap::-webkit-scrollbar-thumb:hover { background: var(--text4); }
+  .thumbs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+  .thumb {
+    background: var(--bg-dark);
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+    aspect-ratio: 1080 / 1920;
+    border: 2px solid transparent;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    cursor: zoom-in;
+  }
+  .thumb:hover { border-color: var(--xy-orange); }
+  .thumb-content {
+    /* 模拟拓竹截屏内容 — 用渐变 + 更密文字行代替 */
+    width: 100%; height: 100%;
+    background: #fff;
+    color: var(--text2);
+    padding: 12px 10px 10px;
+    font-size: 9px;
+    line-height: 1.4;
+    overflow: hidden;
+  }
+  /* 顶部状态栏 + 标题区 */
+  .thumb-content .statusbar {
+    display: flex; justify-content: space-between;
+    color: var(--text3);
+    font-size: 9px;
+    margin-bottom: 8px;
+    padding: 0 2px;
+  }
+  .thumb-content .header {
+    background: linear-gradient(90deg, #fff8e1, #fff);
+    padding: 8px 6px;
+    border-radius: 4px;
+    margin: 0 -2px 10px;
+    color: var(--xy-orange);
+    font-weight: 600;
+    font-size: 11px;
+  }
+  /* 订单行 */
+  .thumb-content .row {
+    display: flex;
+    gap: 6px;
+    padding: 6px 0;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .thumb-content .img-placeholder {
+    width: 38px; height: 38px;
+    background: linear-gradient(135deg, #f0f0f0, #e0e0e0);
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .thumb-content .lines {
+    flex: 1;
+    display: flex; flex-direction: column; gap: 3px;
+    padding-top: 2px;
+  }
+  .thumb-content .line {
+    height: 5px; border-radius: 1px;
+    background: #d0d0d0;
+  }
+  .thumb-content .line.short { width: 55%; background: #e4e4e4; }
+  .thumb-content .line.med { width: 75%; background: #d0d0d0; }
+  .thumb-content .line.tiny { width: 30%; background: #e8e8e8; }
+  .thumb-content .line.orange { background: #ffd591; width: 40%; }
+  .thumb-num {
+    position: absolute;
+    top: 8px; left: 8px;
+    background: var(--xy-orange);
+    color: #fff;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px;
+    z-index: 2;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+  }
+  .thumb-delete {
+    position: absolute;
+    top: 8px; right: 8px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    font-size: 14px;
+    border: none;
+    z-index: 2;
+  }
+  .thumb-delete:hover { background: var(--danger); }
+
+  .ready-note {
+    margin-top: 16px;
+    background: var(--primary-soft);
+    border: 1px solid #91caff;
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: var(--text2);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .ready-note .info-icon {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--primary); color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 12px;
+    flex-shrink: 0;
+  }
+  .ready-note b { color: var(--text1); }
+
+  /* history panel */
+  .panel { background: #fff; border: 1px solid var(--border-light); border-radius: 8px; padding: 20px 24px; }
+  .panel h2 { margin: 0 0 12px; font-size: 15px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .panel h2 a { color: var(--primary); font-size: 13px; font-weight: normal; text-decoration: none; }
+  .panel-sub { color: var(--text3); font-size: 12px; margin-bottom: 12px; }
+  .table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table th, .table td { padding: 8px 0; text-align: left; border-bottom: 1px solid var(--border-light); }
+  .table th { color: var(--text3); font-weight: normal; font-size: 12px; }
+  .table td.mono { font-family: monospace; font-size: 12px; color: var(--text2); }
+  .table tr:last-child td { border-bottom: none; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .tag-xhs { background: var(--xhs-red-soft); color: var(--xhs-red); }
+  .tag-xy { background: var(--xy-orange-soft); color: var(--xy-orange); }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sider">
+    <div class="logo">打印排班</div>
+    <nav class="menu">
+      <div class="menu-item"><span class="ico">▣</span>仪表盘</div>
+      <div class="menu-item"><span class="ico">▣</span>产品目录</div>
+      <div class="menu-item"><span class="ico">▣</span>产品录入</div>
+      <div class="menu-item active"><span class="ico">▣</span>订单管理</div>
+      <div class="menu-item"><span class="ico">▣</span>库存管理</div>
+      <div class="menu-item"><span class="ico">▣</span>排班中心</div>
+      <div class="menu-item"><span class="ico">▣</span>系统设置</div>
+    </nav>
+    <div class="version">v0.4.0</div>
+  </aside>
+
+  <main class="content">
+    <div class="crumb">订单管理 · 自动导入</div>
+    <h1 class="page-title">订单导入</h1>
+    <div class="page-subtitle">
+      从小红书千帆 Chrome 扩展或闲鱼 Android 设备 ADB 截屏导入订单 · 自动匹配 catalog SKU · 预览后入队。
+    </div>
+
+    <div class="tabs">
+      <div class="tab">
+        <span class="platform-icon icon-xhs">小</span>
+        小红书千帆
+        <span class="status-dot dot-ready"></span>
+        <span class="tab-status-label">就绪</span>
+      </div>
+      <div class="tab active">
+        <span class="platform-icon icon-xy">闲</span>
+        闲鱼
+        <span class="status-dot dot-ready"></span>
+        <span class="tab-status-label">截屏中 · 5 张</span>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <div class="panel-intro">
+        已捕获 5 张截屏 · 看完了就点「解析并导入」让 LLM 提取订单
+      </div>
+
+      <div class="grid">
+        <aside class="control">
+          <h3 class="done"><span class="step-num">✓</span>设备就绪</h3>
+          <div class="status">
+            <span class="dot" style="background: var(--success);"></span>
+            ADB 已连接
+          </div>
+          <div class="meta">
+            <div class="meta-row">
+              <span class="meta-key">设备</span>
+              <span class="meta-val">MuMu 模拟器</span>
+            </div>
+            <div class="meta-row">
+              <span class="meta-key">端点</span>
+              <span class="meta-val mono">192.168.31.45:7555</span>
+            </div>
+          </div>
+
+          <h3 style="margin-top: 8px"><span class="step-num">2</span>继续截屏</h3>
+
+          <button class="capture-btn">
+            <span class="icon">⊕</span>
+            截当前屏
+          </button>
+          <div class="capture-hint">
+            滚动模拟器再点 · 完成截屏后点「解析」
+          </div>
+
+          <div class="counter">
+            已捕获 <span class="num">5</span> 张
+          </div>
+
+          <div class="footer-action">
+            <button class="btn btn-primary"><span class="big">解析并导入 (5 张图)</span></button>
+            <button class="btn btn-secondary">清空全部缩略图</button>
+          </div>
+        </aside>
+
+        <section class="queue">
+          <div class="queue-head">
+            <h3><span class="step-num">3</span>已捕获队列（5 张）</h3>
+            <span class="hint">点缩略图查看大图 · 右上 ✕ 删除单张</span>
+          </div>
+
+          <div class="thumbs-wrap">
+          <div class="thumbs">
+            <div class="thumb">
+              <span class="thumb-num">1</span>
+              <button class="thumb-delete">✕</button>
+              <div class="thumb-content">
+                <div class="statusbar"><span>12:34</span><span>87%</span></div>
+                <div class="header">闲鱼 · 我的订单 · 待发货</div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+              </div>
+            </div>
+            <div class="thumb">
+              <span class="thumb-num">2</span>
+              <button class="thumb-delete">✕</button>
+              <div class="thumb-content">
+                <div class="statusbar"><span>12:34</span><span>87%</span></div>
+                <div class="header">闲鱼 · 我的订单 · 待发货</div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+              </div>
+            </div>
+            <div class="thumb">
+              <span class="thumb-num">3</span>
+              <button class="thumb-delete">✕</button>
+              <div class="thumb-content">
+                <div class="statusbar"><span>12:34</span><span>87%</span></div>
+                <div class="header">闲鱼 · 我的订单 · 待发货</div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+              </div>
+            </div>
+            <div class="thumb">
+              <span class="thumb-num">4</span>
+              <button class="thumb-delete">✕</button>
+              <div class="thumb-content">
+                <div class="statusbar"><span>12:34</span><span>87%</span></div>
+                <div class="header">闲鱼 · 我的订单 · 待发货</div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line med"></div><div class="line tiny"></div><div class="line short"></div><div class="line orange"></div></div></div>
+              </div>
+            </div>
+            <div class="thumb">
+              <span class="thumb-num">5</span>
+              <button class="thumb-delete">✕</button>
+              <div class="thumb-content">
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line"></div><div class="line short"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line"></div><div class="line short"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line"></div><div class="line short"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line"></div><div class="line short"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line"></div><div class="line short"></div></div></div>
+                <div class="row"><div class="img-placeholder"></div><div class="lines"><div class="line"></div><div class="line short"></div></div></div>
+              </div>
+            </div>
+          </div>
+
+          </div>
+
+          <div class="ready-note">
+            <span class="info-icon">i</span>
+            <span>
+              <b>5 张图准备就绪。</b>
+              点左侧「解析并导入」让 LLM 提取订单 — 约 25 秒后跳转预览页。
+              觉得截少了？继续点「截当前屏」补几张。
+            </span>
+          </div>
+        </section>
+      </div>
+    </div>
+
+  </main>
+</div>
+</body>
+</html>
