@@ -130,6 +130,57 @@ def ensure_order_notes_column_exists(engine: Engine) -> bool:
     return True
 
 
+# v0.4 auto-import: orders 表新增 4 列 + (platform, external_order_id) 部分唯一索引
+_ORDER_AUTO_IMPORT_COLUMNS: dict[str, str] = {
+    "platform": "VARCHAR(16)",
+    "external_order_id": "VARCHAR(64)",
+    "buyer_nickname": "VARCHAR(128)",
+    "external_created_at": "DATETIME",
+}
+_ORDER_AUTO_IMPORT_INDEX = "uq_orders_platform_external"
+
+
+def ensure_order_auto_import_schema_exists(engine: Engine) -> bool:
+    """v0.4：确保 orders 表有 auto-import 所需的 4 列 + partial unique index。
+
+    - 缺列：ALTER TABLE 加列（nullable, default NULL）
+    - 缺索引：CREATE UNIQUE INDEX uq_orders_platform_external on (platform, external_order_id)
+      WHERE 两者都非 NULL —— 手动单两字段都 NULL 不参与唯一约束
+    幂等：所有列 + 索引都已存在 → 返回 False；任何一项被创建 → 返回 True。
+    表不存在 → 返回 False（create_all 会建表 + 此函数下次调用时建索引）。
+    """
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    if "orders" not in existing_tables:
+        return False
+
+    changed = False
+    existing_cols = {col["name"] for col in inspector.get_columns("orders")}
+    for col_name, col_type in _ORDER_AUTO_IMPORT_COLUMNS.items():
+        if col_name in existing_cols:
+            continue
+        sql = f"ALTER TABLE orders ADD COLUMN {col_name} {col_type} DEFAULT NULL"
+        with engine.connect() as conn:
+            conn.execute(text(sql))
+            conn.commit()
+        changed = True
+
+    # 检查 partial unique index 是否存在
+    existing_indexes = {idx["name"] for idx in inspector.get_indexes("orders")}
+    if _ORDER_AUTO_IMPORT_INDEX not in existing_indexes:
+        sql = (
+            f"CREATE UNIQUE INDEX IF NOT EXISTS {_ORDER_AUTO_IMPORT_INDEX} "
+            f"ON orders(platform, external_order_id) "
+            f"WHERE platform IS NOT NULL AND external_order_id IS NOT NULL"
+        )
+        with engine.connect() as conn:
+            conn.execute(text(sql))
+            conn.commit()
+        changed = True
+
+    return changed
+
+
 # ---------- YAML SKU backfill ----------
 
 def _has_skus(data: dict) -> bool:
