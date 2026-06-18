@@ -104,4 +104,216 @@ export const api = {
     migrateToSku: () =>
       request<any>('/catalog/migrate-to-sku', { method: 'POST' }),
   },
+
+  // 自动导入（小红书 + 闲鱼）
+  autoImport: {
+    xhs: {
+      extensionStatus: () =>
+        request<AutoImportExtensionStatus>('/auto-import/xhs/extension-status'),
+      probe: () =>
+        request<{ ok: boolean; has_xhs_tab: boolean }>('/auto-import/xhs/probe', { method: 'POST' }),
+      scan: (payload: { batch_id: string; raw_orders: unknown[] }) =>
+        request<AutoImportScanResponse>('/auto-import/xhs/scan', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
+    },
+    xianyu: {
+      probe: (config: AutoImportAdbConfig) =>
+        request<AutoImportProbeXianyuResponse>('/auto-import/xianyu/probe', {
+          method: 'POST',
+          body: JSON.stringify(config),
+        }),
+      screencap: (payload: { batch_id: string; config: AutoImportAdbConfig }) =>
+        request<AutoImportScreencapResponse>('/auto-import/xianyu/screencap', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }),
+      scanStatus: (batchId: string) =>
+        request<AutoImportScanStatusResponse>(
+          `/auto-import/xianyu/scan-status?batch_id=${encodeURIComponent(batchId)}`,
+        ),
+      finishScan: (batchId: string) =>
+        request<AutoImportScanResponse>('/auto-import/xianyu/finish-scan', {
+          method: 'POST',
+          body: JSON.stringify({ batch_id: batchId }),
+        }),
+      testAdb: (cfg: AutoImportAdbConfig) =>
+        request<AutoImportTestAdbResponse>('/auto-import/xianyu/test-adb', {
+          method: 'POST',
+          body: JSON.stringify(cfg),
+        }),
+      getConfig: () => request<AutoImportAdbConfig>('/auto-import/xianyu/config'),
+      putConfig: (cfg: AutoImportAdbConfig) =>
+        request<{ ok: boolean }>('/auto-import/xianyu/config', {
+          method: 'PUT',
+          body: JSON.stringify(cfg),
+        }),
+    },
+    cancelScan: (batchId: string) =>
+      request<{ ok: boolean }>('/auto-import/cancel-scan', {
+        method: 'POST',
+        body: JSON.stringify({ batch_id: batchId }),
+      }),
+    skuSearch: (q: string, limit = 10) =>
+      request<AutoImportSkuSearchResponse>('/auto-import/sku-search', {
+        method: 'POST',
+        body: JSON.stringify({ q, limit }),
+      }),
+    commit: (payload: { batch_id: string; items: AutoImportCommitItem[] }) =>
+      request<AutoImportCommitResponse>('/auto-import/commit', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+  },
 };
+
+// ============================================================================
+// 自动导入相关类型（auto-import / CUJ-1 小红书 + CUJ-2 闲鱼）
+// ============================================================================
+
+export interface AutoImportAdbConfig {
+  device_type: string;
+  pc_ip: string;
+  port: number;
+}
+
+export interface AutoImportDiagnostic {
+  name: string;
+  label: string;
+  ok: boolean;
+  hint?: string | null;
+  detail?: string;
+}
+
+export interface AutoImportExtensionStatus {
+  ok: boolean;
+  installed: boolean;
+  version?: string | null;
+  last_probe_at?: string | null;
+  error_kind?: string;
+  error?: string;
+}
+
+export interface AutoImportPreviewProduct {
+  listing_title: string;
+  quantity: number;
+  matched_sku_code?: string | null;
+  confidence: number;
+  reasoning: string;
+}
+
+export interface AutoImportPreviewItem {
+  external_order_id: string;
+  buyer_nickname: string;
+  external_created_at?: string | null;
+  is_duplicate: boolean;
+  existing_order_id?: number | null;
+  products: AutoImportPreviewProduct[];
+}
+
+export interface AutoImportDroppedOrder {
+  external_order_id?: string | null;
+  reason: string;
+}
+
+export interface AutoImportScanStats {
+  total: number;
+  dropped_count: number;
+  duplicate_count: number;
+  high_conf: number;
+  mid_conf: number;
+  low_conf: number;
+}
+
+export interface AutoImportScanResponse {
+  ok: boolean;
+  batch_id: string;
+  items: AutoImportPreviewItem[];
+  dropped: AutoImportDroppedOrder[];
+  stats: AutoImportScanStats;
+  error_kind?: string;
+  error?: string;
+}
+
+export interface AutoImportCommitProduct {
+  sku: string;
+  quantity: number;
+}
+
+export interface AutoImportCommitItem {
+  external_order_id: string;
+  buyer_nickname: string;
+  external_created_at?: string | null;
+  platform: string; // "xhs" | "xianyu"
+  override_duplicate?: boolean;
+  products: AutoImportCommitProduct[];
+}
+
+export interface AutoImportCommitStats {
+  新增: number;
+  重复跳过: number;
+  手动跳过: number;
+  SKU匹配率: number;
+}
+
+export interface AutoImportCommitResponse {
+  ok: boolean;
+  stats?: AutoImportCommitStats;
+  created_order_ids?: number[];
+  total_ms?: number;
+  error_kind?: string;
+  error?: string;
+}
+
+export interface AutoImportSkuSearchHit {
+  sku_code: string;
+  sku_name: string;
+  score: number;
+}
+
+export interface AutoImportSkuSearchResponse {
+  ok: boolean;
+  hits: AutoImportSkuSearchHit[];
+  error_kind?: string;
+  error?: string;
+}
+
+export interface AutoImportProbeXianyuResponse {
+  ok: boolean;
+  adb_connected: boolean;
+  device_serial?: string | null;
+  diagnostics: AutoImportDiagnostic[];
+  error_kind?: string;
+  error?: string;
+}
+
+export interface AutoImportTestAdbResponse {
+  ok: boolean;
+  adb_connected?: boolean;
+  device_serial?: string | null;
+  android_version?: string | null;
+  diagnostics: AutoImportDiagnostic[];
+  error_kind?: string;
+  error?: string;
+}
+
+export interface AutoImportScreencapResponse {
+  ok: boolean;
+  screen_id?: string;
+  seq?: number;
+  error_kind?: string;
+  error?: string;
+}
+
+export interface AutoImportScanStatusScreen {
+  seq: number;
+  status: string;
+  error?: string | null;
+}
+
+export interface AutoImportScanStatusResponse {
+  batch_id: string;
+  screens: AutoImportScanStatusScreen[];
+  parsed_orders: unknown[];
+}
