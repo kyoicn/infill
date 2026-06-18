@@ -76,6 +76,13 @@ class Order(Base):
     status = Column(String, default="pending", nullable=False)  # pending / shipped
     shipped_at = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True, default="")  # 备注
+    # v0.4 auto-import：来源平台 + 平台订单号 + 买家昵称 + 平台下单时间
+    # 手动单这 4 字段全为 NULL；自动导入单非空。
+    # (platform, external_order_id) 的 partial unique index 在 ensure_order_auto_import_schema_exists 建。
+    platform = Column(String(16), nullable=True, default=None)
+    external_order_id = Column(String(64), nullable=True, default=None)
+    buyer_nickname = Column(String(128), nullable=True, default=None)
+    external_created_at = Column(DateTime, nullable=True, default=None)
 
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
 

@@ -91,6 +91,11 @@ class OrderOut(BaseModel):
     status: str
     shipped_at: datetime | None = None
     notes: Optional[str] = ""
+    # v0.4 auto-import 字段（手动单全为 None）
+    platform: Optional[str] = None
+    external_order_id: Optional[str] = None
+    buyer_nickname: Optional[str] = None
+    external_created_at: Optional[datetime] = None
     items: list[OrderItemOut] = []
     model_config = {"from_attributes": True}
 
