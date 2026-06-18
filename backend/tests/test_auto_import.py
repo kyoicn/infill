@@ -1227,3 +1227,129 @@ class TestQAGapXianyuConfigRoundtrip:
 
         r = client.get("/api/auto-import/xianyu/config")
         assert r.json() == new_payload
+
+
+class TestQAFixAdbConnectedTruth:
+    """HIGH fix (iter4 QA gate): adb_connected must reflect ONLY the configured
+    endpoint's device_state diagnostic, NOT `bool(list_devices())`.
+
+    Before the fix, an unrelated USB device showing up in `adb devices` would make
+    adb_connected falsely report True even when the configured pc_ip endpoint was
+    unreachable / empty.
+    """
+
+    def _fake_diagnostics(self, *, device_state_ok: bool) -> list[dict]:
+        """Return a diagnostics list with the standard 4 entries; device_state.ok flips."""
+        return [
+            {"name": "adb_installed", "label": "ADB binary present", "ok": True, "hint": None, "detail": ""},
+            {"name": "ping", "label": "host pingable", "ok": device_state_ok, "hint": None, "detail": ""},
+            {"name": "tcp_port", "label": "port open", "ok": device_state_ok, "hint": None, "detail": ""},
+            {"name": "device_state", "label": "device authorized", "ok": device_state_ok, "hint": None, "detail": ""},
+        ]
+
+    def test_probe_adb_connected_false_when_pc_ip_empty(self, client, monkeypatch):
+        """pc_ip='' → device_state.ok=False → adb_connected MUST be False
+        even if list_devices() returns a USB device.
+        """
+        from app.services import auto_import as svc
+
+        monkeypatch.setattr(
+            svc, "diagnose_adb",
+            lambda config: self._fake_diagnostics(device_state_ok=False),
+        )
+        # Unrelated USB device exists in `adb devices` — this is the bug trap.
+        monkeypatch.setattr(
+            svc.AdbClient, "list_devices",
+            lambda self: [
+                {"serial": "ABCD1234USB", "state": "device", "android_version": "13"},
+            ],
+        )
+
+        r = client.post("/api/auto-import/xianyu/probe", json={
+            "device_type": "mumu", "pc_ip": "", "port": 7555,
+        })
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is True
+        assert body["adb_connected"] is False, (
+            "adb_connected must be False when pc_ip is empty even if a USB device shows up"
+        )
+        assert body["device_serial"] is None
+
+    def test_probe_adb_connected_false_when_configured_ip_unreachable(self, client, monkeypatch):
+        """Configured 192.168.99.99:7555 unreachable, but a USB device is present.
+        adb_connected MUST still be False.
+        """
+        from app.services import auto_import as svc
+
+        monkeypatch.setattr(
+            svc, "diagnose_adb",
+            lambda config: self._fake_diagnostics(device_state_ok=False),
+        )
+        monkeypatch.setattr(
+            svc.AdbClient, "list_devices",
+            lambda self: [
+                {"serial": "ABCD1234USB", "state": "device", "android_version": "13"},
+            ],
+        )
+
+        r = client.post("/api/auto-import/xianyu/probe", json={
+            "device_type": "mumu", "pc_ip": "192.168.99.99", "port": 7555,
+        })
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is True
+        assert body["adb_connected"] is False
+        assert body["device_serial"] is None
+
+    def test_probe_adb_connected_true_when_configured_endpoint_ok(self, client, monkeypatch):
+        """Sanity: when device_state.ok=True AND the configured endpoint's device
+        is in `device` state, adb_connected is True and device_serial matches.
+        """
+        from app.services import auto_import as svc
+
+        monkeypatch.setattr(
+            svc, "diagnose_adb",
+            lambda config: self._fake_diagnostics(device_state_ok=True),
+        )
+        monkeypatch.setattr(
+            svc.AdbClient, "list_devices",
+            lambda self: [
+                {"serial": "127.0.0.1:7555", "state": "device", "android_version": "13"},
+            ],
+        )
+
+        r = client.post("/api/auto-import/xianyu/probe", json={
+            "device_type": "mumu", "pc_ip": "127.0.0.1", "port": 7555,
+        })
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["adb_connected"] is True
+        assert body["device_serial"] == "127.0.0.1:7555"
+
+    def test_test_adb_endpoint_same_fix(self, client, monkeypatch):
+        """xianyu/test-adb must apply the same rule: USB device present but configured
+        endpoint unreachable → adb_connected=False.
+        """
+        from app.services import auto_import as svc
+
+        monkeypatch.setattr(
+            svc, "diagnose_adb",
+            lambda config: self._fake_diagnostics(device_state_ok=False),
+        )
+        monkeypatch.setattr(
+            svc.AdbClient, "list_devices",
+            lambda self: [
+                {"serial": "ABCD1234USB", "state": "device", "android_version": "13"},
+            ],
+        )
+
+        r = client.post("/api/auto-import/xianyu/test-adb", json={
+            "device_type": "mumu", "pc_ip": "192.168.99.99", "port": 7555,
+        })
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is True
+        assert body["adb_connected"] is False
+        assert body["device_serial"] is None
+        assert body["android_version"] is None

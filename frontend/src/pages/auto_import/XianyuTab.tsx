@@ -55,10 +55,15 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
   const probe = useCallback(async (cfg: AutoImportAdbConfig) => {
     try {
       const resp = await api.autoImport.xianyu.probe(cfg);
-      if (resp.ok && resp.adb_connected) {
+      // Defence-in-depth: even if the backend reports adb_connected=true, treat any
+      // diagnostic with ok=false as error_adb. This prevents falsely entering `idle`
+      // when the configured endpoint is unreachable but adb_connected leaks through.
+      const diagnostics = resp.diagnostics ?? [];
+      const allDiagsOk = diagnostics.every((d) => d.ok);
+      if (resp.ok && resp.adb_connected && allDiagsOk) {
         setState({ kind: 'idle' });
       } else {
-        setState({ kind: 'error_adb', diagnostics: resp.diagnostics ?? [] });
+        setState({ kind: 'error_adb', diagnostics });
       }
     } catch (err) {
       setState({

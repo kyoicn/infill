@@ -245,8 +245,23 @@ def xianyu_probe(config: AdbConfig) -> ProbeXianyuResponse:
         diagnostics = svc.diagnose_adb(config)
         client = svc.AdbClient()
         devices = client.list_devices()
-        adb_connected = bool(devices)
-        device_serial = devices[0].get("serial") if devices and isinstance(devices[0], dict) else None
+        # True only when the configured endpoint's device passed the device_state check
+        # (i.e. is in "device" state). Falling back to `bool(devices)` would falsely
+        # report connected when an unrelated USB device shows up in `adb devices`.
+        adb_connected = any(
+            d.get("ok") for d in diagnostics if d.get("name") == "device_state"
+        )
+        device_serial = next(
+            (
+                d.get("serial")
+                for d in devices
+                if isinstance(d, dict)
+                and config.pc_ip
+                and (d.get("serial") or "").startswith(config.pc_ip)
+                and d.get("state") == "device"
+            ),
+            None,
+        )
         return ProbeXianyuResponse(
             ok=True,
             adb_connected=adb_connected,
@@ -564,9 +579,23 @@ def xianyu_test_adb(body: AdbConfig) -> TestAdbResponse:
         diagnostics = svc.diagnose_adb(body)
         client = svc.AdbClient()
         devices = client.list_devices()
-        connected = bool(devices)
-        serial = devices[0].get("serial") if devices and isinstance(devices[0], dict) else None
-        android_version = devices[0].get("android_version") if devices and isinstance(devices[0], dict) else None
+        # True only when the configured endpoint's device passed device_state.
+        connected = any(
+            d.get("ok") for d in diagnostics if d.get("name") == "device_state"
+        )
+        matched = next(
+            (
+                d
+                for d in devices
+                if isinstance(d, dict)
+                and body.pc_ip
+                and (d.get("serial") or "").startswith(body.pc_ip)
+                and d.get("state") == "device"
+            ),
+            None,
+        )
+        serial = matched.get("serial") if matched else None
+        android_version = matched.get("android_version") if matched else None
         return TestAdbResponse(
             ok=True,
             adb_connected=connected,
