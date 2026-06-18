@@ -14,17 +14,13 @@ import re
 import socket
 import subprocess
 import tempfile
-from typing import TYPE_CHECKING
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from ..models import Product
+from ..models import Product, SystemConfig
 from .adb_client import AdbClient as RealAdbClient
 from .adb_client import AdbError
-
-if TYPE_CHECKING:
-    pass
 
 
 # ==== ADB + Extension Status (Task 2.1) ====
@@ -183,13 +179,11 @@ class AdbClient:
                 pass
 
 
-def get_adb_config(db: "Session") -> dict:
+def get_adb_config(db: Session) -> dict:
     """Read ADB config from SystemConfig rows; return defaults when unset.
 
     Returns a plain dict (FastAPI will coerce to AdbConfig response_model at the router boundary).
     """
-    from app.models import SystemConfig
-
     result = dict(_CFG_DEFAULTS)
     for field, key in _CFG_KEYS.items():
         row = db.query(SystemConfig).filter(SystemConfig.key == key).first()
@@ -205,10 +199,8 @@ def get_adb_config(db: "Session") -> dict:
     return result
 
 
-def set_adb_config(db: "Session", arg1, arg2=None, arg3=None) -> None:
+def set_adb_config(db: Session, arg1, arg2=None, arg3=None) -> None:
     """Upsert the 3 SystemConfig rows. Accepts AdbConfig OR (device_type, pc_ip, port)."""
-    from app.models import SystemConfig
-
     device_type, pc_ip, port = _normalize_adb_args(arg1, arg2, arg3)
     values = {
         "device_type": device_type,

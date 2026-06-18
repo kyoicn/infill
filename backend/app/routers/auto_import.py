@@ -174,9 +174,16 @@ def _scan_impl(
 
             try:
                 match = auto_import_llm.match_listing_to_sku(title, catalog)
-                matched_sku = match.get("matched_sku_code")
-                confidence = float(match.get("confidence") or 0.0)
-                reasoning = match.get("reasoning") or ""
+                # match_listing_to_sku 真实返回 tuple (sku|None, conf, reasoning)；
+                # 兼容老测试桩返回 dict 的写法（mapping 形式），二选一解包。
+                if isinstance(match, tuple):
+                    matched_sku, confidence_raw, reasoning_raw = match
+                    confidence = float(confidence_raw or 0.0)
+                    reasoning = reasoning_raw or ""
+                else:
+                    matched_sku = match.get("matched_sku_code")
+                    confidence = float(match.get("confidence") or 0.0)
+                    reasoning = match.get("reasoning") or ""
             except LLMProviderError as exc:
                 matched_sku = None
                 confidence = 0.0
