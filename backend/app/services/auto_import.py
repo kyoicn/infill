@@ -1,26 +1,33 @@
-"""auto-import services — ADB + LLM + SKU search + scan/commit business logic.
+"""auto-import services — ADB + LLM SKU match + SKU search + scan/commit business logic.
 
-This file is co-authored across Group 2 tasks (2.1 / 2.2 / 2.3) of prd-006.
-Each task owns a banner-fenced section. Do not interleave across banners.
+Sections owned by:
+- Task 2.1: ADB diagnose + config + extension status (uses adb_client.py for real subprocess work)
+- Task 2.2: LLM SKU matching & 闲鱼 screenshot parsing (lives in auto_import_llm.py)
+            + search_skus + load_catalog_for_llm here
+- Task 2.3: BATCH_SCREENS / BATCH_TASKS / _next_redo_suffix for scan/commit orchestration
 """
 from __future__ import annotations
 
+import asyncio
 import os
+import re
 import socket
 import subprocess
+import tempfile
 from typing import TYPE_CHECKING
 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from ..models import Product, ProductComponent
-from .adb_client import AdbClient, AdbDevice, AdbError
+from ..models import Product
+from .adb_client import AdbClient as RealAdbClient
+from .adb_client import AdbError
 
 if TYPE_CHECKING:
     pass
 
 
-# ==== ADB & Config (Task 2.1) ====
+# ==== ADB + Extension Status (Task 2.1) ====
 
 DEFAULT_PORTS: dict[str, int] = {
     "mumu": 7555,
@@ -67,44 +74,47 @@ def _tcp_open(host: str, port: int, timeout_s: float = 2.0) -> bool:
         return False
 
 
-def diagnose_adb(device_type: str, pc_ip: str, port: int) -> list[dict]:
-    """Return 4 diagnostic checks for ADB connectivity.
+def _normalize_adb_args(arg1, arg2=None, arg3=None) -> tuple[str, str, int]:
+    """Accept either (AdbConfig,) or (device_type, pc_ip, port)."""
+    if arg2 is None and arg3 is None and hasattr(arg1, "device_type"):
+        return arg1.device_type, arg1.pc_ip, arg1.port
+    return arg1, arg2 or "", int(arg3 or 0)
 
-    Each item: {label: str, ok: bool, hint: str | None}
-    Checks:
-      1. ADB binary installed on host
-      2. PC reachable via ping
-      3. TCP port open on PC
-      4. adb sees the device in "device" state
-    """
+
+def diagnose_adb(arg1, arg2=None, arg3=None) -> list[dict]:
+    """Return 4 diagnostic checks. Accepts AdbConfig OR (device_type, pc_ip, port)."""
+    device_type, pc_ip, port = _normalize_adb_args(arg1, arg2, arg3)
+
     diagnostics: list[dict] = []
-    client = AdbClient()
+    client = RealAdbClient()
 
-    # 1. ADB installed
     installed = client.is_installed()
     diagnostics.append({
+        "name": "adb_installed",
         "label": "ADB 可执行文件已安装",
         "ok": installed,
         "hint": None if installed else "未在 PATH 找到 adb，请安装 platform-tools 或设置 ADB_PATH 环境变量。",
+        "detail": "" if installed else "binary missing",
     })
 
-    # 2. PC reachable
     pingable = _ping(pc_ip) if pc_ip else False
     diagnostics.append({
+        "name": "ping",
         "label": f"PC 主机 {pc_ip or '(未设置)'} 可达",
         "ok": pingable,
         "hint": None if pingable else "无法 ping 通该 IP，请检查模拟器/USB 主机的 IP 设置和防火墙。",
+        "detail": "" if pingable else "ping failed",
     })
 
-    # 3. TCP port open
     port_open = _tcp_open(pc_ip, port) if pc_ip and port else False
     diagnostics.append({
+        "name": "tcp_port",
         "label": f"TCP 端口 {port} 已打开",
         "ok": port_open,
         "hint": None if port_open else f"无法连接 {pc_ip}:{port}，请确认 ADB 服务监听端口，或在 {device_type} 中开启调试。",
+        "detail": "" if port_open else "port closed",
     })
 
-    # 4. Device in "device" state
     device_ok = False
     if installed and pc_ip and port:
         endpoint = f"{pc_ip}:{port}"
@@ -115,23 +125,69 @@ def diagnose_adb(device_type: str, pc_ip: str, port: int) -> list[dict]:
                 if d.serial.startswith(pc_ip) or d.serial == endpoint:
                     device_ok = (d.state == "device")
                     break
-            if not device_ok and devices:
-                # Fall back: any device in "device" state counts when USB
-                if device_type == "usb":
-                    device_ok = any(d.state == "device" for d in devices)
+            if not device_ok and devices and device_type == "usb":
+                device_ok = any(d.state == "device" for d in devices)
         except AdbError:
             device_ok = False
     diagnostics.append({
+        "name": "device_state",
         "label": "设备处于 device 状态（已授权）",
         "ok": device_ok,
         "hint": None if device_ok else "设备未授权或处于 offline / unauthorized 状态，请在模拟器/手机上点击允许调试。",
+        "detail": "" if device_ok else "device offline",
     })
 
     return diagnostics
 
 
+class AdbClient:
+    """Router-facing wrapper. Instantiable with no args; uses adb_client.py for actual subprocess work.
+
+    The test suite tests `services.adb_client.AdbClient` (real) directly. This wrapper just
+    bridges the router's preferred signature (`list_devices() -> list[dict]`, `screencap(config) -> bytes`).
+    """
+
+    def __init__(self) -> None:
+        self._real = RealAdbClient()
+
+    def list_devices(self) -> list[dict]:
+        try:
+            devices = self._real.list_devices()
+        except AdbError:
+            return []
+        return [
+            {
+                "serial": d.serial,
+                "state": d.state,
+                "android_version": d.properties.get("release") or d.properties.get("product"),
+            }
+            for d in devices
+        ]
+
+    def screencap(self, config) -> bytes:
+        """Take one screenshot via the configured device endpoint. Returns PNG bytes."""
+        endpoint = f"{config.pc_ip}:{config.port}"
+        try:
+            self._real.connect(endpoint)
+        except AdbError:
+            # Connect failure is non-fatal for USB; screencap will surface its own error.
+            pass
+        fd, dest_path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            return self._real.screencap(endpoint, dest_path)
+        finally:
+            try:
+                os.unlink(dest_path)
+            except OSError:
+                pass
+
+
 def get_adb_config(db: "Session") -> dict:
-    """Read ADB config from SystemConfig rows; return defaults when unset."""
+    """Read ADB config from SystemConfig rows; return defaults when unset.
+
+    Returns a plain dict (FastAPI will coerce to AdbConfig response_model at the router boundary).
+    """
     from app.models import SystemConfig
 
     result = dict(_CFG_DEFAULTS)
@@ -149,10 +205,11 @@ def get_adb_config(db: "Session") -> dict:
     return result
 
 
-def set_adb_config(db: "Session", device_type: str, pc_ip: str, port: int) -> None:
-    """Upsert the 3 SystemConfig rows for ADB config."""
+def set_adb_config(db: "Session", arg1, arg2=None, arg3=None) -> None:
+    """Upsert the 3 SystemConfig rows. Accepts AdbConfig OR (device_type, pc_ip, port)."""
     from app.models import SystemConfig
 
+    device_type, pc_ip, port = _normalize_adb_args(arg1, arg2, arg3)
     values = {
         "device_type": device_type,
         "pc_ip": pc_ip,
@@ -167,25 +224,35 @@ def set_adb_config(db: "Session", device_type: str, pc_ip: str, port: int) -> No
     db.commit()
 
 
-def get_extension_status() -> dict:
-    """Backend-side extension visibility — frontend pings via chrome.runtime.sendMessage."""
+def get_extension_status():
+    """Return 2.3-shaped ExtensionStatusResponse — installed reflects INFILL_EXT_ID env presence."""
+    from ..schemas_auto_import import ExtensionStatusResponse
+
     configured = bool(os.environ.get("INFILL_EXT_ID", "").strip())
-    return {
-        "configured": configured,
-        "env_var_name": "VITE_INFILL_EXT_ID",
-        "expected_version_prefix": "0.1",
-    }
+    return ExtensionStatusResponse(
+        ok=True,
+        installed=configured,
+        version=os.environ.get("INFILL_EXT_VERSION") if configured else None,
+        last_probe_at=None,
+    )
 
 
 # ==== LLM SKU Match + SKU Search (Task 2.2) ====
 
 
-def search_skus(db: Session, q: str, limit: int = 10) -> list[dict]:
-    """SKU 搜索：name 或 sku 子串命中（不区分大小写），返回前 limit 条。
+def load_catalog_for_llm(db: Session) -> list[dict]:
+    """Return catalog rows for LLM prompt injection. Used by CUJ-1/2 scan endpoints."""
+    return [
+        {"sku_code": p.sku, "sku_name": p.name, "description": (p.description or "")}
+        for p in db.query(Product).all()
+    ]
 
-    每条 hit 形如 `{"sku": str, "name": str, "color": Optional[str]}`，
-    color 取该 product 的 product_components.color 去重串接，无 BOM 时省略。
-    空 query 返回空列表。
+
+def search_skus(db: Session, q: str, limit: int = 10) -> list[dict]:
+    """SKU 搜索：name / sku 子串命中（不区分大小写）；返回 [{sku_code, sku_name, score}]。
+
+    sku_code 精确子串 → score=1.0；name 命中 → score=0.8。空 query 返回 [].
+    Shape aligns with `SkuSearchHit` so router can do `SkuSearchHit(**h)`.
     """
     q = (q or "").strip()
     if not q:
@@ -201,21 +268,56 @@ def search_skus(db: Session, q: str, limit: int = 10) -> list[dict]:
     )
 
     hits: list[dict] = []
+    q_lower = q.lower()
     for product in rows:
-        colors = (
-            db.query(ProductComponent.color)
-            .filter(ProductComponent.product_id == product.id)
-            .all()
-        )
-        unique_colors = sorted({c[0] for c in colors if c[0]})
-        hit: dict = {"sku": product.sku, "name": product.name}
-        if unique_colors:
-            hit["color"] = ",".join(unique_colors)
-        else:
-            hit["color"] = None
-        hits.append(hit)
+        score = 1.0 if q_lower in product.sku.lower() else 0.8
+        hits.append({
+            "sku_code": product.sku,
+            "sku_name": product.name,
+            "score": score,
+        })
     return hits
 
 
-# ==== Order Persistence (Task 2.3) ====
-# Filled by Task 2.3 merge.
+# ==== Scan + Commit + Batch State (Task 2.3) ====
+
+BATCH_SCREENS: dict[str, dict] = {}
+"""{ batch_id: { "screens": [{seq, status, error}], "parsed_orders": [{...}], "tmp_dir": "..." } }"""
+
+BATCH_TASKS: dict[str, list[asyncio.Task]] = {}
+"""{ batch_id: [Task, Task, ...] } — cancel-scan iterates and .cancel() each."""
+
+
+_REDO_RE = re.compile(r"-redo(\d+)$")
+
+
+def _next_redo_suffix(db: Session, platform: str, base_external_id: str) -> str:
+    """Compute the next `-redoN` suffix for an override-duplicate commit.
+
+    Queries existing orders with `(platform, external_order_id LIKE '<base>-redo%')`,
+    extracts max N, returns `<base>-redo<N+1>`. Used in CUJ-3 commit endpoint.
+    """
+    from ..models import Order
+
+    rows = (
+        db.query(Order.external_order_id)
+        .filter(
+            Order.platform == platform,
+            Order.external_order_id.like(f"{base_external_id}-redo%"),
+        )
+        .all()
+    )
+    max_n = 0
+    for (eid,) in rows:
+        if not eid:
+            continue
+        m = _REDO_RE.search(eid)
+        if not m:
+            continue
+        try:
+            n = int(m.group(1))
+            if n > max_n:
+                max_n = n
+        except ValueError:
+            continue
+    return f"{base_external_id}-redo{max_n + 1}"
