@@ -14,100 +14,16 @@ import {
   message,
 } from 'antd';
 import { Link } from 'react-router-dom';
+import {
+  api,
+  type AutoImportAdbConfig,
+  type AutoImportTestAdbResponse,
+} from '../../api/client';
+import { pingExtension } from '../../api/extension';
 
-// ---- Local stubs (Task 3.1 may merge these into api/client.ts + api/extension.ts later) ----
-// When merging, replace the local stubs with:
-//   import { api, type AutoImportAdbConfig, type AutoImportDiagnostic, type AutoImportExtensionStatus } from '../../api/client';
-//   import { pingExtension } from '../../api/extension';
+type DeviceType = AutoImportAdbConfig['device_type'];
+type AdbTestResult = AutoImportTestAdbResponse;
 
-type DeviceType = 'mumu' | 'bluestacks' | 'ldplayer' | 'usb';
-
-interface AutoImportAdbConfig {
-  device_type: DeviceType;
-  pc_ip: string;
-  port: number;
-}
-
-interface AutoImportDiagnostic {
-  label: string;
-  ok: boolean;
-  hint?: string;
-}
-
-interface AutoImportExtensionStatus {
-  configured: boolean;
-  extension_id?: string;
-}
-
-interface AdbTestResult {
-  ok: boolean;
-  adb_connected?: boolean;
-  device_serial?: string;
-  android_version?: string;
-  diagnostics?: AutoImportDiagnostic[];
-}
-
-async function jsonRequest<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `请求失败: ${res.status}`);
-  }
-  return res.json();
-}
-
-const autoImportApi = {
-  xhs: {
-    extensionStatus: () =>
-      jsonRequest<AutoImportExtensionStatus>('/auto-import/xhs/extension-status'),
-  },
-  xianyu: {
-    getConfig: () => jsonRequest<AutoImportAdbConfig>('/auto-import/xianyu/config'),
-    putConfig: (cfg: AutoImportAdbConfig) =>
-      jsonRequest<AutoImportAdbConfig>('/auto-import/xianyu/config', {
-        method: 'PUT',
-        body: JSON.stringify(cfg),
-      }),
-    testAdb: (cfg: AutoImportAdbConfig) =>
-      jsonRequest<AdbTestResult>('/auto-import/xianyu/test-adb', {
-        method: 'POST',
-        body: JSON.stringify(cfg),
-      }),
-  },
-};
-
-// Ping the installed Chrome extension via chrome.runtime.sendMessage.
-async function pingExtension(
-  extensionId: string,
-): Promise<{ ok: boolean; version?: string }> {
-  return new Promise((resolve) => {
-    const chrome = (window as any).chrome;
-    if (!chrome?.runtime?.sendMessage) {
-      resolve({ ok: false });
-      return;
-    }
-    try {
-      chrome.runtime.sendMessage(
-        extensionId,
-        { type: 'PING' },
-        (response: { ok?: boolean; version?: string } | undefined) => {
-          if (chrome.runtime.lastError || !response?.ok) {
-            resolve({ ok: false });
-            return;
-          }
-          resolve({ ok: true, version: response.version });
-        },
-      );
-    } catch {
-      resolve({ ok: false });
-    }
-  });
-}
-
-// ---- End local stubs ----
 
 const DEVICE_OPTIONS: { value: DeviceType; label: string; defaultPort: number }[] = [
   { value: 'mumu', label: 'MuMu 模拟器', defaultPort: 7555 },
@@ -146,11 +62,11 @@ export default function AutoImportSettings() {
       return;
     }
     try {
-      await autoImportApi.xhs.extensionStatus();
+      await api.autoImport.xhs.extensionStatus();
     } catch {
       // backend status fetch is best-effort; we still try ping
     }
-    const pong = await pingExtension(EXT_ID);
+    const pong = await pingExtension();
     if (pong.ok) {
       setXhsState({ kind: 'detected', version: pong.version });
     } else {
@@ -160,7 +76,7 @@ export default function AutoImportSettings() {
 
   useEffect(() => {
     detectExtension();
-    autoImportApi.xianyu
+    api.autoImport.xianyu
       .getConfig()
       .then((cfg) => {
         setAdbInitial(cfg);
@@ -190,13 +106,13 @@ export default function AutoImportSettings() {
       const values = await adbForm.validateFields();
       setAdbTesting(true);
       setAdbResult(null);
-      const res = await autoImportApi.xianyu.testAdb(values);
+      const res = await api.autoImport.xianyu.testAdb(values);
       setAdbResult(res);
     } catch (e: any) {
       if (e?.errorFields) return; // validation error
       setAdbResult({
         ok: false,
-        diagnostics: [{ label: 'ADB 测试请求失败', ok: false, hint: e?.message }],
+        diagnostics: [{ name: 'request', label: 'ADB 测试请求失败', ok: false, hint: e?.message }],
       });
     } finally {
       setAdbTesting(false);
@@ -207,9 +123,8 @@ export default function AutoImportSettings() {
     try {
       const values = await adbForm.validateFields();
       setAdbSaving(true);
-      const saved = await autoImportApi.xianyu.putConfig(values);
-      setAdbInitial(saved);
-      adbForm.setFieldsValue(saved);
+      await api.autoImport.xianyu.putConfig(values);
+      setAdbInitial(values);
       message.success('已保存自动导入配置');
     } catch (e: any) {
       if (e?.errorFields) return;
