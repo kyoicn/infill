@@ -498,20 +498,20 @@ prd-006「自动导入订单」处于 **not started** 状态（4 个 CUJ 全部�
 
 ---
 
-## QA Fix Tasks（iter4 QA Gate FAIL — 下一 iter 优先）
+## QA Fix Tasks（iter4 QA Gate — Retry 1 后 5 个 MEDIUM+ 全部 CLOSED）
 
-由 iter4 QA gate（2026-06-18 22:20:32 UTC+8）发现，prd-006 端到端首轮 QA 未通过。HIGH/MEDIUM 列入新一轮修复，LOW 与 carry-over 待 PM 取舍。
+由 iter4 QA gate（2026-06-18 22:20:32 UTC+8）首轮发现，Retry 1（2026-06-18 22:43:16 UTC+8）已闭环验证。
 
-### HIGH（修复后再合并）
+### HIGH（已修复 — closed）
 
-- [ ] **QA-fix [HIGH][BUG]**: probe / test-adb 端点的 `adb_connected` 仅按 `bool(list_devices())` 判定，未校验配置 endpoint — 在 pc_ip="" / 配置 IP 不可达且 USB 真机连着时仍亮绿，UI 误判 ADB 就绪。修法：`xianyu_probe` / `xianyu_test_adb` 用 `diagnostics[3].ok`（device_state 检查）作为 `adb_connected` 真值；或筛 list_devices 中 serial 起始于 pc_ip 且 state=device 的设备 — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)
-- [ ] **QA-fix [HIGH][BUG]**: 前端 XianyuTab 仅基于 `resp.ok && resp.adb_connected` 切 idle/error_adb，不参考 diagnostics — 即便后端修了上一条，前端仍需联动改成「所有 diagnostics ok 才算 idle」。修后补 ≥ 2 个自动化测试（pc_ip="" → adb_connected=false / 配置不可达 IP + 有其它设备 → adb_connected=false） — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)
+- [x] **QA-fix [HIGH][BUG]**: probe / test-adb 端点的 `adb_connected` 仅按 `bool(list_devices())` 判定，未校验配置 endpoint — 修法：`xianyu_probe` / `xianyu_test_adb` 用 `diagnostics[name=device_state].ok` 作为 `adb_connected` 真值；list_devices 中筛 serial 起始于 pc_ip 且 state=device 的设备 — fixed by 1b5f35f, verified by TestQAFixAdbConnectedTruth (4 tests) + live curl + Playwright walk × 2 — source: qa-report.md 2026-06-18 22:20:32 (UTC+8), closed: 2026-06-18 22:43:16 (UTC+8)
+- [x] **QA-fix [HIGH][BUG]**: 前端 XianyuTab 加 `allDiagsOk = diagnostics.every(d => d.ok)` 防御性检查，require `resp.ok && resp.adb_connected && allDiagsOk` 才进 idle — fixed by 1b5f35f, verified by Playwright walk × 2（pc_ip="" → 渲染 "ADB 未连接" + error block + 两按钮 disabled） — source: qa-report.md 2026-06-18 22:20:32 (UTC+8), closed: 2026-06-18 22:43:16 (UTC+8)
 
-### MEDIUM（同 iter 或下一 iter 处理）
+### MEDIUM（已修复 — closed）
 
-- [ ] **QA-fix [MEDIUM][BUG]**: 扩展未装态缺少 zip 下载链接 / 按钮（违反 PRD CUJ-1 AC「下载扩展压缩包链接」+ `cuj-1-no-extension.html` 主按钮）— 在 `frontend/src/pages/auto_import/XhsTab.tsx` 蓝色 setup 块底部加 `<Button type="primary"><a href="/static/extensions/infill-xhs-scraper-v0.1.0.zip" download>下载扩展 zip</a></Button>` — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)
-- [ ] **QA-fix [MEDIUM][VISUAL_DEVIATION]**: 与 `cuj-1-no-extension.html` mock 相比缺少「下载扩展 zip (12 KB)」primary 按钮 — 同上修法可一并解决 — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)
-- [ ] **QA-fix [MEDIUM][BUG]**: PreviewTable 缺空 batch 空态 UI「未抓取到任何订单」+「返回扫描页」按钮（违反 PRD CUJ-3 AC #22）— 在 `frontend/src/pages/auto_import/PreviewTable.tsx` items.length === 0 时渲染居中空态卡片 — source: qa-report.md 2026-06-18 22:20:32 (UTC+8)
+- [x] **QA-fix [MEDIUM][BUG]**: XhsTab `NoExtensionBlock` 加 primary blue「下载扩展 zip」按钮（size large、`href=/static/extensions/infill-xhs-scraper-v0.1.0.zip download`、marginTop 16）— fixed by cce7b19, verified by DOM query + live download endpoint curl（content-type: application/zip） — source: qa-report.md 2026-06-18 22:20:32 (UTC+8), closed: 2026-06-18 22:43:16 (UTC+8)
+- [x] **QA-fix [MEDIUM][VISUAL_DEVIATION]**: 与 `cuj-1-no-extension.html` mock 比对 — 同上修法已合并；视觉一致（按钮位置 / 颜色 / 文案对齐；mock "(12 KB)" 后缀降级为 LOW 残留） — fixed by cce7b19 — source: qa-report.md 2026-06-18 22:20:32 (UTC+8), closed: 2026-06-18 22:43:16 (UTC+8)
+- [x] **QA-fix [MEDIUM][BUG]**: PreviewTable `rows.length === 0` 时居中渲染「未抓取到任何订单」+ 副文案「请检查千帆 tab 是否打开，或闲鱼是否截取到订单页」+ 「返回扫描页」按钮（onClick=onCancel） — fixed by cce7b19, verified by React fiber 反射注入 + Playwright walk × 2（xhs 与 xianyu 来源） — source: qa-report.md 2026-06-18 22:20:32 (UTC+8), closed: 2026-06-18 22:43:16 (UTC+8)
 
 ### LOW（积压）
 

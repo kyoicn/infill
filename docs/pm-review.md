@@ -1,150 +1,231 @@
 # PM Review
 
-Last updated: 2026-06-14 21:57:48 (UTC+8)
+Last updated: 2026-06-18 23:10:00 (UTC+8)
+Iteration: 4（prd-006 自动导入订单 — CUJ-1/2/3/4 端到端实现）
+Scope: prd-006-auto-import-orders 4 个 CUJ（CUJ-1 小红书扫单 / CUJ-2 闲鱼扫单 / CUJ-3 预览校对 + 一键导入 / CUJ-4 自动导入设置）。prd-005 在 iter3 已 completed，本轮未触及；prd-000~004 同样不在产品评审范围。
+
+---
+
+## Iter3 — prd-005（已 completed，保留历史记录）
+
 Iteration: 3（prd-005 产品录入 — 全 5 CUJ 实现）
 Scope: prd-005-intake 5 个 CUJ（CUJ-1 上传分类 / CUJ-2 LLM 识别 / CUJ-3 草稿校对 / CUJ-4 颜色矩阵 / CUJ-5 合并到 catalog）。prd-000~004 本轮未触及，不在产品评审范围。
 
-## Overall Assessment
+### Overall Assessment
 
 iter3 把整条产品录入链路从「设计纸面」推到了可日常使用的状态 — 9 张床头柜真实样本走通 upload → recognize → draft → color → merge → success 端到端无人工返工，catalog.yaml 实际追加 + DB 自动 reload + `/products` 立刻可见新产品。设计阶段定下的所有关键命名约定（`<产品基名>-<组件名>`、`<组件名>-<件数>`、`<产品基名> - 配色 N`）、视觉强对比（蓝/橙双色分栏、关键字段蓝色高亮、暗黑 YAML 预览、5 阶段事务带备份回滚）全部落地。两次 QA 回归暴露的 3 个 MEDIUM+ bug（state-loss-on-back、step-indicator-error-case、cancel-fake-error）已修复并验证关闭；剩余 LOW（AntD deprecation × 4、MergeStats schema drift、9 个 manual NOT_RUN 覆盖空白）转交下一 iter，不阻塞产品验收。**5 个 CUJ 全部 Satisfied，无 Caveats、无 Not done — prd-005 状态 active → completed。**
 
 **Per-verdict 计数**：Satisfied = 5（CUJ-1/2/3/4/5）；Caveats = 0；Not done = 0。
 
-## Per-CUJ Verdict
+### Per-CUJ Verdict（iter3 prd-005）
 
-### CUJ-1（prd-005）: 上传截图 + 自动分类 — Satisfied
+详细 per-CUJ 评审已在 prd-005 完成 iter3 时归档；iter4 review 不再展开。结论摘要：CUJ-1 启发式分类 / CUJ-2 3 步进度 + 错误页 / CUJ-3 蓝色高亮 + 撞名 surface + 原图复核 drawer / CUJ-4 N 平等变体 + 复制此列 + popover 3 段 / CUJ-5 暗黑 YAML 预览 + 5 阶段事务 + 备份回滚 — 全部 Satisfied。
 
-**QA verdict** (from qa-report.md): PASS
-**PM verdict**: Satisfied
+### PRD Lifecycle Changes（iter3）
 
-**Assessment**:
-
-按 user 指定的判断口径「好用、顺手、智能」逐条 walk：
-
-1. **「智能」— 启发式分类正确率**：真实床头柜素材 1 张 assembly + 8 张 produce 全部正确归类（QA 自动化 + manual 双 run）。后端 `heuristic_classify`（`backend/app/services/intake.py:81-104`）取右上角 (0.72~0.98 宽 × 0.02~0.30 高) 区域灰度均值，阈值 140 — 真实样例 produce 均值 ~80-85、assembly 均值 ~190-200，阈值落在中间宽阔安全区。后端单测 `TestHeuristicClassify`（共 7 个）覆盖边界、纯白图、合成 produce panel 等极端情况，全绿。设计阶段 user 明确「不走 LLM 做分类（节省 token）」— 这条选择由 198 字代码实现，token 消耗 = 0，分类延迟约 50ms/图，体感即时。**这是 user 想要的「智能」— 不是大力 LLM，是恰好够用的轻量启发式。**
-
-2. **「顺手」— 一次拖入混合无序、栏头实时计数、追加 mini dropzone、手动改类**：QA 实测 9 张图一次性拖入后秒级落位到双栏（左淡蓝 `#f5faff` + 蓝点 `#1677ff` 标识「组装图 1 张」、右淡橙 `#fffaf0` + 橙点 `#fa8c16` 标识「打印盘 8 张」），栏头说明「产品多角度装配示意 / 爆炸图，用于推断 BOM」与「拓竹切片软件每个打印盘的预览，用于推断每盘件数与耗时」全字逐字一致。「+ 继续追加截图」mini dropzone 在主上传完成后始终可见。double-column drag drop 在代码层（`Upload.tsx` 的 `dragOverCol`）实现完整但 QA 标 manual gap 未实测 — 我看了实现，drop target 边框高亮、栏头计数同步、跨栏拖动均有代码路径，标 Satisfied。**整套交互是「拖一次、看一眼、不行就拖回去」的零思考路径。**
-
-3. **「好用」— 关键防呆**：未配 API key 整页禁用 + 顶部红 Alert + 文案指向 `.env.example` 且不绑定具体 provider 名（说「LLM 提供商 API key」而非「DeepSeek API key」），保留未来扩展空间，与 user 设计阶段「单 provider 但留扩展位、不暴露切换 UI」的明确选择一致。「开始识别」按钮在 assembly ≥ 1 且 produce ≥ 1 时才点亮，hover tooltip 解释为什么 disabled — 不让用户在缺图状态下浪费 LLM token。
-
-4. **iter2 → iter3 state-loss 修复的连带价值**：QA 在 iter3 initial 暴露的「按返回上一步丢图」HIGH bug 已修（commit `1eee605` 把 Upload state 提升到 Intake 父组件），现在用户在 CUJ-2 / CUJ-3 任何环节按返回都能保留所有图与产品基名 — 这条不光是 spec AC，更是 user「我可能想识别后调整图重识别」的真实使用心智。
-
-**Caveats / gaps**: 无（manual NOT_RUN 的 30+ 图溢出场景、上传中 X/Y 蓝字进度态属于 QA 自动化覆盖盲区，不是产品缺陷）。
-
-**Spec gap**: 无。
+- **prd-005-intake: `active → completed`**
 
 ---
 
-### CUJ-2（prd-005）: 触发 LLM 识别 — Satisfied
+## Iter4 — prd-006
 
-**QA verdict** (from qa-report.md): PASS
-**PM verdict**: Satisfied
+### Overall Assessment
 
-**Assessment**:
+iter4 把"晚间 10 分钟手抄 50 单"压到了"扫一次 + 校对几行 + 一键入待处理"的工程骨架 — 4 个 CUJ 的核心管线（XHS Chrome 扩展 → 后端 + LLM 匹配 / Xianyu ADB 截屏 → 异步 LLM 解析 → 二次匹配 / 预览表格 → commit 单事务 → 成功页）全部通电；后端契约（commit 原子性、`-redoN` override、partial unique index、stateless preview）live 验证扎实，344 backend tests + tsc clean；retry 1 把 5 个 MEDIUM+ bug 全部闭环（下载按钮、空 batch 空态、`adb_connected` 真值、前端联动）。但走完整 product walk 后我有 **3 个 CUJ 标 Caveats** — 不是阻塞产品价值的 bug，而是若干"PRD 写了但实现取了简化方向 / 取了别的方向"的差异，作坊主能完成主流程但会感觉到"和文档约定不太一样"的小毛刺。**CUJ-1/2/3 落地 Caveats，CUJ-4 仅 1 项 AC（`.env` 未配 key 时变红）未实现 → Caveats。** 由于 4 CUJ 全为 Caveats（无 Satisfied、无 Not done），PRD 状态**保持 active**，不升级 completed；建议下一 iter 用一个小回合收齐这些 spec-drift 项 + LOW carry-over 再升 completed。
 
-按 user 指定的「3 步进度感觉对吗？错误页可操作吗？」walk：
+**Per-verdict 计数**：Satisfied = 0；Caveats = 4（CUJ-1/2/3/4）；Not done = 0。
 
-1. **3 步进度结构**：`Recognizing.tsx` 渲染水平 AntD `Steps`（① 上传图片 ② 调用 LLM 识别 [pulse 蓝点] ③ 解析返回数据），下方蓝色线性渐变 Progress 条 30% → 95% 在 90 秒内匀速推进（用前端定时器近似，不与后端严格同步 — 与 PRD「状态灯是体感工具不是 SSE」一致），中央元信息行「产品基名 床头柜 · 组装图 1 张 · 打印盘 8 张」让用户最后一次确认在处理什么，底部 tip「识别期间请勿关闭页面…」全字保留。本设计的关键判断是「不要为这 30 秒做花哨 streaming UI」— user 已经按了「开始识别」明确愿意等，3 步进度灯就是社会契约 + 取消按钮在场。**结构与节奏对。**
+价值校验：作坊主拿到的"晚间 10 分钟同步 50 单 → 全自动入待处理队列"产品承诺，在以下条件下成立 ——
+1. Chrome 扩展已装、已配 INFILL_EXT_ID、千帆已登录、catalog ≈ 50 SKU；
+2. PC 上模拟器跑闲鱼、ADB endpoint 已 test-adb 绿；
+3. DASHSCOPE_API_KEY 已配；
+4. 没有撞到下面 Caveats 中标红的差异点。
 
-2. **取消路径**：iter3 retry 1 暴露的「取消按钮 → 假 timeout 错误页」MEDIUM bug 在 retry 2（commit `558849d`）已修 — `cancelledByUserRef` sentinel 让 abort 后 `.catch` 提前 return，UI 直接回 upload 保留所有图与产品基名。QA 在 retry 2 用 `delay-forever` fetch shim 显式验证：点取消后 body 不含「连接超时」/「错误」字样，3 张图与产品基名全部保留。**取消现在是真正的零代价路径 — 这正是 user 设计阶段强调的「token 浪费由显式开始识别按钮过滤，取消应当无副作用」**。
+满足这 4 条时主流程跑通；不满足任一条时 fallback 文案 / 错误指引大多 actionable（错误中文 + 三项诊断 + 自动跳设置页路径），只在 CUJ-4 有 1 处用户会"找不到为什么扫描时 LLM 报错"（key 未配未在设置页变红 → 用户跑到 CUJ-1 才看到失败）。整体可接受发布，但仍是 v1 起步形态，不是终形。
 
-3. **错误页可操作性**：QA 实测真实 HTTP 503（kill mock LLM port 让 DeepSeek client 抛 `ConnectError`）显示 — 大红 `!` + 标题「LLM 识别失败」 + 副标题「已上传的图片仍保留在上一步，可调整后重试」 + monospace 错误详情块（两行：「错误类型: DeepSeek 服务暂时不可用 — 请稍后重试」「原始信息: DeepSeek 服务异常（HTTP 503）」） + 两按钮「返回上一步」（secondary）/「重试」（primary）。后端 `intake_llm.py` 把 HTTP 401 / 5xx / timeout / parse_failed 4 类错误分别映射到 user-friendly Chinese 文案 + 把 raw_preview 截断 200 字符附加 — 9 个 backend 单测 `TestDeepSeekProviderErrorMapping` 全绿。**这是技术作坊主自用产品的正确选择：把原始 HTTP 状态码透出，不做笼统包装，错误首页就含「这是 401 / 这是 503 / 这是网络问题」的判断信息。**
+### Per-CUJ Verdict
 
-4. **stepIndex error case 修复**：iter3 initial 的「recognize-error 时步骤指示器错指 ⑤ 合并」MEDIUM bug 在 retry 1（commit `1eee605`）已修 — `Intake.tsx:108-111` 按 variant 分支返回正确步骤（recognize → 1, merge → 4）。QA 截图证据 `04-error-step2-highlighted.png` 显示错误页时步骤 ② 高亮、tab title「产品录入 · 识别失败」 — 用户不再误以为「我都到合并了才失败」。
+#### CUJ-1（prd-006）: 扫描小红书千帆订单 — Caveats
 
-**Caveats / gaps**: 无。
-
-**Spec gap**: 无 — 三阶段灯按时间近似推进的工程选择已在 PRD「Details」段说明（「状态灯只是体感工具，不要求与后端严格同步」），不算欠缺。
-
----
-
-### CUJ-3（prd-005）: 草稿校对 BOM + 打印盘 — Satisfied
-
-**QA verdict** (from qa-report.md): PASS
-**PM verdict**: Satisfied
+**QA verdict** (from qa-report.md): PASS（retry 1）
+**PM verdict**: Caveats
 
 **Assessment**:
 
-按 user 指定「关键字段（件数 / 耗时）醒目？撞名提前 surface？原图复核 drawer 体验？」walk：
+按用户指定的"晚间 10 分钟同步 50 单"价值校验逐项 walk —
 
-1. **关键字段视觉强调**：QA 实测截图 `01-draft-after-retry.png` 显示 BOM 表「装配件数」、打印盘表「单盘件数」、「耗时」三列输入框使用蓝色高亮组合（`border-color: #bfdfff` + `background: #fafdff` + 字体粗 600 + 文字色 `#1677ff`），与 mock `cuj-3-initial.html` 像素级一致。其余非关键字段（组件名、盘号、所属组件 Select）保持默认样式。**这条「蓝色高亮 = 该字段需校对」的视觉信号是 user 设计阶段的核心判断 — LLM 识图最容易把件数和耗时识错，把这两类字段染色就是在向用户的眼球预算明示「请重点看这里」。落地完整。**
+1. **入口 / 路由 / 双 tab 切换**：`/orders/import` 渲染面包屑「订单管理 / 自动导入」、双 tab（小红书红 #ff2442 / 闲鱼橙 #ff7a00），切 tab 不丢前端态 — AC #1-3 PASS（QA 双 run 验证）。
 
-2. **撞名提前 surface**：服务端 `services/intake.py::detect_conflicts`（实际位于 backend，line 180 附近）查询 `Component / PrintConfig / Product` 三张表用 `name in_` filter + set diff 返回 conflicts 列表 — 是真比对不是 stub。前端在进入 draft 时并发触发，发现撞名时顶部红 Alert + 撞名行整体浅红背景 + input 红边 + 行内右侧红字「目录中已存在同名『XXX』」+ 改名即时清除红色样式。**这条「在 CUJ-3 提前 surface 而非到 CUJ-5 写入失败才发现」是 user 设计阶段明确要求的防御纵深** — 让用户在校对阶段就能改名（成本低、上下文还在），而不是走完 CUJ-4 颜色矩阵填了 N 个变体再到 CUJ-5 失败回滚。CUJ-5 服务端兜底再扫一遍（do_merge stage 1 conflict 校验）作为最后防线，user 也明确接受这条双层防御。QA mock LLM 输入下后端撞名为空数组，红 Alert 路径未实测（NOT_RUN）— 但代码路径完整、AC #10 已 code-review 通过，不影响 Satisfied 判定。
+2. **三态状态指示器**：未装态正确显示蓝点 + 4 步安装引导 + retry 1 新加的「下载扩展 zip」primary 按钮（href `/static/extensions/infill-xhs-scraper-v0.1.0.zip`，size large，`download` 属性、application/zip MIME — 服务端 curl 200 verified） — 用户路径"打开页 → 看到未装 → 点下载 → 装扩展 → 重新检测"全程可走。**这条 Iter4 retry 1 修得很扎实。** 已装态我没法 live 验证（无 ext 环境），代码层 ProbeState 三态 switch case 完整。
 
-3. **原图复核 drawer 体验**：每行打印盘有 `👁` icon button，点击右侧滑出 AntD `Drawer`（宽 480px）显示该盘原图大图 + LLM 识别的件数 / 耗时元数据 + 件数 input + 「应用到本行」/「取消」按钮。**这是「LLM 识错 → 用户对照原图修正」的最快路径 — 不需要切窗、不需要外部图床、不需要在主表格里挤一个缩略图。** Drawer 480px 宽足够拓竹切片软件「总时间」面板可读，用户对照后改值即应用。该交互 QA 标 NOT_RUN（manual gap），但代码层 `Draft.tsx` 中 Drawer 组件 + onClose + onApply 路径完整。
+3. **5 步扫描进度的实现方向**：实现把进度步骤拆成了 `['已找到千帆 Tab', '注入 content script 完成', '正在抓取订单列表 DOM', '后端去重 + LLM 匹配 SKU', '跳转预览页']`，与 PRD AC #7 明确的 `① 连接扩展 ② 定位千帆 tab ③ 抓取 DOM ④ 解析订单 ⑤ LLM 匹配 SKU` 不完全一致。**这是 spec 与实现之间的工程取向差异** — 实现把"连接扩展"与"定位千帆 tab"合并到第 1 步（已 probe 就 OK），把"解析订单 / LLM 匹配 SKU"合并到第 4 步（后端一站式处理），加了第 5 步"跳转预览页"作为前端态切换的回显。从用户体感"这一步系统在做什么"看，工程版反而更连贯（用户看不到 content script 注入但能看到"成功跳页面"的确认）；但对"通过 spec 阅读理解后端做了什么"的 docs 价值，差异不可忽略。建议下个 iter 决定：要么改 PRD 把 5 步描述对齐实现取向，要么把实现回归 PRD 5 步描述。
 
-4. **校验闭环**：耗时格式（`Xh Ym` / `Xm Ys`）/ 件数 > 0 / 盘号不重复在前端 input 失焦时即时校验，红边 + tooltip 解释 + 「下一步」按钮 disabled。撞名未解决 / BOM 为空 → 按钮也 disabled。这条多重护栏让用户「按了下一步就一定能进 CUJ-4」— 不会到下一页才发现自己漏了什么。
+4. **进度卡片细节**：标题硬编码"正在捕捉千帆订单"，闲鱼路径如复用同组件会看到这串错文案 — QA 没标，但 grep 显示 ScanningProgress 当前只在 XhsTab 用，无回归风险，但是个有副作用的复用边界（被滥用即坏）。
 
-**Caveats / gaps**: 无。
+5. **进度副文案 + 子计数**：PRD AC #7 提示"当前进行步骤的副文案可显示子计数（如「正在匹配第 18/42 条」）" — **实现未做**。当 LLM 匹配 50 条需要 30+ 秒时（既有 LOW carry-over 也指出串行 LLM 调用），用户看不到推进度，感觉像卡死。这是真实的 UX 痛点 — 推荐 iter5 加 SSE 或 polling 把当前匹配条数推回前端。
 
-**Spec gap**: 无。
+6. **probe 仍占位**：AC #4 要求"调 `POST /api/auto-import/xhs/probe` 探查千帆 tab"，后端实际永远返回 `has_xhs_tab=true` — QA 标 LOW（"探活由扩展前端做，后端可视为意图保留 hook"）。我认同这是 LOW 不阻塞，但需要 doc 一下：CUJ-1 实际探活是 `chrome.runtime.sendMessage(ping)` + 扩展回报，后端只是版本兼容性 placeholder；用户 navigate 进页面时如果千帆 tab 没开但扩展 ping 成功，**会显示「就绪」并允许点扫描，扫到 0 条**（PRD 也确实允许此路径——会跳 CUJ-3 空态，链路安全）—— 但 PRD AC #5 描述的"● 未发现千帆 tab"黄色态在真实环境永远不会触发。建议要么把扩展 `scrape_xhs` 加一个 `find_tab_only` action 让扩展先 probe 再回报（与 PRD 一致），要么改 PRD 删除"未发现千帆 tab"黄色态。
+
+7. **失败路径覆盖**：扩展抓取格式异常 → 后端丢弃缺三件套订单 + 扫描汇总 toast — 后端 test (`test_scan_drops_missing_required_fields`) PASS；前端 toast 文案我没确认，可能与 spec 还有微差异（QA NOT_RUN）。LLM 匹配 90 秒超时 + 三按钮「重试 / 跳过 / 返回」**未实现** — `XhsTab` 只在 `error` 态显示"扫描失败 + retry" 单按钮，没有"跳过 SKU 匹配，进 CUJ-3"的逃逸路径。AC #14/15 未达成。这条对 LLM 服务降级时的用户体验影响较大：作坊主依赖 DashScope，DashScope 出问题时用户得能"跳过匹配直接进预览手指 SKU"才不会被卡住。**建议优先级 P1，下一 iter 加。**
+
+**Caveats / gaps**:
+- 5 步进度文案与 PRD AC #7 不完全对齐（实现合并了步骤，去掉了子计数）— spec 与 impl 取向差异
+- LLM 匹配中无子计数（30~60 秒等待期间无推进度感）
+- xhs/probe 仍占位 → AC #5「● 未发现千帆 tab」黄色态在真实环境不会触发
+- AC #14/15 LLM 超时三按钮分支（重试 / 跳过 SKU 匹配 / 返回）未实现 — 当前只有「重试」单按钮
+- ScanningProgress 标题硬编码"正在捕捉千帆订单"，复用边界不干净
+
+**Spec gap**:
+- 是否要在 LLM 匹配步骤显示子计数（PRD 写了"可"，未强制） — 用户实际跑过几次后再决定是否补
+- 5 步描述对齐方向（改 spec 还是改 impl）需要用户决策一次
 
 ---
 
-### CUJ-4（prd-005）: 颜色矩阵 + 多配色变体 — Satisfied
+#### CUJ-2（prd-006）: 扫描闲鱼订单 — Caveats
 
-**QA verdict** (from qa-report.md): PASS
-**PM verdict**: Satisfied
+**QA verdict** (from qa-report.md): PASS（retry 1）
+**PM verdict**: Caveats
 
 **Assessment**:
 
-按 user 指定「N 平等变体清晰？复制此列 + 已用颜色复用顺手？popover 3 段结构合理？」walk：
+按用户"作坊主用 MuMu 跑闲鱼 → 手动滚 + 逐次截屏 → 完成解析 → 进预览"的核心路径 walk —
 
-1. **N 平等变体清晰度**：QA 实测截图 `02-color-filled.png` 显示矩阵 4 列结构「组件名 / 件数 (×N) / 配色 1 / + 新增配色」，每列变体头是「变体名 input + 复制 icon + 删除 icon（1 列时隐藏）」。**这条「N 个变体平等显示在矩阵里、每列结构相同」是 user 设计阶段的关键选择** — 拒绝了「先填一个 base 然后引导填变体」的 wizard 风格，因为 user 的实际心智里没有 base 变体的概念，「灰白」「黑白」「黑粉」三个变体没有主次之分。落地后矩阵列宽统一、操作按钮位置一致、添加 / 删除路径对称，3 个变体 vs 1 个变体在视觉重量上线性增长无突变。**结构对。**
+1. **HIGH bug retry 1 闭环**：`adb_connected` 现在按 `device_state.ok` 判（不再 `bool(list_devices())`），前端 XianyuTab 加 `allDiagsOk` 防御层 — 我看了源码 `XianyuTab.tsx:61-66`，逻辑是 `resp.ok && resp.adb_connected && allDiagsOk` 三重 AND，对 false-green 完全屏蔽。**这是 iter4 最重要的修复 — 之前的 false-green 等价于让作坊主"以为 ADB 通了点截屏却失败"，会让产品在新机器上首次配置时彻底失去信任。** Retry 1 后 pc_ip="" / 配置 bogus IP 时统一显示「ADB 未连接」红块 + 三项诊断 + 「重新测试 ADB」+ 「打开设置页修改 endpoint →」link。Backend `TestQAFixAdbConnectedTruth` 4 测覆盖。Trust restored。
 
-2. **「复制此列」 + 「已用颜色复用」联动**：「复制此列」按钮（CopyOutlined icon，AntD `Tooltip` 标题「复制此列」）点击后在右侧克隆一列 + 所有 cell 预填克隆值，是「基于已有变体微调」路径；「+ 新增配色」是「从零起步」路径，两者并存。QA 在 retry 2 happy path 实测复制了一次变体生成「床头柜 - 配色 1 - 副本」 — 路径走通。popover 第 1 段「本产品已用过的颜色」从空到自动累积色名 chip，QA 实测 run1 第一次填灰色后第 1 段出现「灰色」chip — dedupe 正确。**这两条联动设计是 user 设计阶段最强调的「重复劳动最小化」体现** — 加变体不用从头填，加同色不用打字，整套机制把 N×M 配色填写降到「填第一列 + 复制 N-1 次 + 改几个不同的格子」。
+2. **手动滚 + 逐次截屏的核心心智**：PRD 设计阶段明确"MVP 不自动滚动" — 是产品的核心判断（自动 swipe 在模拟器 / 不同分辨率间不稳，让作坊主自己控制更可靠）。实现严格遵守：`grep` 验证后端无 `adb shell input swipe`；前端只有「截屏 (+1)」+「完成截屏，开始解析」+「取消」三按钮 — 用户路径清晰。AC #6 PASS。这条选择实际跑下来作坊主会感谢的 — 闲鱼改版后自动滚动多半会失效，手动反而是抗改版的护城河。
 
-3. **popover 3 段结构合理性**：QA 实测截图 `cuj-4` run1/run2 6 张截图覆盖 popover 完整展开态 — 第 1 段「本产品已用过的颜色」（空时隐藏） + 第 2 段「常用颜色」11 chip（白/黑/灰/棕/粉/红/黄/蓝/绿/橙/紫） + 第 3 段「输入新颜色名」（text input + 添加按钮）— 三段从上到下纵向排列，宽度 320px。这条结构的判断是「快捷优先、自由兜底」 — 第 1 段是同产品内复用（80% 场景）、第 2 段是新色但常见（15%）、第 3 段是真正自定义（5%）。**Frequency-weighted 排序是产品设计的基本功，这里做对了。**
+3. **缩略图条 + mini 订单卡片列表**：`ScreencapGrid` 渲染缩略图状态徽章（🔄/●/!/✗）已具备代码路径 — QA 因无 ADB 设备未 walk 实际渲染（NOT_RUN 8 项），但 grep 看到 `截屏 #${s.seq}` + 状态机字段都有。我对这条 code-review 后判断完整。
 
-4. **「下一步」按钮文案动态显示变体数**：「合并 1 个产品条目」/「合并 2 个产品条目」按变体数实时变化，让用户在按下之前就知道「我即将向 catalog 写入 N 条产品」 — 这是 commit-before-confirm 的预期管理。
+4. **截屏 + 解析重叠（异步）**：后端 `TestE2E_xianyu_screencap_async` PASS — 截屏命令完成立即返回，LLM 解析独立异步跑、不阻塞下一次截屏点击。这是 PRD "ADB 命令进行中通常 < 1 秒，命令返回后立即重新 enabled" 的精确实现，对用户"快速连续点截屏"的体感至关重要。
 
-**Caveats / gaps**: 无。
+5. **AC 缺口**：
+   - AC #16 LLM 失败率 > 30% 警告 warning 未在前端实现（grep 0 hit「失败率较低」「建议补几张」）。当 DashScope 间歇性挂 / 模拟器画面被通知遮挡时这是用户判断要不要补截屏的决策依据。**实际影响**：批次质量不可见 → 用户可能进 CUJ-3 才发现 N 张全失败 → 得退回重扫，浪费 20 秒。建议 P1。
+   - AC #16 整体超时 5 分钟 abort + 「带这些进预览（红色低置信度）」/「丢弃重试」两按钮 **未实现** — 同 CUJ-1 LLM 超时降级路径缺失。建议合并到同一 iter5 修复点。
+   - AC #18 跨 tab 互锁（小红书扫描进行中时本 tab 按钮 disabled + tooltip）— `XianyuTab.tsx:451` 用 `canScreencap`，无 `otherInProgress` 输入 prop，**未传入跨 tab 状态**；XhsTab 有 `otherInProgress` prop 但 `XianyuTab` 没等价机制。QA NOT_RUN。**实际影响**：用户可能在小红书还在 LLM 匹配时跑去截屏闲鱼，触发 DashScope 限流（PRD 设计阶段明确避免这条）。建议 P1。
 
-**Spec gap**: 无。
+6. **「完成截屏，开始解析」按钮文案**：实现 `完成截屏，开始解析 (${captureCount} 张)` — 这条文案设计在 captureCount=0 时是 `完成截屏，开始解析`（无后缀，由 disabled 防御），≥1 时附数量。**比 PRD 文案更显式地告诉用户"我要处理几张"** — 这是好的微调，留着即可。
+
+7. **「取消」灰色提示 5 秒消失**：PRD AC 描述底部 5 秒灰色提示「已取消上次扫描」— 实现 `XianyuTab.tsx:hooks` 用 `message.info`（AntD 顶部 toast，3 秒默认），**位置 / 持续时间与 PRD 不一致**。微差，但 PRD 是底部 inline 提示更不打扰，顶部 toast 会盖住主区。建议 iter5 改为底部 inline。
+
+8. **闲鱼 mini 订单卡片**：spec 描述"已解析订单 mini 卡片列表（每条订单一行 mini 摘要：买家昵称 + 商品标题 + 数量），随解析进度增长" — code 看到 `ScreencapGrid` 渲染缩略图但没找到 mini 订单卡片列表渲染。**这是 PRD 明显的视觉信号缺失 — 用户截屏时本想"看着列表长出来"确认 LLM 抓到东西，没有的话只能看缩略图徽章变绿，反馈层次少了一层。** 建议 iter5 加。
+
+**Caveats / gaps**:
+- AC #16 失败率 > 30% warning 未实现
+- AC #16 LLM 整体超时 5 分钟 abort + 两按钮分支未实现（与 CUJ-1 同类缺口）
+- AC #18 跨 tab 互锁未实现 — XianyuTab 没接收 `otherInProgress` prop
+- 「已解析订单 mini 卡片列表」未实现 — 截屏阶段反馈层次缺失
+- 「已取消上次扫描」用 toast 不是底部 inline — 与 PRD 微差
+
+**Spec gap**:
+- 无（PRD CUJ-2 spec 完整、问题在实现侧）
 
 ---
 
-### CUJ-5（prd-005）: 合并到 catalog.yaml — Satisfied
+#### CUJ-3（prd-006）: 预览校对 + 一键导入 — Caveats
 
-**QA verdict** (from qa-report.md): PASS
-**PM verdict**: Satisfied
+**QA verdict** (from qa-report.md): PASS（retry 1）
+**PM verdict**: Caveats
 
 **Assessment**:
 
-按 user 指定「YAML 预览让用户安心？备份 + 自动 reload 闭环？失败回滚 + 查看日志可操作？」walk：
+这是整个 prd-006 链路最重 / 最复杂的 CUJ — 后端契约 9 项 AC（commit 原子性、`-redoN` override、partial unique index、ML 匹配率、stateless）live 验证全部 PASS（QA AC #13/19/25 三项 live 验 + 5 项 edge case live 验）；前端预览表格 22 项 AC 在 code 层全部 PASS（QA 标 code，因无 LLM key + 无扩展环境不能 e2e）。**后端 commit 单事务 + auto-rollback 是这条链路的安全锚 — `test_commit_zero_inserts_when_one_sku_missing_mid_batch` 验证了 5 单中第 4 单 SKU 缺失时整批回滚 0 写入。这是 CUJ-3 最该保的契约，保住了。**
 
-1. **YAML 预览的安心感**：QA 实测截图 `03-preview.png` 显示暗黑代码块（`background: #1e1e1e` + 白字 + `max-height: 520px` 内部滚动）+ syntax highlighting（键 `#9cdcfe` 蓝 / 字符串 `#ce9178` 橙 / 数字 `#b5cea8` 绿 / 注释 `#6a9955` 绿斜体）+ 首行注释 `# --- 床头柜 系列，由产品录入工具于 2026/6/14 19:46:32 追加 ---` + 三段「组件: / 打印盘: / 产品:」中文键。预览内容来自前端 `Preview.tsx` 的 mini YAML serializer，与后端 `expand_to_yaml_structures` 同一序列化逻辑 — **预览看到的 = 实际写入的，没有 last-mile drift**。这条「预览即真相」是「敢按下确认合并」的心理基础。
+按用户"作坊主对着 N 行预览校 SKU、点导入、看成功页确认 N 单进队列"的核心路径 walk —
 
-2. **5 阶段事务 + 备份 + 自动 reload 闭环**：`services/intake.py::do_merge` 按顺序执行 ① 撞名兜底 → ② 备份到 `data/catalog.yaml.bak.<时间戳>` → ③ append 写入 + `yaml.safe_load` 合法性校验 → ④ 内部调用 `load_catalog(db)`（复用 prd-000 CUJ-2 链路、不走 HTTP 往返）→ ⑤ 任一步失败从 bak 恢复。后端 5 个单测 `TestMergeSuccess / TestMergeConflict / TestMergeWriteFailed / TestMergeYamlInvalid / TestMergeRollback` 各自 mock 对应失败点并断言 catalog.yaml 内容 == bak 内容 + bak 保留。QA 三轮 happy path（initial / retry 1 / retry 2）实测：catalog.yaml 真实追加 + bak 文件创建（如 `catalog.yaml.bak.20260614-213158`）+ DB 自动 reload 14ms + `/api/products` 立即返回新产品 — **闭环跑通**。
+1. **筛选 chips 与 PRD spec 取向差异**：PRD AC #3 描述 4 chips「✓ 高置信度（绿）/ ? 中置信度（黄）/ ! 低置信度（红）/ ↻ 重复订单（灰）」按置信度分类。实现是 3 chips「● 新单（绿）/ ○ 重复（灰）/ ! 未匹配（红）」加左侧「全部」按置信度合并到状态类别。**实现的取向**：把"中 / 高置信度"合并到「新单」（用户实际只关心"勾还是不勾"），「低置信度」改名「未匹配」（更直白 — 用户更容易理解"为什么不勾选我"= 因为没匹配），重复独立。这是个**合理的简化**，对 50 单 / 天的体量更顺手（4 chips 在用户视觉里反而太碎），但**与 PRD AC 不严格一致**。建议下个 iter 决定：改 PRD 对齐 impl，或恢复 4 chips。我倾向前者 — impl 取向更对，文档应该跟着改。
 
-3. **成功页**：QA 实测截图 `04-success.png` — 大绿 `✓` + 「合并成功」 + 描述「已向 data/catalog.yaml 追加 3 个组件、8 张打印盘、1 个产品变体（床头柜 - 配色 1），目录已自动重新加载，可立即使用」 + 等宽字体显示备份文件全路径 + 「合并耗时：写入 12 ms · 重新加载 15 ms」 + 两按钮「继续录入下一个产品」/「前往产品目录查看 →」。**这是「告诉用户发生了什么 + 让用户验证发生了什么」的完整闭环** — 备份文件名让用户知道「如果出问题可以从这恢复」、耗时分项让用户知道「写入和 reload 是两个阶段、各自多久」、跳 /products 让用户立即验证「我加的产品真的进目录了」。
+2. **行底色 + 默认勾选规则**：PRD 4 档（白 / 浅黄 / 浅红 / 灰）在 code 层有 `rowClassName` 完整实现（grep `cls-conf-high/mid/low + cls-row-dup`），但置信度阈值映射到底色的边界用户能不能"一眼看出哪行需要校对"我没法 live 验证（QA 也 NOT_RUN）— 静态走读判断 OK。
 
-4. **失败回滚 + 查看日志可操作性**：`IntakeError.tsx` 渲染失败页 — 大红 `!` + 标题「合并失败 — 已自动回滚」（「已回滚」放标题里减少用户慌乱）+ monospace 错误详情块 4 行（错误类型 / 原始信息 / 已回滚至 backup_path / 建议） + 「查看后端日志」按钮（弹 `Modal` + `Input.TextArea` readonly 显示最近 100 行后端 stdout，宽 720px、SF Mono 字体） + 「返回上一步调整」按钮（回 CUJ-4 保留所有变体）。失败页 UI 本身 QA 标 NOT_RUN（happy path 始终成功，未触发），但代码完整 + backend `TestRecentLogs` 3 个单测全绿 + 4 个 error_kind 在 `errorMessages.ts` 的 ERROR_SUGGESTIONS / MERGE_ERROR_LABELS 表里都有对应文案 — 我对 code-walked 后判断完整。**「查看日志」是技术作坊主自用产品的正确 escape hatch — 不强迫用户去翻 docker logs / 服务器 ssh，把最近 100 行日志直接送到 UI 里。**
+3. **重复单 + 改判 override**：PRD 设计阶段花了很多功夫在"重复单灰底 + 默认不勾 + 改判二次确认"的安全护栏上，实现非常扎实——
+   - Modal 二次确认文案：`确认改判为新单？系统检测到该单已存在；改判后将作为新订单写入，可能产生重复。` — 比 PRD 文案稍简化但语义到位。
+   - 后端 `-redoN` 后缀方案 live 验证：连续 override 两次产生 base / `-redo1`，partial unique index 保证 `external_order_id` IS NULL 时多行 NULL 允许（手动录单不互斥）。**这条 schema 选择对的，比"直接绕过唯一约束"安全得多 — 任何时刻 DB 看 `external_order_id` 列都能追溯到 platform 上的原单。**
+   - 「改判为新单」link 与「重复」tag 视觉对齐 PRD（QA code review PASS）。
+   - 边角缺陷：实现简化了"于 06-17 已导入 · order #87"的元信息为单行「已导入 · order #N」（缺日期），微差。
 
-5. **MergeStats schema drift 不影响 UI**：QA 报告确认 — Pydantic schema 声明中文键，do_merge 返回英文键，FastAPI 因为该端点未设 `response_model` 不做强制校验，前端 Success.tsx 用英文键 `stats.components_added / plates_added / products_added` 读且正确渲染。这是 backend / frontend 之间的 schema drift（未来加 response_model 校验会立刻挂），列在 QA LOW caveats，不阻塞产品验收。建议 iter4 统一对齐。
+4. **SkuPicker 三段结构**：浮窗 360px 宽、当前匹配 + 原文 + LLM 候选 + 搜索 + "找不到 SKU？请先到 [产品录入](/intake)" link — code review PASS，PR-D AC #10/11 满足。这条是 LLM 不可靠场景的核心校对工具，结构对、跳产品录入的 escape hatch 对 — 让用户在 catalog 没有该 SKU 时不会卡死。
 
-**Caveats / gaps**: 无（MergeStats schema drift 是工程层 LOW，不是产品层 caveats）。
+5. **空 batch 空态**：retry 1 修复后 `rows.length === 0` 居中渲染「未抓取到任何订单」+ 「请检查千帆 tab 是否打开，或闲鱼是否截取到订单页」副文案 + 「返回扫描页」按钮 — QA Run 1/2 双重验证 + onCancel hook 调用上层 dispatch 切回 tabs 模式。**这是 retry 1 的真正闭环 — 不只是补了 UI，连"返回扫描页"按钮的行为路径都接通了。**
 
-**Spec gap**: 无。
+6. **成功页缺 PRD 明确字段**：PRD CUJ-3 step 13 与 AC 描述成功页"灰底批次详情条"含「来源平台 / 扫描时间 / 扫描方式（Chrome 扩展 / ADB 截屏 N 张）/ 总耗时 / 批次号 batch_id / 平均置信度」6 字段；实现 `SuccessPanel.tsx:125-139` 渲染 6 字段为「来源平台 / 耗时 / 新增订单 / 跳过重复 / 手动跳过 / SKU 匹配率」 — 与 PRD spec 不完全对齐（缺 "扫描方式 / 扫描时间 / 批次号 batch_id / 平均置信度"，加了"新增 / 跳过重复 / 手动跳过 / SKU 匹配率"的细化）。**impl 实际取向其实更好 — stat 网格已经在上面渲染了 4 个数（新增 / 跳过重复 / 手动跳过 / SKU 匹配率），下方批次详情就该展示"环境元信息"（平台 / 扫描方式 / 总耗时 / batch_id / 平均置信度）而不是把 stat 数字重复一遍。** 建议下 iter 把批次详情改回 PRD 设计的环境元信息组合。
+
+7. **「继续导入<另一平台>」用 `window.location.reload()` 而非 tab 切换**：PRD step 13 描述"按钮变「继续导入闲鱼」/「继续导入小红书」"且"自动切到另一平台 tab，回到该 tab 初始就绪态" — 实现是 `window.location.reload()`，**这是错的方向**。`window.location.reload()` 会丢失 React Router state、AntD message context，并且**回到的是默认 tab（小红书）而不是另一平台 tab**。用户从闲鱼成功页点「继续导入小红书」实际回到的是小红书 tab（OK），但从小红书成功页点「继续导入闲鱼」会先 reload 到小红书 tab 再要求用户手动切换 — 体感是"我点了继续导入闲鱼，怎么还是小红书"。建议 iter5 改为父组件 dispatch `{kind:'tabs', activeTab: otherPlatform}`。
+
+8. **失败页**：`FailurePanel.tsx` 渲染红 ! + 标题「导入失败 — 未写入任何订单」+「返回预览继续校对」/「丢弃本批」(二次确认) — 与 PRD AC PASS。我看了 FailurePanel grep 输出，二次确认 Modal 文案是「丢弃本批？」— OK 但比 PRD 描述简化。
+
+9. **commit 路径 / 单事务保证**：live + automated 双重验证 PASS。**这是 prd-006 整个链路最该保的契约 — 失败"全 or 无"语义不会污染待处理队列。**
+
+**Caveats / gaps**:
+- 筛选 chips 实现取向（3 chips by status）与 PRD AC #3（4 chips by confidence）不一致 — spec drift，倾向改 spec 而非 impl
+- 重复单元信息文案缺日期（「已导入 · order #N」vs PRD「于 06-17 已导入 · order #N」）
+- 成功页批次详情字段与 PRD spec 不一致 — 缺扫描方式 / 扫描时间 / batch_id / 平均置信度
+- 「继续导入<另一平台>」用 `window.location.reload()` 而非父组件 tab 切换 — 用户从小红书跳闲鱼路径错位
+- 顶部 chip 「平均置信度 / 最低」实现得很好但 AC 没明示，可考虑加入 PRD spec
+
+**Spec gap**:
+- 4 chips（PRD）vs 3 chips（impl）的取向选择应当走 user 决策
 
 ---
 
-## Recommended Next-Iteration Priorities
+#### CUJ-4（prd-006）: 自动导入设置 — Caveats
 
-ordered by impact × cost：
+**QA verdict** (from qa-report.md): PASS（retry 1 — 共享 CUJ-2 HIGH 修复链路）
+**PM verdict**: Caveats
 
-1. **补 Playwright E2E 测试覆盖 9 个 manual NOT_RUN 场景**（高价值 / 中等成本）— QA 已列清单：识别中三阶段灯实际渲染、原图复核 Drawer 交互、撞名 alert 与行红化、耗时 / 件数 / 盘号校验红边、复制此列与新增配色行为差异、自定义新色名 dedupe、变体名重复校验、merge 失败页 UI、recent-logs Modal。这些是 PRD 明确写了的 AC 但 QA 没能在 mock LLM 环境下触发的场景。E2E 自动化后 iter4+ 每次回归不用手测，且每次代码改动可即时知道是否破坏这些场景。建议 3 个 spec scenario / 9 个 NOT_RUN = 12 个 Playwright test，估算 1 个开发日。
+**Assessment**:
 
-2. **修 LOW AntD deprecation 4 处**（低价值 / 极低成本）— `Alert.message → title` / `Drawer.width → size` / `Statistic.valueStyle → styles.content` / `Spin.tip → description`，4 行 props 改名。先做完免得 console.error 噪音污染未来 QA 截图。AntD 下个 major 版本会硬移除这些 prop，提前修没有副作用。估算 30 分钟。
+按"作坊主首次配 ADB + 检查扩展状态"路径 walk —
 
-3. **统一 MergeStats schema 中英文键 + 显式设 `response_model`**（中价值 / 低成本）— 选英文（与 `Component / PrintConfig` 等其他 schema 一致）或中文（与 `data/catalog.yaml` 文件键一致），并在 `/api/intake/merge` 路由显式 `response_model=MergeResponse`。当前是「FastAPI 不校验 → 跑得通」的偶然成功，未来引入校验或换 ORM 序列化器立刻会挂。估算 1 小时含测试调整。
+1. **核心配置链路 PASS**：GET/PUT `xianyu/config` roundtrip 3 个新 backend 测全绿；设备类型下拉端口自动填正确（MuMu→7555 / 蓝叠→5555 / 雷电→5555 / USB→5037 三个 live 验证）；「测试 ADB 连接」按钮点击后端 diagnostics 完整返回 + 修复后 `adb_connected` 不再 false-green；保存按钮 dirty 状态联动。**这是 CUJ-4 的骨架 — 骨架对。**
 
-4. **prd-005 设计延展：「识别历史 / 重新打开草稿」**（中价值 / 中成本，user 决定是否做）— iter3 PRD 明确范围外标注「识别完成后到合并前的草稿持久化（中途关页面即丢，重做不痛）」。但 user 实际跑过 5 次完整流程后可能改变看法 — 如果识别一次要 20-40 秒 + 用户在 CUJ-3 / CUJ-4 中途切其他工作再回来发现草稿没了，重做痛感会很强。建议 iter4 前先收集 user 的实际使用反馈（跑了几次？有没有遇到中途切走的场景？）再决定要不要做草稿持久化。如果做，要写 prd-006-intake-draft-persistence 单独立项。
+2. **小红书卡片**：未装态 / 已装态分支正确渲染，video 4 步引导 + 「下载扩展 zip」按钮（与 CUJ-1 一致）。
 
-5. **prd-005 设计延展：「成组改色快捷操作」**（低价值 / 中成本，user 决定是否做）— iter3 PRD 范围外标注「成组改色快捷操作」。CUJ-4 当前路径是「逐 cell 点 popover 选色」，对于「同一变体内大多数组件用同一色」的常见场景，「填整列」「按组件批量染色」会更顺手。但同样建议先看 user 实际使用 N 个变体的频率再判断。
+3. **闲鱼卡片**：表单字段（设备类型 / PC IP / 端口）布局对齐 cuj-4-initial.html mock，「测试 ADB 连接」+「保存配置」按钮分立。
 
-6. **prd-001~004 跨 PRD 影响检查**（低价值 / 极低成本）— prd-005 合并后 catalog.yaml 多了产品 / 组件 / 打印盘条目，理论上不影响订单 / 库存 / 排班逻辑（都消费 DB 而非 YAML），但建议下次 dev-cycle 时跑一遍 prd-003 排班生成确认新加的「床头柜 - 配色 1」能正确进入排班候选。
+4. **AC #14 缺口**：`.env` 未配 `DASHSCOPE_API_KEY` 时页底说明条**未变红** — 实现是 `AutoImportSettings.tsx:367-379` 一段固定灰底文案，**没有服务端检测 LLM key 状态的 endpoint，前端无法响应**。**实际影响**：作坊主首次配完 ADB → 跑去 CUJ-1/2 扫描 → LLM 匹配阶段才发现"DashScope key 未配 / 错"，得 ssh 后端改 `.env` 重启 — 这是产品的核心防呆缺失（PRD 设计阶段明确写过"避免 fail late"）。后端添加 `GET /api/auto-import/llm/status` → `{ ok, configured: bool }` 不复杂；前端在说明条前后切色即可。**建议 P1。**
 
-## PRD Lifecycle Changes
+5. **AC #15 缺口**：从 CUJ-1/2 故障态点「打开设置页」跳本页时**未自动滚 + 卡片 pulse** — QA 标 NOT_RUN，code 层无 pulse 动画 / scrollIntoView 逻辑。**实际影响**：作坊主在 ADB 错块点「打开设置页」link 跳到 `/settings/auto-import`，页面正常加载但他要自己往下找闲鱼卡片（这页只有两张并列卡片，找成本不高 — 影响最小）。**建议 P2（next iter+1）。**
 
-- **prd-005-intake: `active → completed`** — 全部 5 CUJ 在本轮 PM review 均判 Satisfied，end-to-end 真实样本验证通过，无任何 Caveats / Not done。frontmatter 状态本次同时更新为 `completed`。
+6. **AC #11 PC IP 空时「测试 ADB」disabled + tooltip**：QA 标 NOT_RUN，code 检查显示无 disabled 防护。**实际影响**：用户空 IP 点测试 → 后端按 pc_ip="" 跑诊断 → 三项 ✗ 返回（修复后），用户能看出"IP 没填" — UX 仍可用但啰嗦了一步。**建议 P2。**
+
+7. **测试连接不持久化 + 必须点保存才落库**：code review PASS（test-adb 不写 settings 表），契约对的。
+
+**Caveats / gaps**:
+- AC #14 `.env` 未配 LLM key 时说明条不变红 — 服务端检测 endpoint + 前端联动均缺
+- AC #15 从 CUJ-1/2 故障态自动滚 + 卡片 pulse 未实现
+- AC #11 PC IP 空时「测试 ADB」未 disabled
+
+**Spec gap**:
+- 无（PRD AC 写得很清楚，仅实现侧缺 3 项）
+
+---
+
+### Recommended Next-Iteration Priorities
+
+ordered by user-value × cost：
+
+1. **CUJ-4 AC #14 LLM key 未配检测 + 说明条变红**（高价值 / 低成本）— 增加 `GET /api/auto-import/llm/status` 服务端检测 `DASHSCOPE_API_KEY` 是否存在且非空 → 前端在 AutoImportSettings 页底 + 可选地在 CUJ-1/2 进入扫描前同步检查 → 未配时整页阻塞「请先配置 .env DASHSCOPE_API_KEY 并重启后端」。这是**作坊主首次配置时最容易掉坑的地方** — fail early 比 fail at scan 友好得多。估算 2-3 小时含测试。
+
+2. **CUJ-1 + CUJ-2 LLM 超时降级路径**（高价值 / 中成本）— 加 90 秒（xhs）/ 5 分钟（xianyu）的端到端超时检测，弹错误卡片"重试 / 跳过 SKU 匹配（进 CUJ-3 全红低置信度）/ 返回" 三按钮。这是作坊主依赖第三方 LLM 服务时的核心 escape hatch — DashScope 偶发挂掉时用户得能仍录单。建议两 CUJ 一起改，复用同一 ErrorPanel 组件。估算 1 天。
+
+3. **CUJ-2 跨 tab 互锁 + 失败率 > 30% warning + mini 订单卡片**（中价值 / 中成本）— 三项一起做 —
+   - XianyuTab 接收 `otherInProgress` prop，对应 disabled 「截屏」+「完成解析」按钮（avoid DashScope 限流）
+   - 「完成截屏，开始解析」点击时计算 LLM 解析成功率，< 70% 时弹 confirm dialog
+   - 截屏过程中右侧渲染 mini 订单卡片列表（已解析订单的买家 + 标题 + 数量）
+   估算 1 天。
+
+4. **CUJ-3 成功页批次详情字段对齐 PRD + 「继续导入」用 tab 切换**（低价值 / 低成本）— SuccessPanel 拆「stat 网格」（保留）和「批次详情」（改为 来源平台 / 扫描方式 / 扫描时间 / 总耗时 / batch_id / 平均置信度）；「继续导入<另一平台>」改成 dispatch `{kind:'tabs', activeTab: otherPlatform}`，避免 `window.location.reload()`。估算 2 小时。
+
+5. **筛选 chips 取向决策**（PRD 调整 / 不动 impl）— user 看 3 chips vs 4 chips 哪个更顺手，定后改一边。我倾向改 PRD 对齐 impl（3 chips 取向更直观），但请 user 确认。
+
+6. **QA 提到的 LOW carry-over**（合并到 next-prd 一起做）—
+   - xhs/probe 占位实现 → 要么真做（扩展 `find_tab_only` action），要么从 PRD 删除「未发现千帆 tab」黄色态
+   - AntD Spin tip deprecation → 全局替换 `tip` → `description` 属性（与 prd-005 iter3 同类问题一起做）
+   - TL review carry-over 5 项（N+1 / 串行 LLM / payload limit / CORS / 硬编码 backend URL）— 是次 iter 引入的技术债，建议作为 prd-006 收尾的"加固 iter"统一处理
+
+7. **CUJ-1 5 步进度文案对齐方向 + LLM 匹配子计数**（中价值 / 低成本）— 与 user 商量是改 PRD 5 步描述对齐 impl 还是回归 PRD；同时 backend SSE / polling 推 LLM 匹配进度（"正在匹配第 18/42 条"），让 30~60 秒等待期间有推进度感。估算 半天。
+
+8. **CUJ-4 AC #15 / #11 + 缩略图 manual 验证补全**（低价值 / 中成本）— 设置页 pulse 动画 + PC IP 空时 disabled + Playwright 补 CUJ-2 缩略图状态徽章自动化测试。CUJ-4 这两项 UX 抛光在用户实际使用后再决定是否做。
+
+### PRD Lifecycle Changes（iter4）
+
+- **prd-006-auto-import-orders: 保持 `active`** — 4 CUJ 全 Caveats，无 Satisfied 项；建议下一 iter 用 1 个加固回合收齐上述 P1 + P2 项后再升 `completed`。frontmatter 状态本次**不变**。

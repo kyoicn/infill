@@ -1,11 +1,11 @@
 # 项目状态
 
 > 自动生成的项目状态摘要。
-> 最后更新：2026-06-18 22:05:00 (UTC+8)
+> 最后更新：2026-06-18 22:46:44 (UTC+8)
 
 ## 概述
 
-本项目是面向个人 3D 打印小作坊的生产管理系统，覆盖产品目录、订单管理、组件库存、打印机排班、系统配置、产品录入六大模块。核心价值是「晚间盘点 10 分钟，自动生成第二天可直接执行的多打印机排班表」。Iter3 刚刚交付 prd-005「产品录入」全部 5 个 CUJ（QA 经 2 轮 retry 验证 PASS），目前等待 PM 评审。
+本项目是面向个人 3D 打印小作坊的生产管理系统，覆盖产品目录、订单管理、组件库存、打印机排班、系统配置、产品录入、自动导入订单七大模块。核心价值是「晚间盘点 10 分钟，自动生成第二天可直接执行的多打印机排班表」。Iter4 刚刚交付 prd-006「自动导入订单」全部 4 个 CUJ，QA 经 retry 1 后判定 PASS（5 个 MEDIUM+ bug 全部闭环），等待首次 PM 评审。
 
 ## 技术栈
 
@@ -16,6 +16,7 @@
 | 前端路由 | react-router-dom | 7.13.2 |
 | 前端图标 | @ant-design/icons | 6.1.1 |
 | 前端构建 | Vite + TypeScript | 8.0.1 / 5.9.3 |
+| 浏览器扩展 | Chrome Manifest V3 (MV3) | — |
 | 后端框架 | FastAPI | 0.115.12 |
 | 后端服务器 | Uvicorn | 0.34.2 |
 | ORM | SQLAlchemy | 2.0.40 |
@@ -26,16 +27,18 @@
 | 文件上传 | python-multipart | ≥0.0.9 |
 | 数据库 | SQLite（`backend/data.db`） | — |
 | LLM Provider | DeepSeek（multimodal chat completions） | — |
+| ADB 客户端 | Android Platform Tools `adb` 子进程 | — |
 | 容器化 | Docker + docker-compose | — |
 
 ## 架构
 
-单体全栈应用，前后端分离但打包在同一 Docker 镜像中：
+单体全栈应用，前后端分离但打包在同一 Docker 镜像中；Chrome 扩展独立分发（zip 由后端 `/static/extensions/` 静态托管）：
 
-- **后端**（`backend/app/`）：FastAPI 应用，`main.py` 注册所有路由（catalog / orders / inventory / printers / config / schedule / intake），`lifespan` 启动时从 `data/catalog.yaml` 差量同步目录进 SQLite。路由层（`routers/`）薄，核心业务逻辑在 `services/`。排班算法分层：`scheduler_core.py` 是单一纯函数算法核心（含 `_sync_penalty()` additive 同步惩罚、`schedule_greedy()` 三策略共用贪心主循环、two_phase 凑整放弃逻辑、`SURPLUS_TARGET_PRODUCTS`/`DEFAULT_CHANGEOVER_MINUTES`/`CAPACITY_SAFETY_MARGIN`/`SYNC_PENALTY_CHANGEOVER_MULT` 常量集中源）；`scheduler.py` 仅保留 DB 服务层与 `_persist_scheduled()` 共享持久化辅助。产品录入算法分层：`services/intake.py` 负责会话/文件管理、启发式分类、撞名检测、5 阶段事务 merge + 回滚；`services/intake_llm.py` 封装 DeepSeek provider（多图单请求、HTTP 错误 → error_kind 映射、JSON 解析容错）；`schemas_intake.py` 单独存放 intake 端点 Pydantic 模型。
-- **前端**（`frontend/src/`）：React SPA，`App.tsx` + `components/Layout.tsx` 配置路由，七个页面组件对应七条路由，所有接口调用经 `api/client.ts` 集中管理。产品录入页 `pages/Intake.tsx` 是父级状态机（5 个 mode：upload / recognize / draft / color / merge），把 sessionId / assemblyImages / produceImages 等子状态提升到父组件以保证「返回上一步」时图与基名不丢；5 个子组件在 `pages/intake/`（Upload / Recognizing / Draft / Color / Preview + IntakeError / Success），共享 `colorPalette.ts` 11 色常用色板 + `durationFormat.ts` 时长格式化 + `errorMessages.ts` 错误文案。
-- **数据流**：`catalog.yaml` ⇄ `load_catalog()` ⇄ SQLite（目录、库存初始行）⇄ FastAPI REST API ⇄ React 前端状态 → 用户界面。订单发货和排班任务完成是库存减少/增加的两个唯一入口。产品录入 merge 是写 catalog.yaml 的唯一入口（5 阶段事务：撞名兜底 → 备份 → append + 复读 → load_catalog → 失败回滚）。
-- **部署**：Docker 内后端静态服务前端 `dist/`，数据库与 catalog 文件通过卷挂载持久化。
+- **后端**（`backend/app/`）：FastAPI 应用，`main.py` 注册所有路由（catalog / orders / inventory / printers / config / schedule / intake / auto_import），`lifespan` 启动时从 `data/catalog.yaml` 差量同步目录进 SQLite + 调 `ensure_order_auto_import_schema_exists` 跑 `Order` 表 4 列 + partial unique index 迁移 + 挂载 `/static/extensions`。路由层（`routers/`）薄，核心业务逻辑在 `services/`。排班算法分层：`scheduler_core.py` 是单一纯函数算法核心；`scheduler.py` 仅保留 DB 服务层与 `_persist_scheduled()` 共享持久化辅助。产品录入算法分层：`services/intake.py` 负责会话/文件管理、启发式分类、撞名检测、5 阶段事务 merge + 回滚；`services/intake_llm.py` 封装 DeepSeek provider 的 `chat_completion()`（已抽出供 auto_import 复用）。自动导入分层：`services/auto_import_*`（adb_client / sku_match / xianyu_parser 等）封装 ADB 子进程、LLM SKU 匹配、闲鱼截屏解析；`routers/auto_import.py` 13 个 endpoint 单事务 commit + `-redoN` override + diagnostics 整套。
+- **前端**（`frontend/src/`）：React SPA，`App.tsx` + `components/Layout.tsx` 配置路由，八条路由对应八个页面组件，所有接口调用经 `api/client.ts` 集中管理（已扩 `api.autoImport.*`）。`extension.ts` 封装 `chrome.runtime.sendMessage` 调扩展。产品录入页 `pages/Intake.tsx` 是父级状态机（5 个 mode）。自动导入父容器 `pages/AutoImport.tsx`（mode: tabs / scanning / preview）+ `pages/auto_import/`（XhsTab / XianyuTab / ScanningProgress / ScreencapGrid / PreviewTable / SkuPicker / SuccessPanel / FailurePanel）+ 独立设置页 `pages/AutoImportSettings.tsx`。
+- **浏览器扩展**（`extension/`）：Chrome MV3 scaffold（manifest + background SW + content_xhs），由 `scripts/build-extension.sh` 打包 zip 自动镜像到 `backend/static/extensions/infill-xhs-scraper-v0.1.0.zip`。
+- **数据流**：`catalog.yaml` ⇄ `load_catalog()` ⇄ SQLite（目录、库存初始行）⇄ FastAPI REST API ⇄ React 前端状态 → 用户界面。订单发货和排班任务完成是库存减少/增加的两个唯一入口。产品录入 merge 是写 catalog.yaml 的唯一入口。自动导入产生 `Order(source_platform, external_order_id, auto_import_batch_id, llm_confidence)` 经 partial unique index 防重，单事务批量 insert 失败整批回滚。
+- **部署**：Docker 内后端静态服务前端 `dist/` + `/static/extensions/*.zip`，数据库与 catalog 文件通过卷挂载持久化。
 
 ## CUJ 状态
 
@@ -61,22 +64,22 @@
 | CUJ-2：配置操作时间窗口 | prd-004 | P0 | merged | — | — |
 | CUJ-3：配置换版时间 | prd-004 | P0 | merged | — | — |
 | CUJ-4：重置数据库 | prd-004 | P1 | merged | — | — |
-| CUJ-1：上传截图 + 自动分类 | prd-005 | P0 | merged | PASS | — |
-| CUJ-2：触发 LLM 识别 | prd-005 | P0 | merged | PASS | — |
-| CUJ-3：草稿校对 BOM + 打印盘 | prd-005 | P0 | merged | PASS | — |
-| CUJ-4：颜色矩阵 + 多配色变体 | prd-005 | P0 | merged | PASS | — |
-| CUJ-5：合并到 catalog.yaml | prd-005 | P0 | merged | PASS | — |
-| CUJ-1：扫描小红书千帆订单 | prd-006 | P0 | merged | — | — |
-| CUJ-2：扫描闲鱼订单 | prd-006 | P0 | merged | — | — |
-| CUJ-3：预览校对 + 一键导入 | prd-006 | P0 | merged | — | — |
-| CUJ-4：自动导入设置 | prd-006 | P1 | merged | — | — |
+| CUJ-1：上传截图 + 自动分类 | prd-005 | P0 | merged | PASS | Satisfied |
+| CUJ-2：触发 LLM 识别 | prd-005 | P0 | merged | PASS | Satisfied |
+| CUJ-3：草稿校对 BOM + 打印盘 | prd-005 | P0 | merged | PASS | Satisfied |
+| CUJ-4：颜色矩阵 + 多配色变体 | prd-005 | P0 | merged | PASS | Satisfied |
+| CUJ-5：合并到 catalog.yaml | prd-005 | P0 | merged | PASS | Satisfied |
+| CUJ-1：扫描小红书千帆订单 | prd-006 | P0 | merged | PASS | — |
+| CUJ-2：扫描闲鱼订单 | prd-006 | P0 | merged | PASS | — |
+| CUJ-3：预览校对 + 一键导入 | prd-006 | P0 | merged | PASS | — |
+| CUJ-4：自动导入设置 | prd-006 | P1 | merged | PASS | — |
 
 **列值说明：**
 - `Impl`：`not started`（无代码）| `in progress`（部分代码）| `merged`（代码已存在并可构建）
 - `QA`：`PASS` | `FAIL` | `BLOCKED` | `NOT_RUN` | `WAIVED` | `—`（尚无 QA 运行）
 - `PM`：`Satisfied` | `Caveats` | `Not done` | `—`（尚无 PM 评审）
 
-CUJ **完全完成**的条件：Impl=`merged` AND QA=`PASS` AND PM=`Satisfied`。当前仅 prd-003 CUJ-1 满足完全完成；prd-005 全部 5 个 CUJ 经 iter3 + retry 1 + retry 2 三轮 QA 后判定为 PASS（所有 MEDIUM+ bug 已闭环），等待首次 PM 评审。
+CUJ **完全完成**的条件：Impl=`merged` AND QA=`PASS` AND PM=`Satisfied`。当前 prd-003 CUJ-1 与 prd-005 全部 5 个 CUJ 满足完全完成；prd-006 全部 4 个 CUJ 经 iter4 initial（FAIL）+ retry 1（PASS）两轮 QA 后判定 PASS（5 个 MEDIUM+ bug 全部闭环），等待首次 PM 评审。
 
 ## 核心数据类型
 
@@ -87,11 +90,11 @@ CUJ **完全完成**的条件：Impl=`merged` AND QA=`PASS` AND PM=`Satisfied`�
 | `Product` | `id, name, description` | 销售产品，关联 BOM |
 | `ProductComponent` | `product_id, component_id, color, quantity` | 产品 BOM 明细 |
 | `Inventory` | `id, component_id, color, quantity` | 组件+颜色级库存，唯一性靠逻辑保证 |
-| `Order` | `id, created_at, status, shipped_at` | 订单头，status ∈ {pending, shipped} |
+| `Order` | `id, created_at, status, shipped_at, source_platform, external_order_id, auto_import_batch_id, llm_confidence` | 订单头，status ∈ {pending, shipped}；后 4 列由 prd-006 引入，partial unique index `(source_platform, external_order_id) WHERE source_platform IS NOT NULL` 防重 |
 | `OrderItem` | `id, order_id, product_id, quantity` | 订单明细行 |
 | `Printer` | `id, name` | 打印机台账，无唯一约束 |
 | `ScheduleConfig` | `id, day_of_week, windows(JSON)` | 每星期几的操作时间窗口，DB 有唯一约束 |
-| `SystemConfig` | `id, key, value` | 通用 KV 配置，当前只用 `changeover_minutes` |
+| `SystemConfig` | `id, key, value` | 通用 KV 配置，当前用 `changeover_minutes` + `xianyu_adb_config`(JSON) |
 | `PrintPlan` | `id, date, start_time, duration_hours, status, created_at` | 排班表头，status ∈ {draft, confirmed} |
 | `PrintBatch` | `id, plan_id, start_time, batch_order, status` | 一组同时启动的任务，status ∈ {pending, started, completed} |
 | `PrintTask` | `id, batch_id, printer_id, print_config_id, color, is_surplus, start_time, end_time, status` | 单台打印机的单个任务，status ∈ {pending, completed, cancelled, failed} |
@@ -99,6 +102,9 @@ CUJ **完全完成**的条件：Impl=`merged` AND QA=`PASS` AND PM=`Satisfied`�
 | `RecognizeRequest`（schemas_intake） | `session_id, product_base_name, image_ids[]` | LLM 识别请求载荷 |
 | `MergeRequest`（schemas_intake） | `session_id, product_base_name, components[], plates[], variants[]` | catalog.yaml 5 阶段合并请求 |
 | `IntakeError` | `error_kind, message, raw_preview?` | LLM/merge 失败统一错误，error_kind ∈ {http_401, http_5xx, timeout, parse_failed, conflict, write_failed, yaml_invalid, rollback, network} |
+| `ScanRequest`/`PreviewBatch`/`CommitRequest`（auto_import） | `source_platform, raw_orders[], llm_matches[], batch_id, items[], overrides[]` | 自动导入 scan / preview / commit 单事务批量载荷 |
+| `XianyuAdbConfig` | `device_type(mumu\|bluestacks\|leidian\|usb), pc_ip, port` | ADB endpoint 配置，存 SystemConfig JSON |
+| `Diagnostic` | `name, ok, hint?` | ADB probe / test-adb 的 4 项实时检查（adb_installed / ping / tcp_port / device_state）|
 
 ## 数据流
 
@@ -132,6 +138,25 @@ SQLite: Component / PrintConfig / Product / ProductComponent / Inventory（初�
     │        ④ load_catalog → ⑤ 失败回滚                  │
     │        └── DB 立即可见新组件/打印盘/产品             │
     │                                                   │
+    ├── 自动导入 — 小红书 ────────────────────────────────│
+    │        ① 前端 chrome.runtime.sendMessage(ping)      │
+    │        ② POST /xhs/extension-status + /xhs/probe    │
+    │        ③ content_xhs 抓 DOM → POST /xhs/scan        │
+    │        ④ 后端 LLM 串行 match_listing_to_sku         │
+    │        ⑤ 返回 PreviewBatch（stateless 前端态）       │
+    │                                                   │
+    ├── 自动导入 — 闲鱼 ──────────────────────────────────│
+    │        ① POST /xianyu/probe + diagnostics 4 项检查 │
+    │        ② POST /xianyu/screencap → ADB exec-out      │
+    │              screencap -p → png 字节 → 异步队列     │
+    │        ③ LLM 单图解析 raw_listing → PreviewBatch     │
+    │        ④ 1.5s 轮询 /xianyu/scan-status              │
+    │                                                   │
+    ├── 自动导入 commit POST /auto-import/commit ────────│
+    │        └── 单事务批量 insert Order + OrderItem      │
+    │              任一 SKU 缺失整批回滚（零写入）         │
+    │              重复用 -redoN 后缀绕过 unique index    │
+    │                                                   │
     └─────────────────────────────────────────────────▶ React SPA
                 GET /api/* → 前端内存状态 → Ant Design UI
 ```
@@ -144,11 +169,13 @@ SQLite: Component / PrintConfig / Product / ProductComponent / Inventory（初�
 infill-intake/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # FastAPI 应用入口，lifespan，静态文件服务
-│   │   ├── models.py            # SQLAlchemy ORM 模型（全部 13 张表）
+│   │   ├── main.py              # FastAPI 应用入口，lifespan，静态文件服务，/static/extensions 挂载
+│   │   ├── models.py            # SQLAlchemy ORM 模型（含 Order 新 4 列）
 │   │   ├── schemas.py           # Pydantic 请求/响应 schema（核心模块）
 │   │   ├── schemas_intake.py    # Pydantic schema（intake 模块单独文件）
+│   │   ├── schemas_auto_import.py # Pydantic schema（auto_import 模块单独文件）
 │   │   ├── database.py          # SQLite 连接与 SessionLocal
+│   │   ├── migrations.py        # ensure_order_auto_import_schema_exists（partial unique index）
 │   │   ├── routers/
 │   │   │   ├── catalog.py       # GET /api/components、/api/products、POST /api/catalog/reload
 │   │   │   ├── orders.py        # 订单 CRUD + POST /ship
@@ -156,89 +183,80 @@ infill-intake/
 │   │   │   ├── printers.py      # 打印机 CRUD
 │   │   │   ├── config.py        # 操作窗口 upsert、换版时间 upsert、POST reset-db
 │   │   │   ├── schedule.py      # 排班生成、确认、执行状态机
-│   │   │   └── intake.py        # 产品录入：upload / provider-status / recognize / merge / recent-logs
+│   │   │   ├── intake.py        # 产品录入：upload / provider-status / recognize / merge / recent-logs
+│   │   │   └── auto_import.py   # 自动导入 13 endpoints：xhs/* + xianyu/* + sku-search + commit
 │   │   └── services/
 │   │       ├── catalog.py       # load_catalog()：YAML 差量同步入 DB
 │   │       ├── scheduler.py     # DB 服务层 + _persist_scheduled 共享持久化辅助
-│   │       ├── scheduler_core.py# 纯函数算法核心：三策略共用 schedule_greedy + additive 同步惩罚 + 常量单一源
-│   │       ├── intake.py        # 会话目录、启发式分类、撞名检测、do_merge 5 阶段事务 + 回滚 + recent-logs
-│   │       ├── intake_llm.py    # DeepSeek provider：多图单请求、HTTP→error_kind 映射、JSON 容错解析
+│   │       ├── scheduler_core.py# 纯函数算法核心
+│   │       ├── intake.py        # 会话目录、启发式分类、撞名检测、do_merge 5 阶段事务
+│   │       ├── intake_llm.py    # DeepSeek provider：chat_completion()（被 auto_import 复用）
+│   │       ├── auto_import_adb_client.py    # subprocess adb 封装 + 4 项 diagnostics
+│   │       ├── auto_import_sku_match.py     # match_listing_to_sku：全量 catalog 注入 LLM
+│   │       ├── auto_import_xianyu_parser.py # 单图 LLM 解析 raw_listing
 │   │       └── migrate.py       # 数据库迁移辅助
 │   ├── tests/
-│   │   ├── test_scheduler.py    # scheduler_core 单元测试（131 测试）
-│   │   └── test_intake.py       # intake 全 5 CUJ + provider + merge 事务（71 测试）
+│   │   ├── test_scheduler.py    # scheduler_core 单元测试
+│   │   ├── test_intake.py       # intake 全 5 CUJ + provider + merge 事务
+│   │   └── test_auto_import.py  # auto_import 全 4 CUJ + E2E + retry-1 fix 测试
 │   └── requirements.txt
+├── extension/
+│   ├── manifest.json            # Chrome MV3 配置（permissions: tabs/storage/scripting）
+│   ├── background.js            # service worker，host=http://localhost:8000（硬编码 LOW 项）
+│   ├── content_xhs.js           # 小红书千帆 DOM 抓取
+│   └── README.md
 ├── frontend/
 │   └── src/
 │       ├── App.tsx              # 顶层路由（Layout + Sider）
-│       ├── components/Layout.tsx# 左侧 Sider 七项菜单
-│       ├── api/client.ts        # 全部 API 方法集中定义
+│       ├── components/Layout.tsx# 左侧 Sider 八项菜单
+│       ├── api/
+│       │   ├── client.ts        # 全部 API 方法集中定义（含 api.autoImport.*）
+│       │   └── extension.ts     # chrome.runtime.sendMessage 封装
 │       └── pages/
 │           ├── Dashboard.tsx    # 仪表盘：统计卡 + 库存/需求总览
-│           ├── Products.tsx     # 产品目录：三张只读表 + 重新加载
-│           ├── Orders.tsx       # 订单管理：三 Tab + 新增弹窗 + 发货
-│           ├── Inventory.tsx    # 库存管理：整表行内编辑
-│           ├── Schedule.tsx     # 排班中心：生成表单 + 列表 + 甘特图 + 执行 + 闹钟
-│           ├── Settings.tsx     # 系统设置：打印机 + 窗口 + 换版时间 + DB 重置
-│           ├── Intake.tsx       # 产品录入：父级状态机（upload/recognize/draft/color/merge）+ 提升的 Upload state
-│           └── intake/
-│               ├── Upload.tsx          # CUJ-1：拖拽 + 启发式分类 + 蓝橙双栏 + mini dropzone
-│               ├── Recognizing.tsx     # CUJ-2：识别中 + 取消（cancelledByUserRef 防误触错误页）+ 错误态
-│               ├── Draft.tsx           # CUJ-3：BOM 表 + 打印盘表 + 原图 drawer + 撞名 alert
-│               ├── Color.tsx           # CUJ-4：颜色矩阵 + 11 色 popover + 多配色变体
-│               ├── Preview.tsx         # CUJ-5：合并摘要 + 暗黑 YAML 预览 + 确认合并
-│               ├── Success.tsx         # CUJ-5：成功页（备份路径 + 写入/重新加载耗时 + 跳产品目录）
-│               ├── IntakeError.tsx     # 通用错误页（recognize / merge 两个 variant）
-│               ├── colorPalette.ts     # 11 色常用色板常量
-│               ├── durationFormat.ts   # 时长 mm → Xh Ym 格式化
-│               └── errorMessages.ts    # error_kind → 中文文案映射
+│           ├── Products.tsx     # 产品目录
+│           ├── Orders.tsx       # 订单管理：三 Tab + 新增 + 发货 + 入口跳转自动导入
+│           ├── Inventory.tsx    # 库存管理
+│           ├── Schedule.tsx     # 排班中心
+│           ├── Settings.tsx     # 系统设置
+│           ├── Intake.tsx       # 产品录入：父级状态机
+│           ├── AutoImport.tsx   # 自动导入父容器（mode: tabs/scanning/preview）
+│           ├── AutoImportSettings.tsx # 自动导入设置页
+│           ├── intake/          # 5 个 CUJ 子组件 + 共享 helper
+│           └── auto_import/
+│               ├── XhsTab.tsx          # CUJ-1：小红书 tab + 扩展状态 + 未装态下载按钮
+│               ├── ScanningProgress.tsx# CUJ-1：5 步进度条
+│               ├── XianyuTab.tsx       # CUJ-2：ADB 状态 + 三项诊断（联动 diagnostics）
+│               ├── ScreencapGrid.tsx   # CUJ-2：缩略图网格 + 1.5s 轮询
+│               ├── PreviewTable.tsx    # CUJ-3：预览主表 + 空 batch 空态 + chips
+│               ├── SkuPicker.tsx       # CUJ-3：360px 三段浮窗 + 搜索
+│               ├── SuccessPanel.tsx    # CUJ-3：成功页
+│               └── FailurePanel.tsx    # CUJ-3：失败页
 ├── data/
-│   ├── catalog.yaml             # 目录单一数据源（组件/打印盘/产品 BOM）
-│   ├── catalog.yaml.bak.*       # merge 阶段自动产生的备份（时间戳）
-│   ├── intake/                  # QA / 开发样本图片（按产品分目录）
-│   └── intake_tmp/              # 上传会话临时目录（按 session_id 分子目录，定期 cleanup）
+│   ├── catalog.yaml             # 目录单一数据源
+│   ├── catalog.yaml.bak.*       # merge 阶段自动产生的备份
+│   ├── intake/                  # QA / 开发样本图片
+│   └── intake_tmp/              # 上传会话临时目录
+├── scripts/
+│   └── build-extension.sh       # 打包 zip → backend/static/extensions/
 ├── docs/
-│   ├── prd/                     # PRD 索引与六份 PRD（含 prd-005 intake）
-│   ├── design/                  # 设计文档（catalog、frontend、orders-inventory、scheduler、system）
-│   ├── ux/prd-005-intake/       # 五个 CUJ 的 HTML mock 多变体
-│   ├── qa-artifacts/            # QA 截图证据（按 iter + 时间戳分子目录）
-│   ├── qa-report.md             # 当前 QA 终判：iter3 retry 2 PASS（prd-005 全 5 CUJ）
-│   ├── pm-review.md             # 当前 PM 终判：iter1 仅评 prd-003 CUJ-1（Satisfied）
-│   ├── specs.md                 # 原始详细设计规格（基准文档）
-│   ├── schedule_specs.md        # 排班算法活文档（与代码同步）
+│   ├── prd/                     # PRD 索引与七份 PRD
+│   ├── design/                  # 设计文档（含 design-auto-import.md）
+│   ├── ux/prd-006-auto-import-orders/ # 4 个 CUJ 的 HTML mock
+│   ├── qa-artifacts/            # QA 截图证据
+│   ├── qa-report.md             # 当前 QA 终判：iter4 retry 1 PASS（prd-006 全 4 CUJ）
+│   ├── pm-review.md             # 当前 PM 终判：iter3（prd-005 全 5 CUJ Satisfied）
+│   ├── specs.md                 # 原始详细设计规格
+│   ├── schedule_specs.md        # 排班算法活文档
 │   ├── playbook.md              # 部署与开发模式运行手册
-│   └── project-overview.md      # 原 STATUS.md，项目整体长篇报告
+│   └── project-overview.md      # 项目整体长篇报告
 ├── Dockerfile
 └── docker-compose.yml
 ```
 
 ## 近期活动
 
-Iter3 全部聚焦 prd-005「产品录入」的从 0 到 1 交付，时间线（自旧 → 新）：
-
-| 提交 | 性质 | 摘要 |
-|------|------|------|
-| `0dd921e` docs | 新增 PRD-005 产品录入（含 5 CUJ AC + UX mock） |
-| `0dd7280` feat | 后端基础设施：schemas_intake + routers/intake 骨架 + services 占位 |
-| `79265a6` feat | 前端基础设施：Intake.tsx 父状态机 + 7 个子组件骨架 + 路由接入 |
-| `b2d79d2` feat | CUJ-1 backend：/api/intake/upload + 启发式分类（暗色面板阈值）+ /api/intake/provider-status |
-| `1f253d3` feat | CUJ-1 frontend：upload mode UI（蓝橙双栏 + 拖拽 + mini dropzone + 启发式即时分类） |
-| `d529ed7` feat | CUJ-2 frontend：recognizing mode + error mode UI |
-| `0f578d2` feat | CUJ-2 backend：/api/intake/recognize + DeepSeek provider（多图单请求 + HTTP→error_kind 映射）+ 撞名检测 |
-| `f185117` fix | 校准启发式阈值（140）+ provider 名 case |
-| `9df2280` feat | CUJ-3：草稿校对 — BOM + 打印盘 + 撞名 alert + 原图 drawer |
-| `1c5cb68` feat | CUJ-4：颜色矩阵 + 多配色变体（11 色 popover + 段 1/2/3 + 汇总条 + ⎘ 复制） |
-| `41be754` feat | CUJ-5 backend：/api/intake/merge 5 阶段事务（撞名→备份→append+复读→load_catalog→失败回滚）+ recent-logs |
-| `062ebb3` feat | CUJ-5 frontend：合并预览 + 成功 + 失败页（含 recent-logs Modal） |
-| `a7cf11f` fix | 扩展 color / colorContext schema 串联 session_id + image_id |
-| `1cb61fc` test | 新增 end-to-end smoke test：upload → recognize → merge 完整链路 |
-| `fdc1e19` fix | 加固 session_id / image_id 路径安全（防目录穿越）+ 对齐 recent-logs response shape |
-| `1eee605` fix | **QA bug 修复**：把 Upload 子组件 state 提升到 Intake.tsx 父组件（修 HIGH state-loss）+ stepIndex 按 variant 区分 recognize/merge（修 MEDIUM 步骤指示器误高亮） |
-| `558849d` fix | **QA bug 修复**：取消按钮不再触发假「连接超时」错误页（cancelledByUserRef sentinel + `.catch` 早返回） |
-
-**QA 终判**（详见 `docs/qa-report.md`）：iter3 retry 2 PASS，全部 5 个 CUJ 经 2 轮（initial 发现 1 HIGH + 1 MEDIUM；retry 1 关闭原 bugs 但新发现 1 MEDIUM 取消误触；retry 2 关闭最后 1 MEDIUM）后无 MEDIUM+ 残余。Backend 202/202 pytest 全绿；Frontend `npm run build` 无 TS 错误。
-
-Iter4 聚焦 prd-006「自动导入订单」从 0 到 1 交付（小红书 Chrome 扩展 + 闲鱼 ADB 截屏双通道），按 Group 分次合入：
+Iter4 全部聚焦 prd-006「自动导入订单」从 0 到 1 交付（小红书 Chrome 扩展 + 闲鱼 ADB 截屏双通道），按 Group 分次合入 + 一轮 QA 回归修复，时间线（自旧 → 新）：
 
 | 提交 | Group | 摘要 |
 |------|-------|------|
@@ -256,57 +274,78 @@ Iter4 聚焦 prd-006「自动导入订单」从 0 到 1 交付（小红书 Chrom
 | `7dd8ead` feat | G4 | CUJ-2：XianyuTab + ScreencapGrid + 1.5s 轮询 |
 | `19ae738` feat | G4 | CUJ-3：PreviewTable + SkuPicker + Success/Failure 面板 |
 | `058aa88` feat | G5 | `main.py.lifespan` 串入 ensure helper + router 注册 + `/static/extensions` 挂载 |
-| `(本提交)` chore | G5 | build-extension.sh 自动镜像到 `backend/static/extensions/` + README + checklist 全勾 |
+| `679d939` chore | G5 | build-extension.sh 自动镜像到 `backend/static/extensions/` + README + checklist 全勾 |
+| `c73409f` docs | — | mark prd-006 CUJ-1/2/3/4 as merged + iter4 activity log |
+| `3882d5e` test | — | E2E flows — scan→commit happy path + partial unique index + xianyu screencap |
+| `973fae5` docs | — | tl architecture review + planner task split for prd-006 |
+| `258051d` fix | TL | unwrap `match_listing_to_sku` tuple in router scan loop（TL review 修复）|
+| `0b4436e` test+docs | QA | iter4 QA gap 测试 + qa-report + fix-tasks + loop-state（initial verdict FAIL）|
+| `cce7b19` fix | Retry1 | **QA bug 修复**：XhsTab 下载扩展按钮（MEDIUM × 2 closed）+ PreviewTable 空 batch 空态（MEDIUM × 1 closed）|
+| `1b5f35f` fix | Retry1 | **QA bug 修复**：`adb_connected` 改用 `diagnostics[device_state].ok`（HIGH × 2 closed）+ 前端 XianyuTab `allDiagsOk` 防御 + 新增 `TestQAFixAdbConnectedTruth` 4 测 |
+| `5d10710` merge | Retry1 | Merge worktree-agent 闭环 retry 1 fix（QA verdict FAIL → PASS）|
 
-后端 pytest 327/327 全绿（baseline 202 + iter4 新增 125 个测试）；前端 `npx tsc -b` 通过。
+**QA 终判**（详见 `docs/qa-report.md`）：iter4 retry 1 **PASS**，全部 4 个 CUJ 经 2 轮（initial 发现 2 HIGH + 3 MEDIUM；retry 1 全部闭环并新增 4 个回归测试）后无 MEDIUM+ 残余。Backend 344 passed / 2 skipped（baseline 340 → 344，+4 = `TestQAFixAdbConnectedTruth`）；Frontend `npx tsc -b` 通过。
 
 ## 已知问题与待办
 
-**iter3 转入下轮的 LOW 问题（不阻塞）**
+**iter4 转入下轮的 LOW 问题（不阻塞 PASS）**
 
-- AntD deprecation 警告 4 处（`Alert.message` → `title`、`Drawer.width` → `size`、`Spin.tip` → `description`、`Statistic.valueStyle` → `styles.content`）— 仅控制台噪音，无功能影响。
-- `MergeStats` Pydantic schema 声明中文键，但 `services/intake.py::do_merge` 返回英文键（`components_added` 等）。当前 `/api/intake/merge` 端点未设 `response_model`，FastAPI 不强制校验，前端 `Success.tsx` 用英文键直接读，端到端可用；schema 是「死文档」。建议下轮统一对齐：要么后端改中文键，要么 schema 改英文并显式设 `response_model=MergeResponse`。
-- iter3 QA 共 9 类 manual-NOT_RUN 场景（识别中三阶段灯 / Drawer 大图 / 撞名 alert / 校验红边 / ⎘ 复制变体 / 自定义新色名 dedupe / 变体名重复 / merge 失败页 UI / recent-logs Modal）— 自动化测试已覆盖核心路径，但 UI 交互未实测。iter4 建议补 Playwright E2E。
+- `[LOW][BUG]` `POST /api/auto-import/xhs/probe` 仍是占位实现（永远返回 `has_xhs_tab=true`，不真探活）— 实际扩展探活由前端 `chrome.runtime.sendMessage` 完成，后端这一调用可视为「保留 hook」。`backend/app/routers/auto_import.py:99`
+- `[LOW][VISUAL_DEVIATION]` 下载扩展按钮文案缺 "(12 KB)" size 后缀，与 `cuj-1-no-extension.html` mock 微差异 — `frontend/src/pages/auto_import/XhsTab.tsx:387`
+- `[LOW][BUG]` AntD `Spin.tip` deprecation console warning（iter3 carry-over）— 全局 Spin 使用点
+- iter4 manual NOT_RUN 覆盖空白：CUJ-1 扫描中 5 步进度 / 取消 / 错误态等需真实 Chrome 扩展环境；CUJ-2 截屏卡片渲染 / 缩略图状态 / 完成解析需真实 ADB 设备 + emulator + LLM key；CUJ-3 预览 UI 需先走完整 scan happy path；CUJ-4 边界态 + 故障跳转的视觉细节
+
+**TL Review carry-over（性能 / 安全 / 部署，与下一个 prd 一起处理）**
+
+- N+1 重复查询：scan 端点对每条 raw_order 都查一次 DB — `backend/app/routers/auto_import.py:160`
+- 串行 LLM 调用：CUJ-1 每个 product 一次 `chat_completion()` — `backend/app/routers/auto_import.py:175`
+- 无 payload-size limits — 全部 `/api/auto-import/*` 端点
+- 硬编码后端 URL `http://localhost:8000` — `extension/background.js`
+- CORS `allow_origins=["*"]` — `backend/app/main.py:53`
+
+**iter3 转入的 LOW 问题（不阻塞）**
+
+- AntD deprecation 警告 4 处（`Alert.message` → `title`、`Drawer.width` → `size`、`Spin.tip` → `description`、`Statistic.valueStyle` → `styles.content`）— 仅控制台噪音。
+- `MergeStats` Pydantic schema 声明中文键，但 `services/intake.py::do_merge` 返回英文键 — `/api/intake/merge` 端点未设 `response_model`，FastAPI 不强制校验，前端用英文键直接读。
 
 **排班算法（prd-003）— 来自 iter1 PM Review 的优先级**
 
-- 任务 `status=pending` 在前端渲染为「进行中」，与批次 pending 的「待开始」文案不一致（用户每日执行期最易误读）。
-- 完成入库时若无匹配 `Inventory` 行，库存不增但 toast 仍报 `+N`（数字与实际不符）— 「UI 撒谎」型缺陷。
+- 任务 `status=pending` 在前端渲染为「进行中」，与批次 pending 的「待开始」文案不一致。
+- 完成入库时若无匹配 `Inventory` 行，库存不增但 toast 仍报 `+N`。
 - 操作窗口默认值在 `scheduler.py:53` 与 `Settings.tsx` 两处各自硬编码，存在漂移风险。
-- `changeover_minutes` 默认值 15 分散在三处（`scheduler_core.DEFAULT_CHANGEOVER_MINUTES` 已集中，但 `routers/schedule.py.start_batch` 与前端 `Schedule.tsx.changeoverMin` 仍内联），无单一常量。
+- `changeover_minutes` 默认值 15 分散在三处（`scheduler_core.DEFAULT_CHANGEOVER_MINUTES` 已集中，但 `routers/schedule.py.start_batch` 与前端 `Schedule.tsx.changeoverMin` 仍内联）。
 - 跨夜批次时间解析（>24:00）与闹钟收菜换算可能偏差。
-- prd-003 CUJ-1 AC4（指定产品过滤的清除按钮 + 提示）NOT_RUN，待下次 manual walk 补测。
+- prd-003 CUJ-1 AC4（指定产品过滤的清除按钮 + 提示）NOT_RUN。
 
 **库存管理（prd-002）**
 
-- 富余未折算为「可组装产品数」，与 `specs.md §8.1` 的产品级富余意图存在差距。
-- 富余口径不含已排班产出，与排班总结页的口径不一致，同一组件可能在两处看到不同数字。
-- `Inventory` 表 `(component_id, color)` 无 DB 唯一约束，靠逻辑保证。
-- 整表编辑保存（`Promise.all`）非原子，中途失败会部分落库。
+- 富余未折算为「可组装产品数」。
+- 富余口径不含已排班产出，与排班总结页的口径不一致。
+- `Inventory` 表 `(component_id, color)` 无 DB 唯一约束。
+- 整表编辑保存（`Promise.all`）非原子。
 
 **订单管理（prd-001）**
 
-- 批量创建订单为 N 个独立请求，中途失败产生部分落库且无清晰反馈。
+- 批量创建订单为 N 个独立请求，中途失败产生部分落库。
 - 删除已发货订单不回补库存，无撤销发货入口。
-- 发货失败报错用组件 id 而非名称，可读性差。
+- 发货失败报错用组件 id 而非名称。
 - `shipped_at` 已落库但列表无对应列展示。
 
 **产品目录（prd-000）**
 
-- 三个 GET 接口无 `.catch()`，失败时页面静默空态无提示。
-- 改名按名称匹配，等同删旧建新，可能产生重复记录。
+- 三个 GET 接口无 `.catch()`。
+- 改名按名称匹配，等同删旧建新。
 - `load_catalog` 无单元测试。
 
 **系统配置（prd-004）**
 
-- 打印机改名无 UI 入口（后端接口存在但未接入）。
-- 重置数据库不 seed 默认操作窗口/换版时间，重置后排班继续走硬编码 fallback。
-- 保存空窗口（`windows=[]`）与「未配置」在 UI 上显示相同文案，但算法行为相反。
+- 打印机改名无 UI 入口。
+- 重置数据库不 seed 默认操作窗口/换版时间。
+- 保存空窗口与「未配置」UI 显示相同文案但算法行为相反。
 - 操作窗口和换版时间保存无错误 toast 兜底。
-- 规格文档（specs.md §8.6）把富余生产开关归入系统设置，当前实现为排班请求参数，不持久化。
 
 **下一步建议**
 
-- **prd-006 等待首轮 QA gate**：CUJ-1/2/3/4 全部 `Impl=merged`，待功能验证 + 视觉对照（mocks at `docs/ux/prd-006-auto-import-orders/`）。重点关注：(a) `/orders/import` 在浏览器实际加载且 ping 扩展 / probe ADB 行为符合预期；(b) 端到端 scan → preview → commit 链路 happy path + atomicity；(c) `-redoN` override 覆盖与 partial unique index 真正起作用；(d) `/static/extensions/...` 可下载 zip。
-- prd-005 已工程闭环（QA PASS），等待首次 PM Review 给出 5 个 CUJ 的产品判读。若 PM 判 Satisfied，prd-005 可视为完结。
+- **prd-006 等待首次 PM Review**：CUJ-1/2/3/4 全部 `Impl=merged` + `QA=PASS`，需 PM 对 4 个 CUJ 给出产品判读（重点关注：扩展未装态引导清晰度、ADB 三项诊断对作坊主可读性、预览页 chips/checkbox 默认勾选规则是否符合「最少点击导入」体感、`-redoN` 改判路径在 UI 上是否够显眼）。
+- prd-005 已完整闭环（Impl=merged + QA=PASS + PM=Satisfied 全 5 CUJ）— 状态 active → completed。
 - prd-003 CUJ-2/3/4/5 与 prd-000/001/002/004 全部 CUJ 仍待首次 PM Review（仅 prd-003 CUJ-1 已完成判读）。

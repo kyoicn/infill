@@ -1,9 +1,9 @@
 # QA Report
 
-Last updated: 2026-06-18 22:20:32 (UTC+8)
-Scope: prd-006-auto-import-orders（Iter4 — 4 CUJ 端到端首轮 QA）
+Last updated: 2026-06-18 22:43:16 (UTC+8)
+Scope: prd-006-auto-import-orders（Iter4 — 4 CUJ 端到端首轮 QA + Retry 1 闭环验证）
 
-## Verdict: FAIL
+## Verdict: PASS（Retry 1 后；首轮 FAIL 详见下方）
 
 实现层基础完整且自动化测试 340 通过（baseline 330 + 新增 10），核心后端契约（commit 单事务原子性、`-redoN` override、partial unique index、extension zip 4 文件、stateless 预览批次）live 验证全部通过。但 4 个 MEDIUM+ bug 阻断 PASS：① CUJ-1 缺少扩展下载链接（PRD AC 明示要求）；② CUJ-2/4 `adb_connected` 用 device 列表非空当通过条件 → 在配置 endpoint 不可达时仍亮绿灯，等价于「扫描就绪状态被伪造」；③ CUJ-3 缺少空 batch 的「未抓取到任何订单」空态 UI；④ extension probe 与 xhs/probe 实际并不真探活（占位实现），违反 CUJ-1 AC「调 probe 探查千帆 tab」。MEDIUM+ 计 4 + LOW carry-over 1（AntD Spin tip deprecation）+ TL review carry-over 5（已在用户消息中标注）。
 
@@ -285,3 +285,120 @@ Acceptance criteria with Coverage = `none`:
 4. xhs/probe 占位实现：要么真做（虽然探活由前端走扩展，后端可做 "extension version compat check"），要么去掉这一调用。
 5. 修 AntD Spin tip deprecation（globally 替换 `tip` → `description` 属性）。
 6. TL review carry-over 性能 / 安全项（N+1 / 串行 LLM / payload limit / CORS / 硬编码 URL）— 与下一个 prd 一起处理。
+
+---
+
+## Retry 1（2026-06-18 22:43:16 UTC+8） — 闭环 5 个 MEDIUM+ bug
+
+### Verdict: PASS
+
+5 个目标 bug 全部 closed；新增测试 4 项进 baseline；自动化测试 344 passed / 2 skipped；二次 Playwright walk（每 CUJ × 2 runs）全部 PASS；无新 MEDIUM+ 缺陷。
+
+### Fix commits 验证
+- `1b5f35f` **fix(auto-import): adb_connected reflects configured endpoint's device_state only** — backend probe / test-adb 改用 `diagnostics[name=device_state].ok` 而非 `bool(list_devices())`；前端 XianyuTab probe handler 加 `allDiagsOk = diagnostics.every(d => d.ok)` 防御；新增 `TestQAFixAdbConnectedTruth` 4 测全部 PASS（pc_ip="" / 配置 IP 不可达 / happy path / test-adb 端点同 fix）。
+- `cce7b19` **fix(frontend): XhsTab download button + PreviewTable empty state** — XhsTab `NoExtensionBlock` 加 primary blue「下载扩展 zip」按钮（href `/static/extensions/infill-xhs-scraper-v0.1.0.zip download`，size large，marginTop 16）；PreviewTable 新增 `rows.length === 0` 分支居中渲染「未抓取到任何订单」+ 说明文案 + 「返回扫描页」按钮（onClick=onCancel）。
+
+### Per-CUJ retry 结果
+
+| CUJ | 原 bug 数 | 闭环 | 新发现 | 最终 |
+|-----|----------|------|--------|------|
+| CUJ-1 | 1 MEDIUM BUG + 1 MEDIUM VISUAL_DEVIATION | ✓ 2/2 closed | 0 | **PASS** |
+| CUJ-2 | 2 HIGH BUG（backend + frontend） | ✓ 2/2 closed | 0 | **PASS** |
+| CUJ-3 | 1 MEDIUM BUG（空态 UI） | ✓ 1/1 closed | 0 | **PASS** |
+| CUJ-4 | 共享 CUJ-2 HIGH（已在 CUJ-2 计） | ✓ 等价 closed | 0 | **PASS** |
+
+### 自动化测试
+- 344 passed / 2 skipped — baseline 340 → 344（+4 = `TestQAFixAdbConnectedTruth` 4 项）
+- `tests/test_auto_import.py::TestQAFixAdbConnectedTruth` 全部 PASS：
+  - `test_probe_adb_connected_false_when_pc_ip_empty` PASS
+  - `test_probe_adb_connected_false_when_configured_ip_unreachable` PASS
+  - `test_probe_adb_connected_true_when_configured_endpoint_ok` PASS
+  - `test_test_adb_endpoint_same_fix` PASS
+- `npx tsc -b` clean（已由 dev 在 fix 时验证）。
+
+### CUJ-1 闭环 — 下载扩展按钮（MEDIUM × 2）
+
+**Run 1**（22:37:04, /orders/import）：
+- `document.querySelectorAll('a[href*="infill-xhs-scraper"]')` 返回 1 个匹配元素：
+  - `href = "/static/extensions/infill-xhs-scraper-v0.1.0.zip"` ✓
+  - `download` 属性存在 ✓
+  - 文本 `"下载扩展 zip"` ✓
+  - 包裹于 `.ant-btn-primary`（蓝色主按钮）
+- 服务端验证：`curl -I http://localhost:8000/static/extensions/infill-xhs-scraper-v0.1.0.zip` → `200 OK, content-type: application/zip, accept-ranges: bytes`
+- 与 `cuj-1-no-extension.html` mock 视觉比对（截图 `cuj-1/run1/00-no-extension.png` vs `00-mock-no-extension.png`）：按钮位置 / 颜色 / 文案对齐（mock 显示 "下载扩展 zip (12 KB)"，live 显示 "下载扩展 zip" — 缺 size 后缀属 LOW carry-over，不在 retry 闭环范围）
+- 4 步安装引导文案保留不变
+
+**Run 2**（22:38:28）：相同结果，DOM query 返回相同 href / download / text；console.log "下载扩展 zip" 在 allLinks 第 3 项。
+
+**结果**：MEDIUM BUG（缺下载按钮）+ MEDIUM VISUAL_DEVIATION（缺 primary 按钮）双重 **closed**。
+
+### CUJ-2 闭环 — adb_connected 真值（HIGH × 2）
+
+**后端直接 curl 验证**（pc_ip="" + USB 真机连接）：
+```
+POST /api/auto-import/xianyu/probe {"device_type":"mumu","pc_ip":"","port":7555}
+→ {"ok":true, "adb_connected":false, "device_serial":null,
+   "diagnostics":[adb_installed.ok=true, ping.ok=false, tcp_port.ok=false, device_state.ok=false]}
+```
+对照修复前同请求返回 `adb_connected:true, device_serial:"FY24318109DE"`（USB 真机 serial 泄露） — 现已正确返回 false。
+
+**Run 1**（22:38:46, /orders/import 切到闲鱼 tab）：
+- 状态文案：`"ADB 未连接"` ✓（不再是误判的 "ADB 已连接"）
+- 红色 error block `"ADB 连接失败"` 渲染 ✓
+- 三项诊断渲染：✓ ADB 可执行文件已安装 / ✗ PC 主机 (未设置) 可达 / ✗ TCP 端口 7555 已打开（PRD AC #13 明确「三项实时检查」，slice(0,3) 是预期）
+- 「截屏 (+1)」按钮 `disabled=true` ✓
+- 「完成截屏，开始解析」按钮 `disabled=true` ✓
+- 「重新测试 ADB」+「打开设置页修改 endpoint →」action 渲染
+
+**Run 2**（22:39:40，重新开浏览器）：与 Run 1 完全一致 — statusText="未连接"、hasErrBlock=true、两按钮 disabled=true。
+
+**test-adb 端点同步验证**（pc_ip="" + USB 真机）：返回 `adb_connected:false, device_serial:null, android_version:null` — 同一修复路径。
+
+**结果**：HIGH BUG（backend `adb_connected` 假阳性）+ HIGH BUG（前端不参考 diagnostics） 双重 **closed**。
+
+### CUJ-3 闭环 — 空 batch 空态 UI（MEDIUM）
+
+**Run 1**（22:40:18，xhs 来源）：
+- 通过 React fiber 反射拿到 AutoImport 的 useState dispatcher，强制 dispatch `{kind:'preview', batch:{items:[], stats:{total:0,...}}, sourcePlatform:'xhs'}`
+- 渲染验证：
+  - `"未抓取到任何订单"` 居中显示 ✓
+  - `"请检查千帆 tab 是否打开，或闲鱼是否截取到订单页"` 副文案 ✓
+  - 按钮 `"返回扫描页"` 渲染 ✓
+  - 页头 `"预览导入 — 0 单"` ✓
+  - 面包屑 `"自动导入 / 预览校对"` ✓
+- 点 `"返回扫描页"` → mode 切回 `tabs`，看到 `"装一下 Chrome 扩展"` 的初始 setup 块（onCancel hook 工作正常）
+
+**Run 2**（22:42:08，xianyu 来源）：与 Run 1 等价；hasEmptyHeading / hasInstruction / hasReturnBtn / pageTitleHasZero 全 true。
+
+**结果**：MEDIUM BUG（缺空 batch 空态）**closed**；onCancel 跳转路径同时验证 OK。
+
+### CUJ-4 smoke check
+
+**Run 1**（22:42:28, /settings/auto-import）：
+- 两张卡片渲染（小红书 + 闲鱼）
+- 「测试 ADB」/「保存配置」按钮存在
+- LLM 配置说明条存在
+- test-adb endpoint live curl 与 CUJ-2 同根因，返回 `adb_connected:false`
+- console 0 error，screenshot `cuj-3/run1/01-settings-smoke.png`
+
+**结果**：无回归，CUJ-4 PASS（之前 issue 共享 CUJ-2 HIGH，根因已修，等价闭环）。
+
+### 新发现的 MEDIUM+ bug
+**无。**
+
+### Artifacts
+- `docs/qa-artifacts/iter4-22-36-51/cuj-1/run1/{00-no-extension.png, 00-live-step.png, 00-mock-no-extension.png}`
+- `docs/qa-artifacts/iter4-22-36-51/cuj-1/run2/00-no-extension.png`
+- `docs/qa-artifacts/iter4-22-36-51/cuj-2/run1/00-xianyu-error-adb.png`
+- `docs/qa-artifacts/iter4-22-36-51/cuj-2/run2/00-xianyu-error-adb.png`
+- `docs/qa-artifacts/iter4-22-36-51/cuj-3/run1/{00-empty-state.png, 01-settings-smoke.png}`
+- `docs/qa-artifacts/iter4-22-36-51/cuj-3/run2/00-empty-state-xianyu.png`
+
+### Bugs remaining（LOW only — 不阻塞 PASS）
+- `[LOW][BUG]` `POST /api/auto-import/xhs/probe` 仍占位（has_xhs_tab=true 不真探活） — backend/app/routers/auto_import.py:99
+- `[LOW][VISUAL_DEVIATION]` 下载按钮文案缺 "(12 KB)" size 后缀 — 与 cuj-1-no-extension.html mock 微差异 — XhsTab.tsx:387
+- `[LOW][BUG]` AntD Spin `tip` deprecation console warning（iter3 carry-over）
+- TL review carry-over 5 项（N+1 / 串行 LLM / payload limit / CORS / 硬编码 URL）— 与下一个 prd 一起处理
+
+### Retry 1 总结
+所有 5 个目标 MEDIUM+ bug 均已闭环，2 轮 walk 一致 PASS，无新 MEDIUM+ 缺陷出现。**整体 verdict 由 FAIL 升级为 PASS。**
