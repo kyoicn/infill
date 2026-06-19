@@ -23,7 +23,33 @@ interface ChromeGlobal {
 }
 declare const chrome: ChromeGlobal;
 
-const EXT_ID: string | undefined = import.meta.env.VITE_INFILL_EXT_ID;
+const ENV_EXT_ID: string | undefined = import.meta.env.VITE_INFILL_EXT_ID;
+const LS_KEY = 'infill.xhs_ext_id';
+
+function readStored(): string | undefined {
+  try {
+    const v = window.localStorage.getItem(LS_KEY);
+    return v && v.trim() ? v.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function effectiveExtId(): string | undefined {
+  return readStored() || (ENV_EXT_ID && ENV_EXT_ID.trim() ? ENV_EXT_ID.trim() : undefined);
+}
+
+export function setStoredExtId(id: string): void {
+  try {
+    if (id && id.trim()) {
+      window.localStorage.setItem(LS_KEY, id.trim());
+    } else {
+      window.localStorage.removeItem(LS_KEY);
+    }
+  } catch {
+    /* localStorage may be disabled */
+  }
+}
 
 export interface ExtensionPingResponse {
   ok: boolean;
@@ -46,11 +72,12 @@ function hasChrome(): boolean {
 }
 
 export function getExtensionId(): string | undefined {
-  return EXT_ID;
+  return effectiveExtId();
 }
 
 export async function pingExtension(timeoutMs = 2000): Promise<ExtensionPingResponse> {
-  if (!EXT_ID) return { ok: false, error_kind: 'no_ext_id' };
+  const extId = effectiveExtId();
+  if (!extId) return { ok: false, error_kind: 'no_ext_id' };
   if (!hasChrome()) return { ok: false, error_kind: 'no_chrome_runtime' };
   return new Promise<ExtensionPingResponse>((resolve) => {
     const timer = setTimeout(
@@ -59,7 +86,7 @@ export async function pingExtension(timeoutMs = 2000): Promise<ExtensionPingResp
     );
     try {
       chrome.runtime.sendMessage(
-        EXT_ID,
+        extId,
         { action: 'ping' },
         (response: unknown) => {
           clearTimeout(timer);
@@ -82,12 +109,13 @@ export async function pingExtension(timeoutMs = 2000): Promise<ExtensionPingResp
 }
 
 export async function scrapeXhs(batchId: string): Promise<ExtensionScrapeResponse> {
-  if (!EXT_ID) return { ok: false, error_kind: 'no_ext_id' };
+  const extId = effectiveExtId();
+  if (!extId) return { ok: false, error_kind: 'no_ext_id' };
   if (!hasChrome()) return { ok: false, error_kind: 'no_chrome_runtime' };
   return new Promise<ExtensionScrapeResponse>((resolve) => {
     try {
       chrome.runtime.sendMessage(
-        EXT_ID,
+        extId,
         { action: 'scrape_xhs', batch_id: batchId },
         (response: unknown) => {
           if (chrome.runtime.lastError) {

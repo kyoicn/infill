@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Button, Alert, Spin, message } from 'antd';
+import { Button, Alert, Input, Space, Spin, message } from 'antd';
 import { api, type AutoImportScanResponse } from '../../api/client';
-import { pingExtension, scrapeXhs } from '../../api/extension';
+import { getExtensionId, pingExtension, scrapeXhs, setStoredExtId } from '../../api/extension';
 import ScanningProgress from './ScanningProgress';
 
 interface XhsTabProps {
@@ -41,7 +41,7 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
     if (!pong.ok) {
       if (pong.error_kind === 'no_ext_id') {
         setProbe({ kind: 'no_ext_id' });
-        if (notify) message.warning('请在 frontend/.env 设置 VITE_INFILL_EXT_ID 后重启 vite');
+        if (notify) message.warning('请先填写扩展 ID');
       } else {
         setProbe({ kind: 'no_ext' });
         if (notify) message.error(`扩展未检测到：${pong.error_kind ?? 'unknown'}`);
@@ -189,23 +189,7 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
         )}
 
         {probe.kind === 'no_ext_id' && (
-          <Alert
-            type="warning"
-            showIcon
-            message="未配置扩展 ID"
-            description={
-              <div>
-                <p style={{ margin: '0 0 8px' }}>
-                  请在 <code>frontend/.env</code> 设置：
-                </p>
-                <pre style={{ background: '#fafafa', padding: 8, borderRadius: 4, margin: '0 0 8px' }}>
-                  VITE_INFILL_EXT_ID=&lt;chrome://extensions/ 显示的 32 位 ID&gt;
-                </pre>
-                <p style={{ margin: 0 }}>保存后重启 vite dev server 生效。</p>
-              </div>
-            }
-            action={<Button onClick={() => detect(true)}>重新检测</Button>}
-          />
+          <ExtIdInputBlock onSaved={() => detect(true)} />
         )}
 
         {probe.kind === 'no_ext' && <NoExtensionBlock onRefresh={detect} />}
@@ -229,6 +213,50 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
 }
 
 // ---------- Sub-blocks ----------
+
+function ExtIdInputBlock({ onSaved }: { onSaved: () => void }) {
+  const [value, setValue] = useState(getExtensionId() ?? '');
+  const trimmed = value.trim();
+  const isValid = /^[a-z]{32}$/.test(trimmed);
+  const save = () => {
+    if (!isValid) {
+      message.warning('扩展 ID 应该是 32 位小写字母');
+      return;
+    }
+    setStoredExtId(trimmed);
+    message.success('已保存扩展 ID');
+    onSaved();
+  };
+  return (
+    <Alert
+      type="warning"
+      showIcon
+      message="未配置扩展 ID"
+      description={
+        <div>
+          <p style={{ margin: '0 0 8px' }}>
+            在 <code>chrome://extensions/</code> 找到本扩展，复制 ID（32 位小写字母）粘贴到下面：
+          </p>
+          <Space.Compact style={{ width: '100%', maxWidth: 480 }}>
+            <Input
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="abcdefghijklmnopqrstuvwxyzabcdef"
+              onPressEnter={save}
+              style={{ fontFamily: 'monospace' }}
+            />
+            <Button type="primary" onClick={save} disabled={!isValid}>
+              保存
+            </Button>
+          </Space.Compact>
+          <p style={{ margin: '8px 0 0', fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>
+            存到浏览器 localStorage，下次直接生效，无需改 .env 也不用重启 vite。
+          </p>
+        </div>
+      }
+    />
+  );
+}
 
 function ReadyBlock({
   extVersion,

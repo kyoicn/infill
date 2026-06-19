@@ -143,9 +143,13 @@ export default function ScreencapGrid({ batchId, screens, parsedOrders }: Screen
                   fontSize: 12,
                 }}
               >
-                <Tag color={badge.color} style={{ margin: 0 }}>
-                  {badge.icon} {badge.label}
-                </Tag>
+                {s.status === 'captured' ? (
+                  <span />
+                ) : (
+                  <Tag color={badge.color} style={{ margin: 0 }}>
+                    {badge.icon} {badge.label}
+                  </Tag>
+                )}
                 {s.error && (
                   <span
                     style={{ color: '#ff4d4f', fontSize: 11 }}
