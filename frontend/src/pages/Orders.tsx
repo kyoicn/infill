@@ -201,15 +201,15 @@ export default function Orders() {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ marginTop: 0 }}>订单管理</h2>
-        <Button type="primary" onClick={() => navigate('/orders/import')}>
-          自动导入 →
-        </Button>
-      </div>
+      <h2 style={{ marginTop: 0 }}>订单管理</h2>
 
       <Card
-        extra={<Button type="primary" icon={<PlusOutlined />} onClick={openModal}>新增订单</Button>}
+        extra={
+          <Space>
+            <Button onClick={() => navigate('/orders/import')}>自动导入 →</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openModal}>新增订单</Button>
+          </Space>
+        }
       >
         <Tabs activeKey={tab} onChange={setTab} items={[
           { key: 'pending', label: '待处理' },

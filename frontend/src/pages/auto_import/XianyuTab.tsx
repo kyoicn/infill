@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Button, Spin, Tooltip, message } from 'antd';
-import { useNavigate } from 'react-router-dom';
+import { Button, Select, Spin, Tooltip, message } from 'antd';
 import {
   api,
   type AutoImportAdbConfig,
@@ -25,18 +24,18 @@ type XianyuState =
   | { kind: 'finishing'; batchId: string }
   | { kind: 'error_adb'; diagnostics: AutoImportDiagnostic[] };
 
-const DEVICE_LABELS: Record<string, string> = {
-  mumu: 'MuMu 模拟器',
-  bluestacks: '蓝叠模拟器',
-  ldplayer: '雷电模拟器',
-  usb: 'USB 真机',
-};
+const DEVICE_OPTIONS: { value: AutoImportAdbConfig['device_type']; label: string; defaultPort: number }[] = [
+  { value: 'mumu', label: 'MuMu 模拟器', defaultPort: 7555 },
+  { value: 'bluestacks', label: '蓝叠模拟器', defaultPort: 5555 },
+  { value: 'ldplayer', label: '雷电模拟器', defaultPort: 5555 },
+  { value: 'usb', label: 'USB 真机', defaultPort: 5037 },
+];
 
 const POLL_INTERVAL_MS = 1500;
 
 export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
-  const navigate = useNavigate();
   const [config, setConfig] = useState<AutoImportAdbConfig | null>(null);
+  const [switching, setSwitching] = useState(false);
   const [state, setState] = useState<XianyuState>({ kind: 'idle' });
   const [bootstrapping, setBootstrapping] = useState(true);
   const [screencapBusy, setScreencapBusy] = useState(false);
@@ -79,6 +78,40 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
       });
     }
   }, []);
+
+  // Switch device type → persist + reprobe
+  const handleDeviceChange = useCallback(
+    async (deviceType: AutoImportAdbConfig['device_type']) => {
+      const opt = DEVICE_OPTIONS.find((o) => o.value === deviceType);
+      if (!opt) return;
+      const next: AutoImportAdbConfig = {
+        device_type: deviceType,
+        pc_ip: '127.0.0.1',
+        port: opt.defaultPort,
+      };
+      setSwitching(true);
+      try {
+        await api.autoImport.xianyu.putConfig(next);
+        setConfig(next);
+        await probe(next);
+      } catch (err) {
+        message.error(err instanceof Error ? err.message : '切换设备失败');
+      } finally {
+        setSwitching(false);
+      }
+    },
+    [probe],
+  );
+
+  const handleRetest = useCallback(async () => {
+    if (!config) return;
+    setSwitching(true);
+    try {
+      await probe(config);
+    } finally {
+      setSwitching(false);
+    }
+  }, [config, probe]);
 
   // Mount: load config + initial probe
   useEffect(() => {
@@ -344,50 +377,22 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
         </div>
 
         {config && (
-          <div
-            style={{
-              fontSize: 12,
-              color: 'rgba(0,0,0,0.65)',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 6,
-            }}
-          >
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ color: 'rgba(0,0,0,0.45)', minWidth: 64 }}>
-                设备类型
-              </span>
-              <span>
-                {DEVICE_LABELS[config.device_type] ?? config.device_type}
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span style={{ color: 'rgba(0,0,0,0.45)', minWidth: 64 }}>
-                PC 端点
-              </span>
-              <span
-                style={{
-                  fontFamily: 'monospace',
-                  fontSize: 11,
-                  background: '#fff',
-                  padding: '1px 5px',
-                  borderRadius: 3,
-                  border: '1px solid #f0f0f0',
-                }}
-              >
-                {config.pc_ip}:{config.port}
-              </span>
-            </div>
-            <a
-              href="/settings/auto-import"
-              onClick={(e) => {
-                e.preventDefault();
-                navigate('/settings/auto-import');
-              }}
-              style={{ color: '#1677ff', fontSize: 12 }}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Select
+              value={config.device_type}
+              onChange={handleDeviceChange}
+              disabled={switching || state.kind === 'capturing' || state.kind === 'finishing'}
+              options={DEVICE_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+              style={{ width: '100%' }}
+            />
+            <Button
+              size="small"
+              loading={switching}
+              disabled={state.kind === 'capturing' || state.kind === 'finishing'}
+              onClick={handleRetest}
             >
-              编辑 →
-            </a>
+              测试 ADB 连接
+            </Button>
           </div>
         )}
 
@@ -628,16 +633,6 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
               <Button type="primary" danger onClick={handleRetestAdb}>
                 重新测试 ADB
               </Button>
-              <a
-                href="/settings/auto-import"
-                onClick={(e) => {
-                  e.preventDefault();
-                  navigate('/settings/auto-import');
-                }}
-                style={{ color: '#1677ff', fontSize: 13 }}
-              >
-                打开设置页修改 endpoint →
-              </a>
             </div>
           </div>
         )}

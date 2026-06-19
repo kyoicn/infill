@@ -40,7 +40,7 @@ _CFG_KEYS = {
 
 _CFG_DEFAULTS = {
     "device_type": "mumu",
-    "pc_ip": "",
+    "pc_ip": "127.0.0.1",
     "port": 7555,
 }
 

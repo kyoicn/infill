@@ -673,7 +673,7 @@ class TestAdbConfig:
 
     def test_get_config_returns_defaults_when_unset(self, db_session):
         cfg = get_adb_config(db_session)
-        assert cfg == {"device_type": "mumu", "pc_ip": "", "port": 7555}
+        assert cfg == {"device_type": "mumu", "pc_ip": "127.0.0.1", "port": 7555}
 
     def test_set_then_get_roundtrip(self, db_session):
         set_adb_config(db_session, "bluestacks", "192.168.1.100", 5555)
@@ -1192,7 +1192,7 @@ class TestQAGapXianyuConfigRoundtrip:
         r = client.get("/api/auto-import/xianyu/config")
         assert r.status_code == 200, r.text
         data = r.json()
-        assert data == {"device_type": "mumu", "pc_ip": "", "port": 7555}
+        assert data == {"device_type": "mumu", "pc_ip": "127.0.0.1", "port": 7555}
 
     def test_put_then_get_persists(self, client, db_session):
         # 1. 写一份新配置
