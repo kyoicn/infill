@@ -363,12 +363,13 @@ async def xianyu_finish_scan(body: FinishScanRequest, db: Session = Depends(get_
     # 1. 顺序解析所有已截屏 PNG（顺序跑避免 DashScope 限流）
     tmp_dir = Path(state["tmp_dir"])
     parsed_orders: list[dict] = []
-    for screen in state["screens"]:
+    screens = state["screens"]
+    for screen in screens:
         seq = screen["seq"]
         png_path = tmp_dir / f"screen_{seq}.png"
         if not png_path.exists():
             screen["status"] = "failed"
-            screen["error"] = "PNG 文件不存在"
+            screen["error"] = "PNG 文件不存在（uvicorn 可能在截屏后重启过）"
             continue
         screen["status"] = "parsing"
         try:
@@ -386,6 +387,18 @@ async def xianyu_finish_scan(body: FinishScanRequest, db: Session = Depends(get_
             screen["status"] = "failed"
             screen["error"] = str(exc)
     state["parsed_orders"] = parsed_orders
+
+    # 1b. 如果所有截屏都失败，把第一个错误抛回前端
+    failed = [s for s in screens if s["status"] == "failed"]
+    if screens and len(failed) == len(screens):
+        first_err = failed[0].get("error") or "未知错误"
+        _cleanup_batch(batch_id)
+        return ScanResponse(
+            ok=False,
+            batch_id=batch_id,
+            error_kind="parse_all_failed",
+            error=f"{len(failed)}/{len(screens)} 张截屏解析失败：{first_err}",
+        )
 
     # 2. 去重（按 external_order_id）
     seen: dict[str, dict] = {}
