@@ -192,7 +192,12 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
           <ExtIdInputBlock onSaved={() => detect(true)} />
         )}
 
-        {probe.kind === 'no_ext' && <NoExtensionBlock onRefresh={detect} />}
+        {probe.kind === 'no_ext' && (
+          <NoExtensionBlock
+            onRefresh={detect}
+            onChangeExtId={() => setProbe({ kind: 'no_ext_id' })}
+          />
+        )}
 
         {probe.kind === 'no_xhs_tab' && (
           <NoXhsTabBlock extVersion={probe.extVersion} onRefresh={detect} />
@@ -370,7 +375,17 @@ function CheckLine({
   );
 }
 
-function NoExtensionBlock({ onRefresh }: { onRefresh: (notify?: boolean) => void }) {
+function NoExtensionBlock({
+  onRefresh,
+  onChangeExtId,
+}: {
+  onRefresh: (notify?: boolean) => void;
+  onChangeExtId: () => void;
+}) {
+  const storedId = getExtensionId();
+  const storedTruncated = storedId && storedId.length > 14
+    ? `${storedId.slice(0, 6)}…${storedId.slice(-6)}`
+    : storedId;
   return (
     <>
       <div
@@ -458,6 +473,20 @@ function NoExtensionBlock({ onRefresh }: { onRefresh: (notify?: boolean) => void
         <Button type="primary" size="large" block onClick={() => onRefresh(true)}>
           已装好，重新检测
         </Button>
+        <div
+          style={{
+            fontSize: 12,
+            color: 'rgba(0,0,0,0.45)',
+            textAlign: 'center',
+            marginTop: 4,
+          }}
+        >
+          已存的扩展 ID: <code style={codeStyle}>{storedTruncated || '(无)'}</code>{' '}
+          ·{' '}
+          <a onClick={onChangeExtId} style={{ color: '#1677ff', cursor: 'pointer' }}>
+            重装扩展后 ID 变了？改一个
+          </a>
+        </div>
       </div>
     </>
   );
