@@ -130,7 +130,7 @@ export default function SkuPicker(props: SkuPickerProps) {
     borderRadius: 4,
     cursor: 'pointer',
     background: '#fff',
-    maxWidth: 280,
+    whiteSpace: 'nowrap',
   };
 
   const content = (
