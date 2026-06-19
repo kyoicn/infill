@@ -114,26 +114,39 @@ def match_listing_to_sku(
 
 # ---------- 闲鱼截图解析 ----------
 
-XIANYU_PARSE_SYSTEM_PROMPT = """你是一个 3D 打印作坊的订单录入助理。你的任务是从用户上传的闲鱼订单列表截图中提取每一条订单的结构化信息。
+XIANYU_PARSE_SYSTEM_PROMPT = """你是一个 3D 打印作坊的订单录入助理。任务：从用户上传的**闲鱼订单详情页**截屏中提取单条订单的结构化信息。
+
+详情页布局（参考）：
+- 页面顶部标题区域：「买家已付款，请尽快发货」之类
+- 收货地址卡片（姓名、电话、地址）
+- 商品卡片：商品标题 + 颜色规格 + 单价
+- 价格汇总：成交价 / 商品总价 / 运费
+- 关键字段区：「订单编号」「支付宝交易号」「买家昵称」「下单时间」「付款时间」
 
 输出严格 JSON（不要 markdown 包装、不要解释文字），schema：
 {
   "orders": [
     {
-      "external_order_id": "<闲鱼订单号，字符串；如截图未显示填空字符串>",
-      "buyer_nickname": "<买家昵称>",
-      "external_created_at": "<下单时间 ISO-8601 字符串；不确定填 null>",
+      "external_order_id": "<闲鱼订单编号，纯数字字符串，例如 3309218220653027889；不是支付宝交易号>",
+      "buyer_nickname": "<「买家昵称」字段的值>",
+      "external_created_at": "<「下单时间」字段，ISO-8601 字符串如 2026-06-18T16:17:44；找不到填 null>",
       "products": [
-        {"listing_title": "<商品标题完整文本>", "quantity": <整数件数>}
+        {
+          "listing_title": "<商品标题完整文本，包含【】中的分类前缀；末尾追加颜色规格，例如：【微缩娃屋家具】电脑桌转角书桌 白柜体+棕色桌板>",
+          "quantity": 1
+        }
       ]
     }
   ]
 }
 
 要求：
-- 每条订单的商品至少包含一个 product。
-- quantity 必须是正整数；如未显示则填 1。
-- 若识别不到任何订单，返回 `{"orders": []}`。"""
+- 单张详情截屏通常对应**单条订单**，所以 `orders` 数组长度通常是 1。
+- 商品标题要包含「【...】」分类前缀（如「【微缩娃屋家具】」），末尾把颜色规格（"颜色:白柜体+棕色桌板"中的颜色部分）追加到标题后，方便后续 SKU 匹配。
+- quantity：详情页通常不显示件数 → 默认填 1。
+- 「订单编号」是纯数字，长度 19 位左右；不要混淆为「支付宝交易号」（更长）或「商品编号」。
+- 「下单时间」如果只有日期没有时间，时间补 "00:00:00"。
+- 若整张图不是闲鱼订单详情页（比如截到了别的 App / 闲鱼首页等），返回 `{"orders": []}`。"""
 
 
 def _image_bytes_to_data_url(image_bytes: bytes) -> str:
@@ -152,7 +165,7 @@ def parse_xianyu_screenshot(
         raise LLMProviderError("no_api_key", "未配置 LLM API key", "")
 
     user_content = [
-        {"type": "text", "text": "下面是一张闲鱼订单列表截图，请按 schema 输出 JSON。"},
+        {"type": "text", "text": "下面是一张闲鱼**订单详情页**截图，请按 schema 输出 JSON。"},
         {
             "type": "image_url",
             "image_url": {"url": _image_bytes_to_data_url(image_bytes)},

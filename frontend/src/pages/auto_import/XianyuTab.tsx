@@ -424,11 +424,26 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
         >
           <b style={{ color: 'rgba(0,0,0,0.88)' }}>典型流程：</b>
           <ol style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-            <li>Android 设备打开闲鱼 → 订单列表</li>
-            <li>点「截屏 (+1)」捕获当前画面</li>
-            <li>滑动设备一屏，再次点击「截屏」</li>
-            <li>看完后点「完成截屏，开始解析」</li>
+            <li>闲鱼 App → 我的 → 待发货 列表</li>
+            <li>点开第 1 单 → 等详情页加载好</li>
+            <li>点「截屏 (+1)」</li>
+            <li>手机上点返回 → 列表页</li>
+            <li>点开第 2 单 → 重复 3–4，直到所有单都截过</li>
+            <li>点「完成截屏，开始解析」</li>
           </ol>
+          <div
+            style={{
+              marginTop: 8,
+              padding: '6px 8px',
+              background: '#fffbe6',
+              border: '1px solid #ffe58f',
+              borderRadius: 4,
+              fontSize: 11,
+              color: 'rgba(0,0,0,0.65)',
+            }}
+          >
+            ⚠️ 截<b>详情页</b>不是列表页（详情页才有订单号 / 下单时间）
+          </div>
         </div>
 
         {/* Counter */}
