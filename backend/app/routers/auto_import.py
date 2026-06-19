@@ -163,6 +163,7 @@ def _scan_impl(
 ) -> ScanResponse:
     """xhs / 闲鱼 finish-scan 共用的扫描流水线。"""
     catalog = svc.load_catalog_for_llm(db)
+    sku_to_name = {row.get("sku"): row.get("name", "") for row in catalog if row.get("sku")}
 
     items: list[PreviewItem] = []
     dropped: list[DroppedOrder] = []
@@ -242,6 +243,7 @@ def _scan_impl(
                 listing_title=title,
                 quantity=qty,
                 matched_sku_code=matched_sku,
+                matched_sku_name=sku_to_name.get(matched_sku) if matched_sku else None,
                 confidence=confidence,
                 reasoning=reasoning,
             ))

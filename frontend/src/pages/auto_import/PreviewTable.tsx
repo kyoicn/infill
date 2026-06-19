@@ -25,6 +25,7 @@ interface RowProduct {
   listing_title: string;
   quantity: number;
   matched_sku_code: string | null;
+  matched_sku_name: string | null;
   confidence: number;
   reasoning: string;
 }
@@ -102,6 +103,7 @@ export default function PreviewTable(props: PreviewTableProps) {
         listing_title: p.listing_title,
         quantity: p.quantity,
         matched_sku_code: p.matched_sku_code ?? null,
+        matched_sku_name: p.matched_sku_name ?? null,
         confidence: p.confidence,
         reasoning: p.reasoning,
       })),
@@ -157,6 +159,7 @@ export default function PreviewTable(props: PreviewTableProps) {
           listing_title: '（手动添加）',
           quantity: 1,
           matched_sku_code: sku,
+          matched_sku_name: name,
           confidence: 1.0,
           reasoning: 'manual',
         },
@@ -458,9 +461,11 @@ export default function PreviewTable(props: PreviewTableProps) {
                 const name =
                   p.matched_sku_code && r.pickedNames[p.matched_sku_code]
                     ? r.pickedNames[p.matched_sku_code]
-                    : p.matched_sku_code
-                      ? p.matched_sku_code
-                      : null;
+                    : p.matched_sku_name
+                      ? p.matched_sku_name
+                      : p.matched_sku_code
+                        ? p.matched_sku_code
+                        : null;
                 return (
                   <div
                     key={pIdx}

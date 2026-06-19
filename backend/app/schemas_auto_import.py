@@ -86,6 +86,7 @@ class PreviewProduct(BaseModel):
     listing_title: str
     quantity: int
     matched_sku_code: Optional[str] = None
+    matched_sku_name: Optional[str] = None
     confidence: float = 0.0
     reasoning: str = ""
 

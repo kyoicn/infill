@@ -199,6 +199,7 @@ export interface AutoImportPreviewProduct {
   listing_title: string;
   quantity: number;
   matched_sku_code?: string | null;
+  matched_sku_name?: string | null;
   confidence: number;
   reasoning: string;
 }
