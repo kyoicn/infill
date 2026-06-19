@@ -161,17 +161,40 @@ class AdbClient:
         ]
 
     def screencap(self, config) -> bytes:
-        """Take one screenshot via the configured device endpoint. Returns PNG bytes."""
-        endpoint = f"{config.pc_ip}:{config.port}"
-        try:
-            self._real.connect(endpoint)
-        except AdbError:
-            # Connect failure is non-fatal for USB; screencap will surface its own error.
-            pass
+        """Take one screenshot. For network emulators (mumu/bluestacks/ldplayer),
+        `adb connect host:port` first and use `host:port` as the serial. For USB,
+        the device's real hardware serial (not host:port) must be passed to `adb -s`.
+        """
+        device_type = getattr(config, "device_type", "")
+
+        if device_type == "usb":
+            # USB: find the first online USB device (state == "device").
+            try:
+                devices = self._real.list_devices()
+            except AdbError:
+                devices = []
+            usb_devices = [
+                d for d in devices
+                if d.state == "device" and ":" not in d.serial
+            ]
+            if not usb_devices:
+                raise AdbError(
+                    "offline",
+                    "未发现已授权的 USB 真机。请检查 USB 线、开启「USB 调试」、并在手机上点「允许」。",
+                )
+            serial = usb_devices[0].serial
+        else:
+            endpoint = f"{config.pc_ip}:{config.port}"
+            try:
+                self._real.connect(endpoint)
+            except AdbError:
+                pass
+            serial = endpoint
+
         fd, dest_path = tempfile.mkstemp(suffix=".png")
         os.close(fd)
         try:
-            return self._real.screencap(endpoint, dest_path)
+            return self._real.screencap(serial, dest_path)
         finally:
             try:
                 os.unlink(dest_path)

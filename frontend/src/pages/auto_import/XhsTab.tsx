@@ -13,6 +13,7 @@ type ProbeState =
   | { kind: 'loading' }
   | { kind: 'ready'; extVersion?: string; xhsUrl?: string }
   | { kind: 'no_ext' }
+  | { kind: 'no_ext_id' }
   | { kind: 'no_xhs_tab'; extVersion?: string }
   | { kind: 'error'; message: string };
 
@@ -34,23 +35,32 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
   const [scan, setScan] = useState<ScanState>({ kind: 'idle' });
   const [elapsedMs, setElapsedMs] = useState(0);
 
-  const detect = useCallback(async () => {
+  const detect = useCallback(async (notify = false) => {
     setProbe({ kind: 'loading' });
     const pong = await pingExtension();
     if (!pong.ok) {
-      setProbe({ kind: 'no_ext' });
+      if (pong.error_kind === 'no_ext_id') {
+        setProbe({ kind: 'no_ext_id' });
+        if (notify) message.warning('请在 frontend/.env 设置 VITE_INFILL_EXT_ID 后重启 vite');
+      } else {
+        setProbe({ kind: 'no_ext' });
+        if (notify) message.error(`扩展未检测到：${pong.error_kind ?? 'unknown'}`);
+      }
       return;
     }
     try {
       const probeResp = await api.autoImport.xhs.probe();
       if (probeResp.has_xhs_tab) {
         setProbe({ kind: 'ready', extVersion: pong.version });
+        if (notify) message.success(`扩展已检测到 v${pong.version ?? '?'}`);
       } else {
         setProbe({ kind: 'no_xhs_tab', extVersion: pong.version });
+        if (notify) message.warning('扩展已检测到，但未发现千帆 Tab');
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : '探测千帆 Tab 失败';
       setProbe({ kind: 'error', message: msg });
+      if (notify) message.error(msg);
     }
   }, []);
 
@@ -178,6 +188,26 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
           />
         )}
 
+        {probe.kind === 'no_ext_id' && (
+          <Alert
+            type="warning"
+            showIcon
+            message="未配置扩展 ID"
+            description={
+              <div>
+                <p style={{ margin: '0 0 8px' }}>
+                  请在 <code>frontend/.env</code> 设置：
+                </p>
+                <pre style={{ background: '#fafafa', padding: 8, borderRadius: 4, margin: '0 0 8px' }}>
+                  VITE_INFILL_EXT_ID=&lt;chrome://extensions/ 显示的 32 位 ID&gt;
+                </pre>
+                <p style={{ margin: 0 }}>保存后重启 vite dev server 生效。</p>
+              </div>
+            }
+            action={<Button onClick={() => detect(true)}>重新检测</Button>}
+          />
+        )}
+
         {probe.kind === 'no_ext' && <NoExtensionBlock onRefresh={detect} />}
 
         {probe.kind === 'no_xhs_tab' && (
@@ -190,7 +220,7 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
             showIcon
             message="检测异常"
             description={probe.message}
-            action={<Button onClick={detect}>重试</Button>}
+            action={<Button onClick={() => detect(true)}>重试</Button>}
           />
         )}
       </div>
@@ -312,7 +342,7 @@ function CheckLine({
   );
 }
 
-function NoExtensionBlock({ onRefresh }: { onRefresh: () => void }) {
+function NoExtensionBlock({ onRefresh }: { onRefresh: (notify?: boolean) => void }) {
   return (
     <>
       <div
@@ -397,7 +427,7 @@ function NoExtensionBlock({ onRefresh }: { onRefresh: () => void }) {
         </Button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <Button type="primary" size="large" block onClick={onRefresh}>
+        <Button type="primary" size="large" block onClick={() => onRefresh(true)}>
           已装好，重新检测
         </Button>
       </div>
@@ -410,7 +440,7 @@ function NoXhsTabBlock({
   onRefresh,
 }: {
   extVersion?: string;
-  onRefresh: () => void;
+  onRefresh: (notify?: boolean) => void;
 }) {
   return (
     <>
@@ -524,7 +554,7 @@ function NoXhsTabBlock({
         >
           在 Chrome 新 Tab 打开千帆
         </Button>
-        <Button size="large" style={{ flex: 1 }} onClick={onRefresh}>
+        <Button size="large" style={{ flex: 1 }} onClick={() => onRefresh(true)}>
           重新检测
         </Button>
       </div>

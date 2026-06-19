@@ -74,6 +74,33 @@ def _confidence_bucket(c: float) -> str:
     return "low"
 
 
+def _pick_device_serial(config: "AdbConfig", devices: list) -> str | None:
+    """Return the serial of the device matching `config`, in `device` state.
+
+    For USB device type, picks the first online device whose serial doesn't look
+    like a host:port endpoint (USB serials are hardware IDs, not IPs).
+    For network emulators, picks the device whose serial starts with `config.pc_ip`.
+    """
+    def _serial(d) -> str:
+        return (d.get("serial") if isinstance(d, dict) else "") or ""
+
+    def _state(d) -> str:
+        return (d.get("state") if isinstance(d, dict) else "") or ""
+
+    if config.device_type == "usb":
+        for d in devices:
+            s = _serial(d)
+            if s and ":" not in s and _state(d) == "device":
+                return s
+        return None
+
+    for d in devices:
+        s = _serial(d)
+        if s and config.pc_ip and s.startswith(config.pc_ip) and _state(d) == "device":
+            return s
+    return None
+
+
 class _SkuNotFoundError(Exception):
     """commit 阶段校验 SKU 不存在 → 触发整批回滚。"""
 
@@ -251,17 +278,7 @@ def xianyu_probe(config: AdbConfig) -> ProbeXianyuResponse:
         adb_connected = any(
             d.get("ok") for d in diagnostics if d.get("name") == "device_state"
         )
-        device_serial = next(
-            (
-                d.get("serial")
-                for d in devices
-                if isinstance(d, dict)
-                and config.pc_ip
-                and (d.get("serial") or "").startswith(config.pc_ip)
-                and d.get("state") == "device"
-            ),
-            None,
-        )
+        device_serial = _pick_device_serial(config, devices)
         return ProbeXianyuResponse(
             ok=True,
             adb_connected=adb_connected,
@@ -583,18 +600,11 @@ def xianyu_test_adb(body: AdbConfig) -> TestAdbResponse:
         connected = any(
             d.get("ok") for d in diagnostics if d.get("name") == "device_state"
         )
+        serial = _pick_device_serial(body, devices)
         matched = next(
-            (
-                d
-                for d in devices
-                if isinstance(d, dict)
-                and body.pc_ip
-                and (d.get("serial") or "").startswith(body.pc_ip)
-                and d.get("state") == "device"
-            ),
+            (d for d in devices if isinstance(d, dict) and d.get("serial") == serial),
             None,
         )
-        serial = matched.get("serial") if matched else None
         android_version = matched.get("android_version") if matched else None
         return TestAdbResponse(
             ok=True,

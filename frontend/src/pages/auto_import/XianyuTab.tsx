@@ -107,11 +107,25 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
     if (!config) return;
     setSwitching(true);
     try {
-      await probe(config);
+      const resp = await api.autoImport.xianyu.testAdb(config);
+      const diagnostics = resp.diagnostics ?? [];
+      const allOk = diagnostics.every((d) => d.ok);
+      if (resp.ok && resp.adb_connected && allOk) {
+        const tail = resp.device_serial ? ` · 序列号 ${resp.device_serial}` : '';
+        message.success(`ADB 已连接${tail}`);
+        setState({ kind: 'idle' });
+      } else {
+        const firstFail = diagnostics.find((d) => !d.ok);
+        const hint = firstFail?.hint || firstFail?.label || resp.error || 'ADB 连接失败';
+        message.error(`ADB 测试失败：${hint}`);
+        setState({ kind: 'error_adb', diagnostics });
+      }
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : 'ADB 测试失败');
     } finally {
       setSwitching(false);
     }
-  }, [config, probe]);
+  }, [config]);
 
   // Mount: load config + initial probe
   useEffect(() => {
