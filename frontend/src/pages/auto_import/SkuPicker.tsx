@@ -13,6 +13,8 @@ interface SkuPickerProps {
   confidence: number;
   rawTitle: string;
   onChange: (sku: string, name: string) => void;
+  /** 触发器渲染成 "+ 添加商品" 小链接而非完整的 SKU 框（用在订单底部增项处） */
+  asAddTrigger?: boolean;
 }
 
 function confTier(confidence: number): 'high' | 'mid' | 'low' {
@@ -47,7 +49,7 @@ function ConfIcon({ confidence }: { confidence: number }) {
 }
 
 export default function SkuPicker(props: SkuPickerProps) {
-  const { currentSku, currentName, confidence, rawTitle, onChange } = props;
+  const { currentSku, currentName, confidence, rawTitle, onChange, asAddTrigger } = props;
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -303,6 +305,30 @@ export default function SkuPicker(props: SkuPickerProps) {
       </div>
     </div>
   );
+
+  if (asAddTrigger) {
+    return (
+      <Popover
+        content={content}
+        open={open}
+        onOpenChange={setOpen}
+        trigger="click"
+        placement="bottomLeft"
+        destroyOnHidden
+      >
+        <a
+          style={{
+            color: '#1677ff',
+            fontSize: 12,
+            cursor: 'pointer',
+            userSelect: 'none',
+          }}
+        >
+          + 添加商品
+        </a>
+      </Popover>
+    );
+  }
 
   return (
     <Popover

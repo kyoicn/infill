@@ -517,19 +517,15 @@ export default function PreviewTable(props: PreviewTableProps) {
                 );
               })}
               {!isDup && (
-                <div>
+                <div style={{ marginLeft: 20 }}>
                   <SkuPicker
+                    asAddTrigger
                     currentSku={null}
                     currentName={null}
                     confidence={0}
                     rawTitle={rawTitle}
                     onChange={(sku, n) => addProduct(rec.idx, sku, n)}
                   />
-                  <span
-                    style={{ marginLeft: 8, color: 'rgba(0,0,0,0.45)', fontSize: 12 }}
-                  >
-                    + 添加商品
-                  </span>
                 </div>
               )}
             </div>
