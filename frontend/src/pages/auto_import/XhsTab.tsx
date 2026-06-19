@@ -195,12 +195,7 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
           <ExtIdInputBlock onSaved={() => detect(true)} />
         )}
 
-        {probe.kind === 'no_ext' && (
-          <NoExtensionBlock
-            onRefresh={detect}
-            onChangeExtId={() => setProbe({ kind: 'no_ext_id' })}
-          />
-        )}
+        {probe.kind === 'no_ext' && <NoExtensionBlock onRefresh={detect} />}
 
         {probe.kind === 'no_xhs_tab' && (
           <NoXhsTabBlock extVersion={probe.extVersion} onRefresh={detect} />
@@ -380,15 +375,27 @@ function CheckLine({
 
 function NoExtensionBlock({
   onRefresh,
-  onChangeExtId,
 }: {
   onRefresh: (notify?: boolean) => void;
-  onChangeExtId: () => void;
 }) {
   const storedId = getExtensionId();
   const storedTruncated = storedId && storedId.length > 14
     ? `${storedId.slice(0, 6)}…${storedId.slice(-6)}`
     : storedId;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(storedId ?? '');
+  const draftTrim = draft.trim();
+  const draftValid = /^[a-z]{32}$/.test(draftTrim);
+  const saveId = () => {
+    if (!draftValid) {
+      message.warning('扩展 ID 应该是 32 位小写字母');
+      return;
+    }
+    setStoredExtId(draftTrim);
+    setEditing(false);
+    message.success('已保存扩展 ID');
+    onRefresh(true);
+  };
   return (
     <>
       <div
@@ -484,12 +491,34 @@ function NoExtensionBlock({
             marginTop: 4,
           }}
         >
-          已存的扩展 ID: <code style={codeStyle}>{storedTruncated || '(无)'}</code>{' '}
-          ·{' '}
-          <a onClick={onChangeExtId} style={{ color: '#1677ff', cursor: 'pointer' }}>
-            重装扩展后 ID 变了？改一个
-          </a>
+          已存的扩展 ID: <code style={codeStyle}>{storedTruncated || '(无)'}</code>
+          {!editing && (
+            <>
+              {' '}·{' '}
+              <a onClick={() => setEditing(true)} style={{ color: '#1677ff', cursor: 'pointer' }}>
+                重装扩展后 ID 变了？改一个
+              </a>
+            </>
+          )}
         </div>
+        {editing && (
+          <Space.Compact style={{ width: '100%' }}>
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="abcdefghijklmnopqrstuvwxyzabcdef"
+              onPressEnter={saveId}
+              autoFocus
+              style={{ fontFamily: 'monospace' }}
+            />
+            <Button type="primary" onClick={saveId} disabled={!draftValid}>
+              保存并检测
+            </Button>
+            <Button onClick={() => { setEditing(false); setDraft(storedId ?? ''); }}>
+              取消
+            </Button>
+          </Space.Compact>
+        )}
       </div>
     </>
   );
