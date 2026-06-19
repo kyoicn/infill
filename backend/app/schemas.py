@@ -96,6 +96,10 @@ class OrderOut(BaseModel):
     external_order_id: Optional[str] = None
     buyer_nickname: Optional[str] = None
     external_created_at: Optional[datetime] = None
+    # v0.4.1 收货信息
+    recipient_name: Optional[str] = None
+    recipient_phone: Optional[str] = None
+    recipient_address: Optional[str] = None
     items: list[OrderItemOut] = []
     model_config = {"from_attributes": True}
 

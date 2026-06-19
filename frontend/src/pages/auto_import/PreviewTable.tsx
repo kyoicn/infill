@@ -18,6 +18,7 @@ import type {
   AutoImportPreviewItem,
   AutoImportScanResponse,
 } from '../../api/client';
+import ShippingBlock from '../../components/ShippingBlock';
 
 const { Text } = Typography;
 
@@ -277,6 +278,9 @@ export default function PreviewTable(props: PreviewTableProps) {
         platform: sourcePlatform,
         override_duplicate: r.overrideDuplicate || undefined,
         products,
+        recipient_name: r.item.recipient_name ?? null,
+        recipient_phone: r.item.recipient_phone ?? null,
+        recipient_address: r.item.recipient_address ?? null,
       });
     }
     onCommit(items);
@@ -383,9 +387,9 @@ export default function PreviewTable(props: PreviewTableProps) {
       },
     },
     {
-      title: '买家 / 下单',
+      title: '买家 / 下单 / 收货',
       key: 'buyer',
-      width: 180,
+      width: 280,
       render: (_, rec) => {
         const r = rows[rec.idx];
         const isDup = r.item.is_duplicate && !r.overrideDuplicate;
@@ -412,6 +416,13 @@ export default function PreviewTable(props: PreviewTableProps) {
                 {r.item.external_created_at}
               </div>
             )}
+            <div style={{ marginTop: 6 }}>
+              <ShippingBlock
+                name={r.item.recipient_name}
+                phone={r.item.recipient_phone}
+                address={r.item.recipient_address}
+              />
+            </div>
           </div>
         );
       },

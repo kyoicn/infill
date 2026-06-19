@@ -130,12 +130,16 @@ def ensure_order_notes_column_exists(engine: Engine) -> bool:
     return True
 
 
-# v0.4 auto-import: orders 表新增 4 列 + (platform, external_order_id) 部分唯一索引
+# v0.4 auto-import: orders 表新增列 + (platform, external_order_id) 部分唯一索引
 _ORDER_AUTO_IMPORT_COLUMNS: dict[str, str] = {
     "platform": "VARCHAR(16)",
     "external_order_id": "VARCHAR(64)",
     "buyer_nickname": "VARCHAR(128)",
     "external_created_at": "DATETIME",
+    # v0.4.1 收货信息（发货时复制粘贴用）
+    "recipient_name": "VARCHAR(64)",
+    "recipient_phone": "VARCHAR(32)",
+    "recipient_address": "TEXT",
 }
 _ORDER_AUTO_IMPORT_INDEX = "uq_orders_platform_external"
 

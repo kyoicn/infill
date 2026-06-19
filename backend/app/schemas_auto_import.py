@@ -78,6 +78,10 @@ class RawOrder(BaseModel):
     buyer_nickname: Optional[str] = None
     external_created_at: Optional[str] = None
     products: list[dict] = []  # 每个 dict 至少含 listing_title / quantity
+    # v0.4.1 收货信息
+    recipient_name: Optional[str] = None
+    recipient_phone: Optional[str] = None
+    recipient_address: Optional[str] = None
 
 
 # 预览态
@@ -98,6 +102,10 @@ class PreviewItem(BaseModel):
     is_duplicate: bool = False
     existing_order_id: Optional[int] = None
     products: list[PreviewProduct] = []
+    # v0.4.1 收货信息
+    recipient_name: Optional[str] = None
+    recipient_phone: Optional[str] = None
+    recipient_address: Optional[str] = None
 
 
 class DroppedOrder(BaseModel):
@@ -148,6 +156,10 @@ class CommitItem(BaseModel):
     platform: str  # xhs / xianyu
     override_duplicate: bool = False
     products: list[CommitProduct] = []
+    # v0.4.1 收货信息
+    recipient_name: Optional[str] = None
+    recipient_phone: Optional[str] = None
+    recipient_address: Optional[str] = None
 
 
 class CommitRequest(BaseModel):

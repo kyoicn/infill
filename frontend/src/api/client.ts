@@ -211,6 +211,9 @@ export interface AutoImportPreviewItem {
   is_duplicate: boolean;
   existing_order_id?: number | null;
   products: AutoImportPreviewProduct[];
+  recipient_name?: string | null;
+  recipient_phone?: string | null;
+  recipient_address?: string | null;
 }
 
 export interface AutoImportDroppedOrder {
@@ -262,6 +265,9 @@ export interface AutoImportCommitItem {
   platform: string; // "xhs" | "xianyu"
   override_duplicate?: boolean;
   products: AutoImportCommitProduct[];
+  recipient_name?: string | null;
+  recipient_phone?: string | null;
+  recipient_address?: string | null;
 }
 
 export interface AutoImportCommitStats {

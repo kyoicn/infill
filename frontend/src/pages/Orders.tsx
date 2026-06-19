@@ -3,6 +3,7 @@ import { Card, Table, Button, Modal, Select, InputNumber, Space, Popconfirm, Tag
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
+import ShippingBlock from '../components/ShippingBlock';
 
 interface OrderDraft {
   items: { product_id: number | undefined; quantity: number | undefined }[];
@@ -247,9 +248,20 @@ export default function Orders() {
               render: (_: any, rec: any) => renderItems(rec),
             },
             {
+              title: '收货信息',
+              width: 280,
+              render: (_: any, rec: any) => (
+                <ShippingBlock
+                  name={rec.recipient_name}
+                  phone={rec.recipient_phone}
+                  address={rec.recipient_address}
+                />
+              ),
+            },
+            {
               title: '备注',
               dataIndex: 'notes',
-              width: 160,
+              width: 120,
               ellipsis: { showTitle: false } as any,
               render: (v: string) => v
                 ? <Tooltip title={v}><span style={{ color: '#666' }}>{v}</span></Tooltip>

@@ -16,6 +16,10 @@ function extractQianfanOrders() {
     SPEC: '.base-info-spec',                  // 规格:白色
     PRICE_ITEMS: '.multi-price-quantity .price-item', // 价格件数列（与商品列平行 index）
     QTY: '.quantity-text',                    // x1
+    // v0.4.1 收货信息（同一 <tr> 第 2 个 <td> 里）
+    USER_CELL: '.user-info-cell',             // 整块收货信息卡
+    USER_NAME: '.user-name-line span',        // 姓名（千帆已脱敏：张*）
+    USER_PHONE: '.user-phone span',           // 手机（千帆已脱敏：137***9223）
   };
 
   // 诊断信息：用户报告 0 单时把命中数 + URL 回传，帮我判断选择器是否过时
@@ -62,6 +66,29 @@ function extractQianfanOrders() {
     const buyerEl = grid.querySelector(SEL.BUYER_NAME);
     const buyer_nickname = buyerEl ? (buyerEl.textContent || '').trim() : '';
 
+    // v0.4.1 收货信息（千帆已脱敏，仍能用于打单）
+    const userCell = row.querySelector(SEL.USER_CELL);
+    let recipient_name = null;
+    let recipient_phone = null;
+    let recipient_address = null;
+    if (userCell) {
+      const nameEl = userCell.querySelector(SEL.USER_NAME);
+      if (nameEl) recipient_name = (nameEl.textContent || '').trim() || null;
+      const phoneEl = userCell.querySelector(SEL.USER_PHONE);
+      if (phoneEl) recipient_phone = (phoneEl.textContent || '').trim() || null;
+      // address: 第一个不在 .user-name-line / .user-phone 里的 <span>
+      const directSpans = Array.from(userCell.children).filter(
+        (n) => n.tagName === 'SPAN'
+      );
+      for (const s of directSpans) {
+        const txt = (s.textContent || '').trim();
+        if (txt && !/^\d{3}\*{3}\d{4}$/.test(txt) && !s.closest('.user-name-line, .user-phone')) {
+          recipient_address = txt;
+          break;
+        }
+      }
+    }
+
     const skuEls = row.querySelectorAll(SEL.SKU_ITEMS);
     const priceEls = row.querySelectorAll(SEL.PRICE_ITEMS);
     const products = [];
@@ -100,6 +127,9 @@ function extractQianfanOrders() {
         external_order_id,
         buyer_nickname,
         external_created_at,
+        recipient_name,
+        recipient_phone,
+        recipient_address,
         products,
       });
     }

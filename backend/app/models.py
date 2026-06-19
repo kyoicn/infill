@@ -83,6 +83,10 @@ class Order(Base):
     external_order_id = Column(String(64), nullable=True, default=None)
     buyer_nickname = Column(String(128), nullable=True, default=None)
     external_created_at = Column(DateTime, nullable=True, default=None)
+    # v0.4.1 收货信息：从平台详情页 / 列表 DOM 抽取，发货时复制用
+    recipient_name = Column(String(64), nullable=True, default=None)
+    recipient_phone = Column(String(32), nullable=True, default=None)
+    recipient_address = Column(Text, nullable=True, default=None)
 
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
 

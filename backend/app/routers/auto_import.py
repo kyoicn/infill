@@ -255,6 +255,9 @@ def _scan_impl(
             is_duplicate=is_dup,
             existing_order_id=existing_id,
             products=preview_products,
+            recipient_name=(raw.get("recipient_name") or None),
+            recipient_phone=(raw.get("recipient_phone") or None),
+            recipient_address=(raw.get("recipient_address") or None),
         ))
 
     stats = ScanStats(
@@ -573,6 +576,9 @@ def commit(body: CommitRequest, db: Session = Depends(get_db)) -> CommitResponse
                 external_order_id=use_ext_id,
                 buyer_nickname=item.buyer_nickname,
                 external_created_at=created_at_dt,
+                recipient_name=item.recipient_name,
+                recipient_phone=item.recipient_phone,
+                recipient_address=item.recipient_address,
             )
             db.add(order)
             db.flush()
