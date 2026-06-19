@@ -15,6 +15,21 @@ from .intake_llm import (
 )
 
 
+def _safe_json_loads(cleaned: str) -> object:
+    """像 intake_llm 一样兜底：先 json.loads，失败时用 raw_decode 只取首个有效 JSON。
+
+    qwen3-omni-flash 偶尔会在合法 JSON 后附加解释/第二个对象，导致 "Extra data" 错误。
+    """
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        try:
+            parsed, _consumed = json.JSONDecoder().raw_decode(cleaned.lstrip())
+            return parsed
+        except (json.JSONDecodeError, ValueError):
+            raise LLMProviderError("parse_failed", str(exc), cleaned[:200]) from exc
+
+
 # ---------- SKU 匹配 ----------
 
 SKU_MATCH_SYSTEM_PROMPT = """你是一个 3D 打印作坊的订单录入助理。你的任务是把一条电商平台（小红书/闲鱼/淘宝/抖音）的商品标题匹配到下面目录中的一个 SKU。
@@ -66,10 +81,7 @@ def match_listing_to_sku(
     )
 
     cleaned = _strip_markdown_json(content)
-    try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        raise LLMProviderError("parse_failed", str(exc), cleaned[:200]) from exc
+    data = _safe_json_loads(cleaned)
 
     if not isinstance(data, dict):
         raise LLMProviderError("schema_invalid", "LLM 输出顶层不是 object", cleaned[:200])
@@ -158,10 +170,7 @@ def parse_xianyu_screenshot(
     )
 
     cleaned = _strip_markdown_json(content)
-    try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError as exc:
-        raise LLMProviderError("parse_failed", str(exc), cleaned[:200]) from exc
+    data = _safe_json_loads(cleaned)
 
     if not isinstance(data, dict) or "orders" not in data:
         raise LLMProviderError(
