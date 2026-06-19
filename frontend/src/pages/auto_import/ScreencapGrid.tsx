@@ -1,4 +1,4 @@
-import { Empty, Spin, Tag } from 'antd';
+import { Empty, Image, Spin, Tag } from 'antd';
 
 export interface ScreenEntry {
   seq: number;
@@ -68,12 +68,13 @@ export default function ScreencapGrid({ batchId, screens, parsedOrders }: Screen
         )}
       </div>
 
+      <Image.PreviewGroup>
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, 110px)',
-          gap: 10,
-          maxHeight: 560,
+          gridTemplateColumns: 'repeat(auto-fill, 300px)',
+          gap: 12,
+          maxHeight: 720,
           overflowY: 'auto',
           padding: 4,
         }}
@@ -102,15 +103,15 @@ export default function ScreencapGrid({ batchId, screens, parsedOrders }: Screen
                   background: '#000',
                   borderRadius: 4,
                   overflow: 'hidden',
-                  cursor: 'zoom-in',
                 }}
-                onClick={() => window.open(imgUrl, '_blank')}
-                title="点击查看大图"
               >
-                <img
+                <Image
                   src={imgUrl}
                   alt={`截屏 #${s.seq}`}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                  width="100%"
+                  height="100%"
+                  style={{ objectFit: 'contain', display: 'block' }}
+                  preview={{ mask: '🔍 点击查看大图' }}
                 />
                 <span
                   style={{
@@ -127,6 +128,8 @@ export default function ScreencapGrid({ batchId, screens, parsedOrders }: Screen
                     justifyContent: 'center',
                     fontSize: 12,
                     fontWeight: 700,
+                    pointerEvents: 'none',
+                    zIndex: 1,
                   }}
                 >
                   {s.seq}
@@ -156,6 +159,7 @@ export default function ScreencapGrid({ batchId, screens, parsedOrders }: Screen
           );
         })}
       </div>
+      </Image.PreviewGroup>
 
       {parsedOrders.length > 0 && (
         <div style={{ marginTop: 20 }}>
