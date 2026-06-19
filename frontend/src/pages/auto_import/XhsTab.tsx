@@ -165,17 +165,6 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
 
   return (
     <div style={{ padding: '32px 24px' }}>
-      <div
-        style={{
-          color: 'rgba(0,0,0,0.65)',
-          fontSize: 13,
-          marginBottom: 24,
-          textAlign: 'center',
-        }}
-      >
-        Chrome 扩展直接读千帆订单页 DOM · <b>无 OCR · 无 LLM</b> · 5~10 秒完成
-      </div>
-
       <div style={{ maxWidth: 560, margin: '0 auto' }}>
         {probe.kind === 'loading' && (
           <div style={{ textAlign: 'center', padding: 32 }}>
@@ -191,11 +180,9 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
           />
         )}
 
-        {probe.kind === 'no_ext_id' && (
-          <ExtIdInputBlock onSaved={() => detect(true)} />
+        {(probe.kind === 'no_ext' || probe.kind === 'no_ext_id') && (
+          <NoExtensionBlock onRefresh={detect} />
         )}
-
-        {probe.kind === 'no_ext' && <NoExtensionBlock onRefresh={detect} />}
 
         {probe.kind === 'no_xhs_tab' && (
           <NoXhsTabBlock extVersion={probe.extVersion} onRefresh={detect} />
@@ -216,50 +203,6 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
 }
 
 // ---------- Sub-blocks ----------
-
-function ExtIdInputBlock({ onSaved }: { onSaved: () => void }) {
-  const [value, setValue] = useState(getExtensionId() ?? '');
-  const trimmed = value.trim();
-  const isValid = /^[a-z]{32}$/.test(trimmed);
-  const save = () => {
-    if (!isValid) {
-      message.warning('扩展 ID 应该是 32 位小写字母');
-      return;
-    }
-    setStoredExtId(trimmed);
-    message.success('已保存扩展 ID');
-    onSaved();
-  };
-  return (
-    <Alert
-      type="warning"
-      showIcon
-      message="未配置扩展 ID"
-      description={
-        <div>
-          <p style={{ margin: '0 0 8px' }}>
-            在 <code>chrome://extensions/</code> 找到本扩展，复制 ID（32 位小写字母）粘贴到下面：
-          </p>
-          <Space.Compact style={{ width: '100%', maxWidth: 480 }}>
-            <Input
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="abcdefghijklmnopqrstuvwxyzabcdef"
-              onPressEnter={save}
-              style={{ fontFamily: 'monospace' }}
-            />
-            <Button type="primary" onClick={save} disabled={!isValid}>
-              保存
-            </Button>
-          </Space.Compact>
-          <p style={{ margin: '8px 0 0', fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>
-            存到浏览器 localStorage，下次直接生效，无需改 .env 也不用重启 vite。
-          </p>
-        </div>
-      }
-    />
-  );
-}
 
 function ReadyBlock({
   extVersion,
@@ -379,21 +322,17 @@ function NoExtensionBlock({
   onRefresh: (notify?: boolean) => void;
 }) {
   const storedId = getExtensionId();
-  const storedTruncated = storedId && storedId.length > 14
-    ? `${storedId.slice(0, 6)}…${storedId.slice(-6)}`
-    : storedId;
-  const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(storedId ?? '');
   const draftTrim = draft.trim();
   const draftValid = /^[a-z]{32}$/.test(draftTrim);
-  const saveId = () => {
+  const saveAndDetect = () => {
     if (!draftValid) {
       message.warning('扩展 ID 应该是 32 位小写字母');
       return;
     }
-    setStoredExtId(draftTrim);
-    setEditing(false);
-    message.success('已保存扩展 ID');
+    if (draftTrim !== storedId) {
+      setStoredExtId(draftTrim);
+    }
     onRefresh(true);
   };
   return (
@@ -466,7 +405,7 @@ function NoExtensionBlock({
             <li>
               点「加载已解压扩展程序」，选解压后的 <code style={codeStyle}>infill-xhs-ext/</code> 文件夹
             </li>
-            <li>回这页点「已装好，重新检测」</li>
+            <li>复制扩展卡片上的 ID，粘到下面输入框，点「保存并检测」</li>
           </ol>
         </div>
         <Button
@@ -480,45 +419,21 @@ function NoExtensionBlock({
         </Button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <Button type="primary" size="large" block onClick={() => onRefresh(true)}>
-          已装好，重新检测
-        </Button>
-        <div
-          style={{
-            fontSize: 12,
-            color: 'rgba(0,0,0,0.45)',
-            textAlign: 'center',
-            marginTop: 4,
-          }}
-        >
-          已存的扩展 ID: <code style={codeStyle}>{storedTruncated || '(无)'}</code>
-          {!editing && (
-            <>
-              {' '}·{' '}
-              <a onClick={() => setEditing(true)} style={{ color: '#1677ff', cursor: 'pointer' }}>
-                重装扩展后 ID 变了？改一个
-              </a>
-            </>
-          )}
+        <div style={{ fontSize: 13, color: 'rgba(0,0,0,0.65)' }}>
+          在 <code style={codeStyle}>chrome://extensions/</code> 找到本扩展，复制 ID（32 位小写字母）粘贴到下面：
         </div>
-        {editing && (
-          <Space.Compact style={{ width: '100%' }}>
-            <Input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="abcdefghijklmnopqrstuvwxyzabcdef"
-              onPressEnter={saveId}
-              autoFocus
-              style={{ fontFamily: 'monospace' }}
-            />
-            <Button type="primary" onClick={saveId} disabled={!draftValid}>
-              保存并检测
-            </Button>
-            <Button onClick={() => { setEditing(false); setDraft(storedId ?? ''); }}>
-              取消
-            </Button>
-          </Space.Compact>
-        )}
+        <Space.Compact style={{ width: '100%' }}>
+          <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="abcdefghijklmnopqrstuvwxyzabcdef"
+            onPressEnter={saveAndDetect}
+            style={{ fontFamily: 'monospace' }}
+          />
+          <Button type="primary" onClick={saveAndDetect} disabled={!draftValid}>
+            保存并检测
+          </Button>
+        </Space.Compact>
       </div>
     </>
   );
