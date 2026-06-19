@@ -77,7 +77,7 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
     const startedAt = scan.startedAt;
     const id = window.setInterval(() => {
       setElapsedMs(Date.now() - startedAt);
-    }, 100);
+    }, 1000);
     return () => window.clearInterval(id);
   }, [scan]);
 

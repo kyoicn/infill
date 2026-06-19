@@ -18,7 +18,7 @@ import tempfile
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from ..models import Product, SystemConfig
+from ..models import Product, ProductComponent, SystemConfig
 from .adb_client import AdbClient as RealAdbClient
 from .adb_client import AdbError
 
@@ -256,11 +256,27 @@ def get_extension_status():
 
 
 def load_catalog_for_llm(db: Session) -> list[dict]:
-    """Return catalog rows for LLM prompt injection. Used by CUJ-1/2 scan endpoints."""
-    return [
-        {"sku_code": p.sku, "sku_name": p.name, "description": (p.description or "")}
-        for p in db.query(Product).all()
-    ]
+    """Return catalog rows for LLM prompt injection. Used by CUJ-1/2 scan endpoints.
+
+    keys 必须与 auto_import_llm.match_listing_to_sku 中读取的对齐：
+    `sku / name / color`，否则 prompt 里的目录表全空、LLM 100% 返回 null。
+    color 字段从 product_components 中聚合该 SKU 涉及的颜色，便于 LLM 匹配；
+    若 BOM 缺失则留空。
+    """
+    rows: list[dict] = []
+    for p in db.query(Product).all():
+        colors = (
+            db.query(ProductComponent.color)
+            .filter(ProductComponent.product_id == p.id)
+            .all()
+        )
+        unique_colors = sorted({c[0] for c in colors if c[0]})
+        rows.append({
+            "sku": p.sku,
+            "name": p.name,
+            "color": ",".join(unique_colors),
+        })
+    return rows
 
 
 def search_skus(db: Session, q: str, limit: int = 10) -> list[dict]:

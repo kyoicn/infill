@@ -15,7 +15,7 @@ export default function ScanningProgress({
   onCancel,
 }: ScanningProgressProps) {
   const elapsedLabel = elapsedMs != null
-    ? `已用 ${(elapsedMs / 1000).toFixed(1)}s`
+    ? `已用 ${Math.round(elapsedMs / 1000)}s`
     : null;
 
   return (
