@@ -447,7 +447,7 @@ function NoExtensionBlock({ onRefresh }: { onRefresh: (notify?: boolean) => void
         <Button
           type="primary"
           size="large"
-          href="/static/extensions/infill-xhs-scraper-v0.1.0.zip"
+          href="/static/extensions/infill-xhs-scraper-v0.1.1.zip"
           download
           style={{ marginTop: 16 }}
         >
