@@ -71,9 +71,9 @@ export default function ScreencapGrid({ batchId, screens, parsedOrders }: Screen
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-          gap: 12,
-          maxHeight: 720,
+          gridTemplateColumns: 'repeat(auto-fill, 110px)',
+          gap: 10,
+          maxHeight: 560,
           overflowY: 'auto',
           padding: 4,
         }}
