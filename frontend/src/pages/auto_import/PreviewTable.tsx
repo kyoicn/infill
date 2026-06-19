@@ -709,6 +709,34 @@ export default function PreviewTable(props: PreviewTableProps) {
         />
       )}
 
+      {rows.length === 0 && sourcePlatform === 'xhs' && batch.ext_debug && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="扩展抓取诊断"
+          description={
+            <div style={{ fontSize: 12 }}>
+              <div>页面 URL: <Text code>{batch.ext_debug.page_url || '(空)'}</Text></div>
+              <div>页面标题: <Text code>{batch.ext_debug.page_title || '(空)'}</Text></div>
+              <div style={{ marginTop: 8 }}>选择器命中数：</div>
+              <pre style={{ background: '#fafafa', padding: 8, borderRadius: 4, fontSize: 11, margin: '4px 0' }}>
+{JSON.stringify(batch.ext_debug.selector_hits || {}, null, 2)}
+              </pre>
+              <div style={{ marginTop: 4, color: 'rgba(0,0,0,0.45)' }}>
+                所有命中数都是 0 → 选择器没对上当前 DOM；需要更新 extension/background.js 里的 SELECTORS。
+              </div>
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer', color: '#1677ff' }}>查看页面文本前 500 字（方便定位是不是订单页）</summary>
+                <pre style={{ background: '#fafafa', padding: 8, borderRadius: 4, fontSize: 11, marginTop: 4, whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>
+{batch.ext_debug.body_text_sample || '(空)'}
+                </pre>
+              </details>
+            </div>
+          }
+        />
+      )}
+
       {rows.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 64, color: 'var(--text3, rgba(0,0,0,0.45))' }}>
           <div style={{ fontSize: 16, marginBottom: 12 }}>

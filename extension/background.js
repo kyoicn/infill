@@ -12,10 +12,27 @@ function extractQianfanOrders() {
     PRODUCT_QUANTITY: '.product-qty, .quantity',
   };
 
+  // 诊断：每种选择器命中多少（用户报告 "0 orders" 时把这些数据回传给后端，
+  // 帮助判断是选择器过时还是页面真的没单）。
+  const debug = {
+    page_url: location.href,
+    page_title: document.title,
+    selector_hits: {
+      ORDER_CARD: document.querySelectorAll(SELECTORS.ORDER_CARD).length,
+      EXTERNAL_ORDER_ID: document.querySelectorAll(SELECTORS.EXTERNAL_ORDER_ID).length,
+      BUYER_NICKNAME: document.querySelectorAll(SELECTORS.BUYER_NICKNAME).length,
+      PRODUCT_ITEM: document.querySelectorAll(SELECTORS.PRODUCT_ITEM).length,
+      PRODUCT_TITLE: document.querySelectorAll(SELECTORS.PRODUCT_TITLE).length,
+    },
+    body_text_sample: (document.body && document.body.innerText
+      ? document.body.innerText.slice(0, 500)
+      : ''),
+  };
+
   const cards = document.querySelectorAll(SELECTORS.ORDER_CARD);
   if (!cards || cards.length === 0) {
-    console.error('[infill-ext] selectors not found on this page');
-    return [];
+    console.error('[infill-ext] selectors not found on this page', debug);
+    return { orders: [], debug };
   }
 
   const orders = [];
@@ -61,7 +78,7 @@ function extractQianfanOrders() {
     });
   });
 
-  return orders;
+  return { orders, debug };
 }
 
 async function handleScrapeXhs(batchId) {
@@ -80,15 +97,17 @@ async function handleScrapeXhs(batchId) {
     target: { tabId: tab.id },
     func: extractQianfanOrders,
   });
-  const raw_orders = (results && results[0] && results[0].result) || [];
+  const payload = (results && results[0] && results[0].result) || { orders: [], debug: {} };
+  const raw_orders = payload.orders || [];
+  const ext_debug = payload.debug || {};
 
   const resp = await fetch('http://localhost:8000/api/auto-import/xhs/scan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ batch_id: batchId, raw_orders }),
+    body: JSON.stringify({ batch_id: batchId, raw_orders, ext_debug }),
   });
   const scan_response = await resp.json();
-  return { ok: true, scan_response };
+  return { ok: true, scan_response, ext_debug };
 }
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {

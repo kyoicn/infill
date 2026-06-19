@@ -230,12 +230,20 @@ export interface AutoImportScanStats {
   low_conf: number;
 }
 
+export interface AutoImportExtDebug {
+  page_url?: string;
+  page_title?: string;
+  selector_hits?: Record<string, number>;
+  body_text_sample?: string;
+}
+
 export interface AutoImportScanResponse {
   ok: boolean;
   batch_id: string;
   items: AutoImportPreviewItem[];
   dropped: AutoImportDroppedOrder[];
   screen_count?: number;
+  ext_debug?: AutoImportExtDebug;
   stats: AutoImportScanStats;
   error_kind?: string;
   error?: string;

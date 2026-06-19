@@ -3,7 +3,7 @@
  * Extension ID 来自 VITE_INFILL_EXT_ID 构建时环境变量（frontend/.env）。
  */
 
-import type { AutoImportScanResponse } from './client';
+import type { AutoImportExtDebug, AutoImportScanResponse } from './client';
 
 // tsconfig.app.json 的 types 数组只白名单了 vite/client，所以即便安装了
 // @types/chrome 也不会自动注入 chrome 全局。这里手写最小声明，保证类型自洽。
@@ -60,6 +60,7 @@ export interface ExtensionPingResponse {
 export interface ExtensionScrapeResponse {
   ok: boolean;
   scan_response?: AutoImportScanResponse;
+  ext_debug?: AutoImportExtDebug;
   error_kind?: string;
 }
 

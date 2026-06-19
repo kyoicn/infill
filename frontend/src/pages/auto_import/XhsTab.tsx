@@ -89,12 +89,13 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
     setScan({ kind: 'scanning', batchId, step: 1, startedAt });
 
     // 模拟前端步骤进度：1 → 2 → 3，等扩展响应后跳到 4，最后 5
+    // 真实扩展抓取通常 < 1s，故意拉慢让用户能看清每一步
     window.setTimeout(() => {
       setScan((s) => (s.kind === 'scanning' && s.step < 2 ? { ...s, step: 2 } : s));
-    }, 300);
+    }, 700);
     window.setTimeout(() => {
       setScan((s) => (s.kind === 'scanning' && s.step < 3 ? { ...s, step: 3 } : s));
-    }, 800);
+    }, 1600);
 
     const resp = await scrapeXhs(batchId);
     if (!resp.ok) {
@@ -109,14 +110,16 @@ export default function XhsTab({ onScan, otherInProgress }: XhsTabProps) {
     }
 
     setScan((s) => (s.kind === 'scanning' ? { ...s, step: 4 } : s));
-    // 给后端 LLM 一步小动画时间
+    // 把扩展的诊断信息塞进 scan_response，方便 PreviewTable 在 0 单时展示
+    const enrichedScan = { ...resp.scan_response, ext_debug: resp.ext_debug };
+    // 给最后两步小动画时间，避免一闪而过看不清
     window.setTimeout(() => {
       setScan((s) => (s.kind === 'scanning' ? { ...s, step: 5 } : s));
       window.setTimeout(() => {
-        onScan(batchId, resp.scan_response!);
+        onScan(batchId, enrichedScan);
         setScan({ kind: 'idle' });
-      }, 200);
-    }, 200);
+      }, 700);
+    }, 800);
   };
 
   const cancelScan = () => {
@@ -283,7 +286,7 @@ function ReadyBlock({
         }}
       >
         <CheckLine label="扩展" value={`已装${extVersion ? ` v${extVersion}` : ''}`} />
-        <CheckLine label="千帆 Tab" value="qfh.xiaohongshu.com/seller/order" mono />
+        <CheckLine label="千帆 Tab" value="ark.xiaohongshu.com/app-order/dispatch/waybill/wait" mono />
       </div>
       <Button
         type="primary"
@@ -595,7 +598,7 @@ function NoXhsTabBlock({
                 color: 'rgba(0,0,0,0.45)',
               }}
             >
-              qfh.xiaohongshu.com/seller/order
+              ark.xiaohongshu.com/app-order/dispatch/waybill/wait
             </span>
           </div>
         </div>
@@ -606,7 +609,8 @@ function NoXhsTabBlock({
           size="large"
           style={{ flex: 1, background: '#ff2442', borderColor: '#ff2442' }}
           onClick={() => {
-            window.open('https://qfh.xiaohongshu.com/seller/order', '_blank');
+            window.open('https://ark.xiaohongshu.com/app-order/dispatch/waybill/wait', '_blank');
+            // 旧域名 qfh.xiaohongshu.com 已废弃，统一跳 ark
           }}
         >
           在 Chrome 新 Tab 打开千帆
