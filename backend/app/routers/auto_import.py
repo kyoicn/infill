@@ -19,7 +19,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -41,7 +41,6 @@ from ..schemas_auto_import import (
     ScanResponse,
     ScanStats,
     ScanStatusResponse,
-    ScreencapRequest,
     ScreencapResponse,
     SkuSearchRequest,
     SkuSearchResponse,
@@ -316,16 +315,27 @@ def xianyu_probe(config: AdbConfig) -> ProbeXianyuResponse:
 
 
 @router.post("/xianyu/screencap", response_model=ScreencapResponse)
-async def xianyu_screencap(body: ScreencapRequest) -> ScreencapResponse:
-    """截屏并落盘到临时目录。不调 LLM；解析推迟到 finish-scan 一次性处理。"""
-    batch_id = body.batch_id
+async def xianyu_screencap(
+    batch_id: str = Form(...),
+    png: UploadFile = File(...),
+) -> ScreencapResponse:
+    """接收 WebADB（浏览器端）抓到的 PNG，落盘到临时目录供 finish-scan 解析。
+
+    v0.4.x：从服务端跑 ADB subprocess 改为浏览器 WebUSB 直读。Backend 不再调 adb；
+    PNG 直接由前端上传。device config / probe / test-adb 端点保留但闲鱼前端不再调。
+    """
     try:
-        client = svc.AdbClient()
-        png_bytes = client.screencap(body.config)
+        png_bytes = await png.read()
+        if not png_bytes:
+            return ScreencapResponse(
+                ok=False,
+                error_kind="empty_png",
+                error="上传的 PNG 字节为空",
+            )
     except Exception as exc:  # noqa: BLE001
         return ScreencapResponse(
             ok=False,
-            error_kind="screencap_failed",
+            error_kind="upload_failed",
             error=str(exc),
         )
 

@@ -950,14 +950,7 @@ class TestE2E_xianyu_screencap_async:
     """闲鱼 flow: mocked AdbClient + LLM → screencap × 2 → scan-status reflects → finish-scan."""
 
     def test_screencap_status_and_finish(self, client, db_session, products, monkeypatch, tmp_path):
-        # Mock AdbClient.screencap to return canned PNG bytes
-        from app.services import auto_import as svc
-
-        monkeypatch.setattr(
-            svc.AdbClient, "screencap",
-            lambda self, config: b"\x89PNG fake-bytes",
-        )
-        # Mock LLM parse to return one order per screen
+        """v0.4.x: 浏览器 WebADB 抓 PNG 后 multipart 上传，后端只落盘不调 adb。"""
         canned_orders = [
             {
                 "external_order_id": "XY-A",
@@ -975,13 +968,15 @@ class TestE2E_xianyu_screencap_async:
         })
 
         batch_id = "e2e-xy-1"
-        cfg = {"device_type": "mumu", "pc_ip": "127.0.0.1", "port": 7555}
+        png_bytes = b"\x89PNG\r\n\x1a\nfake-bytes"
 
-        # 2 screencap calls
+        # 2 screencap calls — multipart upload
         for _ in range(2):
-            r = client.post("/api/auto-import/xianyu/screencap", json={
-                "batch_id": batch_id, "config": cfg,
-            })
+            r = client.post(
+                "/api/auto-import/xianyu/screencap",
+                data={"batch_id": batch_id},
+                files={"png": ("screen.png", png_bytes, "image/png")},
+            )
             assert r.status_code == 200, r.text
             assert r.json()["ok"] is True
 
@@ -1097,23 +1092,17 @@ class TestQAGapXianyuScreencapEnvelope:
     one-shot endpoint contracts that don't span requests.
     """
 
-    def test_screencap_failure_returns_envelope(self, client, db_session, monkeypatch):
-        """ADB screencap 抛异常时端点应返回 {ok:false, error_kind:screencap_failed}。"""
-        from app.services import auto_import as svc
-
-        def boom(self, config):
-            raise RuntimeError("adb pipe broken")
-
-        monkeypatch.setattr(svc.AdbClient, "screencap", boom)
-        r = client.post("/api/auto-import/xianyu/screencap", json={
-            "batch_id": "qa-xy-fail",
-            "config": {"device_type": "mumu", "pc_ip": "127.0.0.1", "port": 7555},
-        })
+    def test_screencap_failure_returns_envelope(self, client, db_session):
+        """空 PNG 上传时端点应返回 {ok:false, error_kind:empty_png}（不抛 500）。"""
+        r = client.post(
+            "/api/auto-import/xianyu/screencap",
+            data={"batch_id": "qa-xy-fail"},
+            files={"png": ("empty.png", b"", "image/png")},
+        )
         assert r.status_code == 200, r.text
         data = r.json()
         assert data["ok"] is False
-        assert data["error_kind"] == "screencap_failed"
-        assert "adb pipe broken" in data["error"]
+        assert data["error_kind"] == "empty_png"
 
     def test_scan_status_empty_batch_returns_empty_lists(self, client):
         """从未截屏的 batch_id 不应崩；返回空 screens / parsed_orders。"""
