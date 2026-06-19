@@ -81,7 +81,6 @@ export default function AutoImport() {
       <h1 style={{ fontSize: 22, margin: '0 0 6px', fontWeight: 600 }}>自动导入</h1>
       <div style={{ color: 'rgba(0,0,0,0.65)', fontSize: 13, marginBottom: 20 }}>
         从小红书千帆 Chrome 扩展或闲鱼 Android 设备 ADB 截屏导入订单 · 自动匹配 catalog SKU · 预览后入队。
-        需要重新配置？前往 <Link to="/settings/auto-import">系统设置 → 自动导入</Link>。
       </div>
 
       {mode.kind === 'tabs' && (
