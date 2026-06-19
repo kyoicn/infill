@@ -2,9 +2,12 @@
   "manifest_version": 3,
   "name": "infill 小红书千帆抓单",
   "description": "Scrape 小红书千帆 order pages and feed to infill 自动导入流程",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "permissions": ["tabs", "scripting"],
-  "host_permissions": ["*://*.qianfan.xiaohongshu.com/*"],
+  "host_permissions": [
+    "*://*.qianfan.xiaohongshu.com/*",
+    "*://ark.xiaohongshu.com/*"
+  ],
   "externally_connectable": {
     "matches": [
       "http://localhost:5173/*",
@@ -16,7 +19,10 @@
   },
   "content_scripts": [
     {
-      "matches": ["*://*.qianfan.xiaohongshu.com/*"],
+      "matches": [
+        "*://*.qianfan.xiaohongshu.com/*",
+        "*://ark.xiaohongshu.com/*"
+      ],
       "js": ["content_xhs.js"],
       "run_at": "document_idle"
     }

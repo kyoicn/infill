@@ -66,7 +66,10 @@ function extractQianfanOrders() {
 
 async function handleScrapeXhs(batchId) {
   const tabs = await chrome.tabs.query({
-    url: '*://*.qianfan.xiaohongshu.com/*',
+    url: [
+      '*://*.qianfan.xiaohongshu.com/*',
+      '*://ark.xiaohongshu.com/*',
+    ],
   });
   if (!tabs || tabs.length === 0) {
     return { ok: false, error_kind: 'extension_no_xhs_tab' };
