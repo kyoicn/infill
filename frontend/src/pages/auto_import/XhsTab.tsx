@@ -465,7 +465,7 @@ function NoExtensionBlock({
         <Button
           type="primary"
           size="large"
-          href="/static/extensions/infill-xhs-scraper-v0.1.1.zip"
+          href="/static/extensions/infill-xhs-scraper-v0.1.2.zip"
           download
           style={{ marginTop: 16 }}
         >
