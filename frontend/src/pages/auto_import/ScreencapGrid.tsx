@@ -2,7 +2,7 @@ import { Empty, Spin, Tag } from 'antd';
 
 export interface ScreenEntry {
   seq: number;
-  status: 'parsing' | 'parsed' | 'failed';
+  status: 'captured' | 'parsing' | 'parsed' | 'failed';
   error: string | null;
 }
 
@@ -18,8 +18,9 @@ interface ParsedOrderHint {
 }
 
 const STATUS_BADGE: Record<ScreenEntry['status'], { color: string; label: string; icon: string }> = {
-  parsing: { color: 'orange', label: '解析中', icon: '↻' },
-  parsed: { color: 'green', label: '已解析', icon: '●' },
+  captured: { color: 'orange', label: '已截屏', icon: '●' },
+  parsing: { color: 'blue', label: '解析中', icon: '↻' },
+  parsed: { color: 'green', label: '已解析', icon: '✓' },
   failed: { color: 'red', label: '失败', icon: '!' },
 };
 

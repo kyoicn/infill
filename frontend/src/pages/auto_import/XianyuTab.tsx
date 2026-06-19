@@ -171,9 +171,9 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
           }
           const mergedScreens: ScreenEntry[] = resp.screens.map((s) => {
             const status: ScreenEntry['status'] =
-              s.status === 'parsed' || s.status === 'failed'
+              s.status === 'parsed' || s.status === 'failed' || s.status === 'parsing'
                 ? s.status
-                : 'parsing';
+                : 'captured';
             return {
               seq: s.seq,
               status,
@@ -252,7 +252,7 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
           ? prev.screens
           : [
               ...prev.screens,
-              { seq: newSeq, status: 'parsing' as const, error: null },
+              { seq: newSeq, status: 'captured' as const, error: null },
             ];
         return { ...prev, screens };
       });

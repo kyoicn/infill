@@ -296,7 +296,7 @@ def xianyu_probe(config: AdbConfig) -> ProbeXianyuResponse:
 
 @router.post("/xianyu/screencap", response_model=ScreencapResponse)
 async def xianyu_screencap(body: ScreencapRequest) -> ScreencapResponse:
-    """触发一次 ADB 截屏 + 落盘 + 起一个异步 LLM 解析任务，立即返回。"""
+    """截屏并落盘到临时目录。不调 LLM；解析推迟到 finish-scan 一次性处理。"""
     batch_id = body.batch_id
     try:
         client = svc.AdbClient()
@@ -327,27 +327,7 @@ async def xianyu_screencap(body: ScreencapRequest) -> ScreencapResponse:
             error=str(exc),
         )
 
-    screen_entry = {"seq": seq, "status": "parsing", "error": None}
-    state["screens"].append(screen_entry)
-
-    async def _parse_task() -> None:
-        try:
-            parsed = await asyncio.to_thread(
-                auto_import_llm.parse_xianyu_screenshot, png_bytes
-            )
-            screen_entry["status"] = "parsed"
-            for ord_dict in parsed or []:
-                state["parsed_orders"].append(ord_dict)
-        except LLMProviderError as exc:
-            screen_entry["status"] = "failed"
-            screen_entry["error"] = f"{exc.error_kind}: {exc.message}"
-        except Exception as exc:  # noqa: BLE001
-            screen_entry["status"] = "failed"
-            screen_entry["error"] = str(exc)
-
-    task = asyncio.create_task(_parse_task())
-    svc.BATCH_TASKS.setdefault(batch_id, []).append(task)
-
+    state["screens"].append({"seq": seq, "status": "captured", "error": None})
     return ScreencapResponse(
         ok=True,
         screen_id=f"{batch_id}-{seq}",
@@ -380,14 +360,36 @@ async def xianyu_finish_scan(body: FinishScanRequest, db: Session = Depends(get_
             error=f"batch_id={batch_id} 未找到（未截过屏 / 已被清理）",
         )
 
-    # 1. 等所有 pending 解析任务
-    tasks = list(svc.BATCH_TASKS.get(batch_id) or [])
-    if tasks:
-        await asyncio.gather(*tasks, return_exceptions=True)
+    # 1. 顺序解析所有已截屏 PNG（顺序跑避免 DashScope 限流）
+    tmp_dir = Path(state["tmp_dir"])
+    parsed_orders: list[dict] = []
+    for screen in state["screens"]:
+        seq = screen["seq"]
+        png_path = tmp_dir / f"screen_{seq}.png"
+        if not png_path.exists():
+            screen["status"] = "failed"
+            screen["error"] = "PNG 文件不存在"
+            continue
+        screen["status"] = "parsing"
+        try:
+            png_bytes = png_path.read_bytes()
+            parsed = await asyncio.to_thread(
+                auto_import_llm.parse_xianyu_screenshot, png_bytes
+            )
+            screen["status"] = "parsed"
+            for ord_dict in parsed or []:
+                parsed_orders.append(ord_dict)
+        except LLMProviderError as exc:
+            screen["status"] = "failed"
+            screen["error"] = f"{exc.error_kind}: {exc.message}"
+        except Exception as exc:  # noqa: BLE001
+            screen["status"] = "failed"
+            screen["error"] = str(exc)
+    state["parsed_orders"] = parsed_orders
 
     # 2. 去重（按 external_order_id）
     seen: dict[str, dict] = {}
-    for parsed in state.get("parsed_orders") or []:
+    for parsed in parsed_orders:
         ext_id = (parsed.get("external_order_id") or "").strip()
         if not ext_id or ext_id in seen:
             continue
