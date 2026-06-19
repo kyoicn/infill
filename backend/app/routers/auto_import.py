@@ -176,9 +176,20 @@ def _scan_impl(
 
         # Step 1：必填三件套
         if not ext_id or not buyer or not products:
+            missing = []
+            if not ext_id:
+                missing.append("external_order_id")
+            if not buyer:
+                missing.append("buyer_nickname")
+            if not products:
+                missing.append("products")
             dropped.append(DroppedOrder(
                 external_order_id=ext_id,
+                buyer_nickname=buyer,
+                external_created_at=raw.get("external_created_at"),
+                products=products if isinstance(products, list) else [],
                 reason="missing_required_fields",
+                missing_fields=missing,
             ))
             continue
 
@@ -253,11 +264,16 @@ def _scan_impl(
         low_conf=low_conf,
     )
 
+    # 闲鱼批次会在 BATCH_SCREENS 留有截屏，把数量回传供前端 preview 拉缩略图
+    bstate = svc.BATCH_SCREENS.get(batch_id) or {}
+    screen_count = len(bstate.get("screens") or [])
+
     return ScanResponse(
         ok=True,
         batch_id=batch_id,
         items=items,
         dropped=dropped,
+        screen_count=screen_count,
         stats=stats,
     )
 
@@ -432,8 +448,7 @@ async def xianyu_finish_scan(body: FinishScanRequest, db: Session = Depends(get_
         platform="xianyu",
     )
 
-    # 4. 清理临时目录 + 状态
-    _cleanup_batch(batch_id)
+    # 4. 不清理 — 截图保留供 preview 页校对；commit/cancel 时清
 
     return response
 
@@ -587,6 +602,9 @@ def commit(body: CommitRequest, db: Session = Depends(get_db)) -> CommitResponse
             error=str(exc),
             total_ms=int((time.monotonic() - t0) * 1000),
         )
+
+    # 提交成功 — 把对应批次的截屏/状态清掉
+    _cleanup_batch(body.batch_id)
 
     match_rate = (high_conf_count / total_matches) if total_matches else 0.0
     return CommitResponse(

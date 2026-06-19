@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import {
+  Alert,
   Button,
   Checkbox,
+  Image,
   InputNumber,
   Modal,
   Table,
@@ -596,11 +598,126 @@ export default function PreviewTable(props: PreviewTableProps) {
         重复单和未匹配单默认不勾选。
       </div>
 
+      {sourcePlatform === 'xianyu' && (batch.screen_count ?? 0) > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
+            源截屏（{batch.screen_count} 张，点击查看大图）
+          </div>
+          <Image.PreviewGroup>
+            <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6 }}>
+              {Array.from({ length: batch.screen_count ?? 0 }, (_, i) => (
+                <div
+                  key={i}
+                  style={{
+                    flex: '0 0 auto',
+                    width: 120,
+                    aspectRatio: '9 / 19.5',
+                    background: '#000',
+                    borderRadius: 4,
+                    overflow: 'hidden',
+                    position: 'relative',
+                  }}
+                >
+                  <Image
+                    src={`/api/auto-import/xianyu/screen?batch_id=${encodeURIComponent(batch.batch_id)}&seq=${i}`}
+                    alt={`截屏 #${i}`}
+                    width="100%"
+                    height="100%"
+                    style={{ objectFit: 'contain', display: 'block' }}
+                    preview={{ mask: '🔍' }}
+                  />
+                  <span
+                    style={{
+                      position: 'absolute',
+                      top: 4,
+                      left: 6,
+                      background: '#ff7a00',
+                      color: '#fff',
+                      width: 20,
+                      height: 20,
+                      borderRadius: '50%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    {i}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Image.PreviewGroup>
+        </div>
+      )}
+
+      {batch.dropped.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 20 }}
+          message={`LLM 解析出 ${batch.dropped.length + rows.length} 条记录，其中 ${batch.dropped.length} 条因必填字段缺失被丢弃`}
+          description={
+            <div>
+              <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)', marginBottom: 8 }}>
+                以下记录将不会进入预览。检查上面截屏，确认是 LLM 漏读还是截图本身没有这些字段。
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {batch.dropped.map((d, idx) => (
+                  <div
+                    key={idx}
+                    style={{
+                      background: '#fff',
+                      border: '1px solid #ffe7ba',
+                      borderRadius: 4,
+                      padding: '8px 10px',
+                      fontSize: 12,
+                    }}
+                  >
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <Tag color="orange" style={{ margin: 0 }}>
+                        丢弃 #{idx + 1}
+                      </Tag>
+                      {(d.missing_fields || []).map((f) => (
+                        <Tag key={f} color="red" style={{ margin: 0 }}>
+                          缺 {f}
+                        </Tag>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: 6, color: 'rgba(0,0,0,0.65)' }}>
+                      <div>外部订单号: <Text code>{d.external_order_id || '(空)'}</Text></div>
+                      <div>买家: <Text code>{d.buyer_nickname || '(空)'}</Text></div>
+                      <div>下单时间: <Text code>{d.external_created_at || '(空)'}</Text></div>
+                      <div>
+                        商品: {' '}
+                        {(d.products && d.products.length > 0)
+                          ? d.products.map((p, i) => (
+                              <Text key={i} code style={{ marginRight: 6 }}>
+                                {p.listing_title || '?'} ×{p.quantity ?? 1}
+                              </Text>
+                            ))
+                          : <Text code>(空)</Text>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          }
+        />
+      )}
+
       {rows.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 64, color: 'var(--text3, rgba(0,0,0,0.45))' }}>
-          <div style={{ fontSize: 16, marginBottom: 12 }}>未抓取到任何订单</div>
+          <div style={{ fontSize: 16, marginBottom: 12 }}>
+            {batch.dropped.length > 0 ? '所有 LLM 解析结果都被丢弃' : '未抓取到任何订单'}
+          </div>
           <div style={{ fontSize: 13, marginBottom: 24 }}>
-            请检查千帆 tab 是否打开，或闲鱼是否截取到订单页
+            {batch.dropped.length > 0
+              ? '可参考上面源截屏 + 丢弃明细，确定下一步：重新截屏 / 直接手工录入'
+              : '请检查千帆 tab 是否打开，或闲鱼是否截取到订单页'}
           </div>
           <Button onClick={onCancel}>返回扫描页</Button>
         </div>

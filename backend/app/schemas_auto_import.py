@@ -101,7 +101,11 @@ class PreviewItem(BaseModel):
 
 class DroppedOrder(BaseModel):
     external_order_id: Optional[str] = None
+    buyer_nickname: Optional[str] = None
+    external_created_at: Optional[str] = None
+    products: list[dict] = []
     reason: str  # 如 "missing_required_fields"
+    missing_fields: list[str] = []
 
 
 class ScanStats(BaseModel):
@@ -118,6 +122,7 @@ class ScanResponse(BaseModel):
     batch_id: str = ""
     items: list[PreviewItem] = []
     dropped: list[DroppedOrder] = []
+    screen_count: int = 0  # 闲鱼批次保留下的截屏数；小红书 0
     stats: ScanStats = Field(default_factory=ScanStats)
     error_kind: Optional[str] = None
     error: Optional[str] = None

@@ -214,7 +214,11 @@ export interface AutoImportPreviewItem {
 
 export interface AutoImportDroppedOrder {
   external_order_id?: string | null;
+  buyer_nickname?: string | null;
+  external_created_at?: string | null;
+  products?: Array<{ listing_title?: string; quantity?: number }>;
   reason: string;
+  missing_fields?: string[];
 }
 
 export interface AutoImportScanStats {
@@ -231,6 +235,7 @@ export interface AutoImportScanResponse {
   batch_id: string;
   items: AutoImportPreviewItem[];
   dropped: AutoImportDroppedOrder[];
+  screen_count?: number;
   stats: AutoImportScanStats;
   error_kind?: string;
   error?: string;
