@@ -1,5 +1,22 @@
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+
+# --- 开发期：从仓库根的 .env 加载环境变量（不覆盖已有值；Docker 生产由 -e 传入）---
+# 跳过 pytest 上下文，避免污染单测里的 monkeypatch.delenv 场景。
+_ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
+if _ENV_PATH.is_file() and "PYTEST_CURRENT_TEST" not in os.environ and "PYTEST_VERSION" not in os.environ:
+    for _line in _ENV_PATH.read_text().splitlines():
+        _line = _line.strip()
+        if not _line or _line.startswith("#") or "=" not in _line:
+            continue
+        _k, _, _v = _line.partition("=")
+        _k = _k.strip()
+        _v = _v.strip().strip('"').strip("'")
+        if _k and _k not in os.environ:
+            os.environ[_k] = _v
+
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
