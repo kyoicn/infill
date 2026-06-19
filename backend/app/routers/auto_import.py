@@ -335,6 +335,21 @@ async def xianyu_screencap(body: ScreencapRequest) -> ScreencapResponse:
     )
 
 
+@router.get("/xianyu/screen")
+def xianyu_screen(batch_id: str, seq: int):
+    """返回截屏 PNG 字节流（仅当批次仍在 BATCH_SCREENS 中时可用，finish 后清理）。"""
+    from fastapi.responses import FileResponse, JSONResponse
+
+    state = svc.BATCH_SCREENS.get(batch_id)
+    if state is None:
+        return JSONResponse({"ok": False, "error_kind": "batch_not_found"}, status_code=404)
+    tmp_dir = Path(state.get("tmp_dir") or "")
+    png_path = tmp_dir / f"screen_{seq}.png"
+    if not png_path.is_file():
+        return JSONResponse({"ok": False, "error_kind": "png_not_found"}, status_code=404)
+    return FileResponse(png_path, media_type="image/png")
+
+
 @router.get("/xianyu/scan-status", response_model=ScanStatusResponse)
 def xianyu_scan_status(batch_id: str) -> ScanStatusResponse:
     state = svc.BATCH_SCREENS.get(batch_id) or {

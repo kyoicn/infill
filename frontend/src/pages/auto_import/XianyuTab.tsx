@@ -548,6 +548,7 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
 
         {state.kind === 'capturing' && (
           <ScreencapGrid
+            batchId={state.batchId}
             screens={state.screens}
             parsedOrders={state.parsedOrders}
           />

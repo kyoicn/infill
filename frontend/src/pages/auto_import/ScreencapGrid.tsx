@@ -7,6 +7,7 @@ export interface ScreenEntry {
 }
 
 interface ScreencapGridProps {
+  batchId: string;
   screens: ScreenEntry[];
   parsedOrders: unknown[];
 }
@@ -24,7 +25,7 @@ const STATUS_BADGE: Record<ScreenEntry['status'], { color: string; label: string
   failed: { color: 'red', label: '失败', icon: '!' },
 };
 
-export default function ScreencapGrid({ screens, parsedOrders }: ScreencapGridProps) {
+export default function ScreencapGrid({ batchId, screens, parsedOrders }: ScreencapGridProps) {
   if (screens.length === 0) {
     return (
       <div style={{ padding: '64px 32px', textAlign: 'center' }}>
@@ -72,13 +73,14 @@ export default function ScreencapGrid({ screens, parsedOrders }: ScreencapGridPr
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
           gap: 12,
-          maxHeight: 600,
+          maxHeight: 720,
           overflowY: 'auto',
           padding: 4,
         }}
       >
         {screens.map((s) => {
           const badge = STATUS_BADGE[s.status];
+          const imgUrl = `/api/auto-import/xianyu/screen?batch_id=${encodeURIComponent(batchId)}&seq=${s.seq}`;
           return (
             <div
               key={s.seq}
@@ -96,16 +98,20 @@ export default function ScreencapGrid({ screens, parsedOrders }: ScreencapGridPr
                 style={{
                   position: 'relative',
                   width: '100%',
-                  height: 80,
-                  background: 'linear-gradient(135deg, #f0f0f0, #d9d9d9)',
+                  aspectRatio: '9 / 19.5',
+                  background: '#000',
                   borderRadius: 4,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'rgba(0,0,0,0.45)',
-                  fontSize: 12,
+                  overflow: 'hidden',
+                  cursor: 'zoom-in',
                 }}
+                onClick={() => window.open(imgUrl, '_blank')}
+                title="点击查看大图"
               >
+                <img
+                  src={imgUrl}
+                  alt={`截屏 #${s.seq}`}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+                />
                 <span
                   style={{
                     position: 'absolute',
@@ -125,7 +131,6 @@ export default function ScreencapGrid({ screens, parsedOrders }: ScreencapGridPr
                 >
                   {s.seq}
                 </span>
-                <span>截屏 #{s.seq}</span>
               </div>
               <div
                 style={{
