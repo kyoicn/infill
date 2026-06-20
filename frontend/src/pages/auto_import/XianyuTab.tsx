@@ -153,19 +153,51 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
   // ---- Renderers ----
 
   if (!webusbOk) {
+    const isChromium = /Chrome|Edg/.test(navigator.userAgent);
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const isSecure = typeof window !== 'undefined'
+      && (window.isSecureContext || /^https:/.test(origin) || /^http:\/\/(localhost|127\.0\.0\.1)/.test(origin));
     return (
       <div style={{ padding: '32px 24px', maxWidth: 720, margin: '0 auto' }}>
         <Alert
           type="error"
           showIcon
-          message="当前浏览器不支持 WebUSB"
+          message="浏览器无法访问 WebUSB"
           description={
             <div>
               <p style={{ margin: '0 0 8px' }}>
                 闲鱼路径需要浏览器通过 USB 直接和 Android 手机通信，依赖 WebUSB API。
-                目前只有 <b>Chrome / Edge</b> 支持，Firefox / Safari 不支持。
               </p>
-              <p style={{ margin: 0 }}>请用 Chrome 或 Edge 打开此页面后重试。</p>
+              {!isChromium && (
+                <p style={{ margin: '0 0 8px' }}>
+                  ❌ 你用的不是 Chromium 内核浏览器。请改用 <b>Chrome 或 Edge</b>，Firefox / Safari 不支持 WebUSB。
+                </p>
+              )}
+              {isChromium && !isSecure && (
+                <>
+                  <p style={{ margin: '0 0 8px' }}>
+                    ❌ 你访问的是 <code>{origin}</code>，Chrome 把局域网 HTTP 视为不安全上下文，禁用了 WebUSB。
+                  </p>
+                  <p style={{ margin: '0 0 8px', fontWeight: 600 }}>30 秒解法：把这个地址加到 Chrome 的安全例外</p>
+                  <ol style={{ margin: '0 0 8px', paddingLeft: 20 }}>
+                    <li>新 tab 打开 <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code></li>
+                    <li>把 flag 切到 <b>Enabled</b></li>
+                    <li>下方文本框填：<code>{origin}</code></li>
+                    <li>点底部「Relaunch」重启 Chrome</li>
+                    <li>回这页应该就能用了</li>
+                  </ol>
+                  <p style={{ margin: 0, fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>
+                    长期方案：给 infill 配 HTTPS（自签证书或 mkcert）。Chrome 把 localhost / HTTPS 视为安全，自动放行。
+                  </p>
+                </>
+              )}
+              {isChromium && isSecure && (
+                <p style={{ margin: 0 }}>
+                  奇怪——你在 Chromium 内核 + 安全上下文里却拿不到 <code>navigator.usb</code>。
+                  可能是 Chrome 版本太旧（&lt;89）或者企业管控策略禁用了 WebUSB。检查
+                  <code>chrome://policy/</code>。
+                </p>
+              )}
             </div>
           }
         />
