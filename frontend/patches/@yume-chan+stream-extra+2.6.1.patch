@@ -1,0 +1,22 @@
+diff --git a/node_modules/@yume-chan/stream-extra/esm/wrap-readable.js b/node_modules/@yume-chan/stream-extra/esm/wrap-readable.js
+index 60a63cc..d59047f 100644
+--- a/node_modules/@yume-chan/stream-extra/esm/wrap-readable.js
++++ b/node_modules/@yume-chan/stream-extra/esm/wrap-readable.js
+@@ -25,9 +25,14 @@ export class WrapReadableStream extends ReadableStream {
+     constructor(wrapper, strategy) {
+         super({
+             start: async (controller) => {
+-                const readable = await getWrappedReadableStream(wrapper, controller);
+-                // `start` is called in `super()`, so can't use `this` synchronously.
+-                // but it's fine after the first `await`
++                // INFILL PATCH: vite/rolldown inlines `const readable = await X; this.readable = readable`
++                // back into `this.readable = await X`, which evaluates `this.readable` LHS BEFORE await
++                // and trips V8's "Must call super constructor before accessing 'this'" because we're
++                // synchronously inside super({start: ...}). Split into `let` + reassignment + an extra
++                // `await Promise.resolve()` barrier to defeat the inliner.
++                let readable;
++                readable = await getWrappedReadableStream(wrapper, controller);
++                await Promise.resolve();
+                 this.readable = readable;
+                 this.#reader = this.readable.getReader();
+             },
