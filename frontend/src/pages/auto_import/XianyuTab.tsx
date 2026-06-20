@@ -108,6 +108,24 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
     }
   }, [connected, batchId, screens.length]);
 
+  const handleDeleteScreen = useCallback(
+    async (seq: number) => {
+      if (!batchId) return;
+      try {
+        const resp = await api.autoImport.xianyu.deleteScreen(batchId, seq);
+        if (!resp.ok) {
+          message.error(`删除失败：${resp.error_kind ?? '未知错误'}`);
+          return;
+        }
+        setScreens((prev) => prev.filter((s) => s.seq !== seq));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        message.error(`删除失败：${msg}`);
+      }
+    },
+    [batchId],
+  );
+
   const handleFinish = useCallback(async () => {
     if (!batchId || screens.length === 0) return;
     setFinishing(true);
@@ -368,6 +386,7 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
             batchId={batchId}
             screens={screens}
             parsedOrders={[]}
+            onDelete={handleDeleteScreen}
           />
         )}
         {!finishing && captureCount === 0 && (

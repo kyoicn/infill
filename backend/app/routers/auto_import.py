@@ -345,7 +345,9 @@ async def xianyu_screencap(
         "tmp_dir": str(_batch_tmp_dir(batch_id)),
     })
 
-    seq = len(state["screens"])
+    # seq 单调递增，不复用已删除的号，避免文件名冲突 + 前端 React key 错位
+    existing = state["screens"]
+    seq = (max((s["seq"] for s in existing), default=-1) + 1)
     tmp_dir = Path(state["tmp_dir"])
     tmp_dir.mkdir(parents=True, exist_ok=True)
     png_path = tmp_dir / f"screen_{seq}.png"
@@ -364,6 +366,27 @@ async def xianyu_screencap(
         screen_id=f"{batch_id}-{seq}",
         seq=seq,
     )
+
+
+@router.post("/xianyu/screen-delete")
+def xianyu_screen_delete(batch_id: str = Form(...), seq: int = Form(...)) -> dict:
+    """删除已截屏中某一张（finish-scan 前可用），同时删除磁盘上对应 PNG。"""
+    state = svc.BATCH_SCREENS.get(batch_id)
+    if state is None:
+        return {"ok": False, "error_kind": "batch_not_found"}
+    screens = state.get("screens") or []
+    idx = next((i for i, s in enumerate(screens) if s["seq"] == seq), None)
+    if idx is None:
+        return {"ok": False, "error_kind": "screen_not_found"}
+    screens.pop(idx)
+    tmp_dir = Path(state.get("tmp_dir") or "")
+    png_path = tmp_dir / f"screen_{seq}.png"
+    if png_path.is_file():
+        try:
+            png_path.unlink()
+        except OSError:
+            pass  # 删失败不影响主流程
+    return {"ok": True, "remaining": len(screens)}
 
 
 @router.get("/xianyu/screen")

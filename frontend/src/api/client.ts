@@ -133,6 +133,17 @@ export const api = {
         request<AutoImportScanStatusResponse>(
           `/auto-import/xianyu/scan-status?batch_id=${encodeURIComponent(batchId)}`,
         ),
+      deleteScreen: async (batchId: string, seq: number) => {
+        const fd = new FormData();
+        fd.append('batch_id', batchId);
+        fd.append('seq', String(seq));
+        const resp = await fetch('/api/auto-import/xianyu/screen-delete', {
+          method: 'POST',
+          body: fd,
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json() as Promise<{ ok: boolean; error_kind?: string; remaining?: number }>;
+      },
       finishScan: (batchId: string) =>
         request<AutoImportScanResponse>('/auto-import/xianyu/finish-scan', {
           method: 'POST',

@@ -1,4 +1,5 @@
-import { Empty, Image, Spin, Tag } from 'antd';
+import { CloseOutlined } from '@ant-design/icons';
+import { Empty, Image, Popconfirm, Spin, Tag } from 'antd';
 
 export interface ScreenEntry {
   seq: number;
@@ -10,6 +11,7 @@ interface ScreencapGridProps {
   batchId: string;
   screens: ScreenEntry[];
   parsedOrders: unknown[];
+  onDelete?: (seq: number) => void;
 }
 
 interface ParsedOrderHint {
@@ -25,7 +27,7 @@ const STATUS_BADGE: Record<ScreenEntry['status'], { color: string; label: string
   failed: { color: 'red', label: '失败', icon: '!' },
 };
 
-export default function ScreencapGrid({ batchId, screens, parsedOrders }: ScreencapGridProps) {
+export default function ScreencapGrid({ batchId, screens, parsedOrders, onDelete }: ScreencapGridProps) {
   if (screens.length === 0) {
     return (
       <div style={{ padding: '64px 32px', textAlign: 'center' }}>
@@ -134,6 +136,41 @@ export default function ScreencapGrid({ batchId, screens, parsedOrders }: Screen
                 >
                   {s.seq}
                 </span>
+                {onDelete && (
+                  <Popconfirm
+                    title="删除这张截屏？"
+                    description="将从扫描队列移除（无法恢复）"
+                    okText="删除"
+                    cancelText="取消"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => onDelete(s.seq)}
+                  >
+                    <button
+                      type="button"
+                      aria-label={`删除第 ${s.seq} 张截屏`}
+                      title="删除"
+                      style={{
+                        position: 'absolute',
+                        top: 4,
+                        right: 4,
+                        width: 24,
+                        height: 24,
+                        borderRadius: '50%',
+                        border: 'none',
+                        background: 'rgba(0,0,0,0.55)',
+                        color: '#fff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        zIndex: 2,
+                        padding: 0,
+                      }}
+                    >
+                      <CloseOutlined style={{ fontSize: 12 }} />
+                    </button>
+                  </Popconfirm>
+                )}
               </div>
               <div
                 style={{
