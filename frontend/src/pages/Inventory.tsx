@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, Table, Button, InputNumber, Tag, message } from 'antd';
-import { EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { EditOutlined, CheckOutlined, CloseOutlined, MinusOutlined, PlusOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 
 type SortOrder = 'ascend' | 'descend';
@@ -41,6 +41,15 @@ export default function Inventory() {
   const sortOrderFor = (key: string): SortOrder | null =>
     sortState?.column === key ? sortState.order : null;
 
+  // 直接管理排序状态：点同一列翻转方向；点新列默认 ascend
+  const toggleSort = (key: string) =>
+    setSortState(prev =>
+      prev && prev.column === key
+        ? { column: key, order: prev.order === 'ascend' ? 'descend' : 'ascend' }
+        : { column: key, order: 'ascend' },
+    );
+  const headerCell = (key: string) => () => ({ onClick: () => toggleSort(key) });
+
   // 合并库存和富余数据：以 inventory 为主，补上 surplus 的 demand 信息
   const rows = inventory.map(inv => {
     const s = surplus.find(s => s.component_id === inv.component_id && s.color === (inv.color || ''));
@@ -54,6 +63,30 @@ export default function Inventory() {
     };
   });
 
+  // 排序后的稳定顺序：仅在 sortState 或行集合（id）变化时重算；
+  // 库存数值变化（+/- 调整、编辑保存）不会触发重排序，避免行跳动
+  const idsKey = rows.map(r => r.id).join(',');
+  const orderIds = useMemo(() => {
+    const arr = [...rows];
+    if (sortState) {
+      const { column, order } = sortState;
+      arr.sort((a, b) => {
+        let cmp = 0;
+        if (column === 'component_name') cmp = (a.component_name || '').localeCompare(b.component_name || '');
+        else if (column === 'color') cmp = (a.color || '').localeCompare(b.color || '');
+        else if (column === 'stock') cmp = a.stock - b.stock;
+        else if (column === 'demand') cmp = a.demand - b.demand;
+        else if (column === 'surplus') cmp = (a.stock - a.demand) - (b.stock - b.demand);
+        return order === 'descend' ? -cmp : cmp;
+      });
+    }
+    return arr.map(r => r.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortState, idsKey]);
+
+  const byId = new Map(rows.map(r => [r.id, r]));
+  const displayRows = orderIds.map(id => byId.get(id)).filter(Boolean) as typeof rows;
+
   const startEdit = () => {
     const values: Record<number, number> = {};
     for (const r of rows) {
@@ -66,6 +99,16 @@ export default function Inventory() {
   const cancelEdit = () => {
     setEditing(false);
     setEditValues({});
+  };
+
+  const adjust = async (rec: any, delta: number) => {
+    if (delta < 0 && rec.stock <= 0) return;
+    try {
+      await api.adjustInventory({ component_id: rec.component_id, color: rec.color, quantity: delta });
+      reload();
+    } catch (e: any) {
+      message.error(e.message);
+    }
   };
 
   const saveAll = async () => {
@@ -99,22 +142,11 @@ export default function Inventory() {
         }
       >
         <Table
-          dataSource={rows}
+          dataSource={displayRows}
           rowKey="id"
           size="small"
           pagination={false}
           sortDirections={['ascend', 'descend']}
-          onChange={(_p, _f, sorter: any) => {
-            // 砍掉 3 态后 sorter.order 总有值；用户点 column 切换升降序，状态写 localStorage
-            if (!sorter || Array.isArray(sorter)) return;
-            if (!sorter.order) return;
-            // 不同版本 / 控制 / 未控制下 AntD 暴露 key 的字段名不同，挨个试
-            const key =
-              sorter.columnKey ||
-              sorter.field ||
-              (sorter.column && (sorter.column.key || sorter.column.dataIndex));
-            if (key) setSortState({ column: String(key), order: sorter.order });
-          }}
           rowClassName={(rec: any) => {
             const stock = editing ? (editValues[rec.id] ?? rec.stock) : rec.stock;
             const val = stock - rec.demand;
@@ -128,7 +160,8 @@ export default function Inventory() {
               key: 'component_name',
               dataIndex: 'component_name',
               sortOrder: sortOrderFor('component_name'),
-              sorter: (a: any, b: any) => (a.component_name || '').localeCompare(b.component_name || ''),
+              sorter: true,
+              onHeaderCell: headerCell('component_name'),
             },
             {
               title: '颜色',
@@ -136,7 +169,8 @@ export default function Inventory() {
               dataIndex: 'color',
               width: 80,
               sortOrder: sortOrderFor('color'),
-              sorter: (a: any, b: any) => (a.color || '').localeCompare(b.color || ''),
+              sorter: true,
+              onHeaderCell: headerCell('color'),
               render: (v: string) => v || '-',
             },
             {
@@ -145,7 +179,8 @@ export default function Inventory() {
               dataIndex: 'stock',
               width: 140,
               sortOrder: sortOrderFor('stock'),
-              sorter: (a: any, b: any) => a.stock - b.stock,
+              sorter: true,
+              onHeaderCell: headerCell('stock'),
               render: (v: number, rec: any) =>
                 editing ? (
                   <InputNumber
@@ -155,7 +190,22 @@ export default function Inventory() {
                     size="small"
                     style={{ width: 100 }}
                   />
-                ) : v,
+                ) : (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <Button
+                      size="small"
+                      icon={<MinusOutlined />}
+                      disabled={v <= 0}
+                      onClick={() => adjust(rec, -1)}
+                    />
+                    <span style={{ minWidth: 24, textAlign: 'center', display: 'inline-block' }}>{v}</span>
+                    <Button
+                      size="small"
+                      icon={<PlusOutlined />}
+                      onClick={() => adjust(rec, 1)}
+                    />
+                  </span>
+                ),
             },
             {
               title: '订单需求',
@@ -163,18 +213,16 @@ export default function Inventory() {
               dataIndex: 'demand',
               width: 100,
               sortOrder: sortOrderFor('demand'),
-              sorter: (a: any, b: any) => a.demand - b.demand,
+              sorter: true,
+              onHeaderCell: headerCell('demand'),
             },
             {
               title: '富余',
               key: 'surplus',
               width: 100,
               sortOrder: sortOrderFor('surplus'),
-              sorter: (a: any, b: any) => {
-                const sa = editing ? (editValues[a.id] ?? a.stock) : a.stock;
-                const sb = editing ? (editValues[b.id] ?? b.stock) : b.stock;
-                return (sa - a.demand) - (sb - b.demand);
-              },
+              sorter: true,
+              onHeaderCell: headerCell('surplus'),
               render: (_: any, rec: any) => {
                 const stock = editing ? (editValues[rec.id] ?? rec.stock) : rec.stock;
                 const val = stock - rec.demand;
