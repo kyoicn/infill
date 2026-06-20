@@ -107,7 +107,19 @@ export async function connectPhone(): Promise<{ deviceName: string; serial: stri
   }
   console.log('[webadb] step 3: device picked', { serial: device.serial, name: device.name });
   console.log('[webadb] step 4: open USB connection');
-  const connection = await device.connect();
+  let connection;
+  try {
+    connection = await device.connect();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Mac/Linux 上后台 adb server 会一直占着 USB 设备，Chrome 抢不到
+    if (/already in use|busy|claim/i.test(msg)) {
+      throw new Error(
+        '手机被本机的 adb 守护进程占用了。请在终端执行 `adb kill-server` 后再点连接（或在 Windows 任务管理器结束 adb.exe）。'
+      );
+    }
+    throw err;
+  }
   console.log('[webadb] step 5: ADB authenticate handshake (手机会弹"允许 USB 调试")');
   const transport = await AdbDaemonTransport.authenticate({
     serial: device.serial,

@@ -3,7 +3,11 @@ FROM node:20-alpine AS frontend-build
 ARG APP_VERSION=dev
 ENV VITE_APP_VERSION=$APP_VERSION
 WORKDIR /app/frontend
+# patches/ 必须在 npm install 前就位，否则 patch-package 的 postinstall hook
+# 找不到 patch 文件，悄无声息跳过，build 出来的 bundle 还含未修补的库 bug
+# （例如 @yume-chan/stream-extra 的 super-constructor 崩溃）。
 COPY frontend/package*.json ./
+COPY frontend/patches ./patches
 RUN npm install
 COPY frontend/ ./
 RUN npm run build

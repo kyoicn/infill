@@ -20,3 +20,25 @@ index 60a63cc..d59047f 100644
                  this.readable = readable;
                  this.#reader = this.readable.getReader();
              },
+diff --git a/node_modules/@yume-chan/stream-extra/esm/wrap-writable.js b/node_modules/@yume-chan/stream-extra/esm/wrap-writable.js
+index 05693d1..e338065 100644
+--- a/node_modules/@yume-chan/stream-extra/esm/wrap-writable.js
++++ b/node_modules/@yume-chan/stream-extra/esm/wrap-writable.js
+@@ -18,9 +18,14 @@ export class WrapWritableStream extends WritableStream {
+     constructor(start) {
+         super({
+             start: async () => {
+-                const writable = await getWrappedWritableStream(start);
+-                // `start` is called in `super()`, so can't use `this` synchronously.
+-                // but it's fine after the first `await`
++                // INFILL PATCH: vite/rolldown inlines `const writable = await X; this.writable = writable`
++                // back into `this.writable = await X`, which evaluates `this.writable` LHS BEFORE await
++                // and trips V8's "Must call super constructor before accessing 'this'" because we're
++                // synchronously inside super({start: ...}). Split into `let` + reassignment + an extra
++                // `await Promise.resolve()` barrier to defeat the inliner. Same fix as wrap-readable.js.
++                let writable;
++                writable = await getWrappedWritableStream(start);
++                await Promise.resolve();
+                 this.writable = writable;
+                 this.#writer = this.writable.getWriter();
+             },
