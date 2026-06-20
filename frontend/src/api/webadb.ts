@@ -98,18 +98,25 @@ export async function connectPhone(): Promise<{ deviceName: string; serial: stri
     // 已连接：直接返回
     return { deviceName: current.deviceName, serial: current.serial };
   }
+  console.log('[webadb] step 1: get manager');
   const manager = AdbDaemonWebUsbDeviceManager.BROWSER!;
+  console.log('[webadb] step 2: request device (浏览器会弹 USB 选择器)');
   const device = await manager.requestDevice();
   if (!device) {
     throw new Error('未选择设备');
   }
+  console.log('[webadb] step 3: device picked', { serial: device.serial, name: device.name });
+  console.log('[webadb] step 4: open USB connection');
   const connection = await device.connect();
+  console.log('[webadb] step 5: ADB authenticate handshake (手机会弹"允许 USB 调试")');
   const transport = await AdbDaemonTransport.authenticate({
     serial: device.serial,
     connection,
     credentialStore,
   });
+  console.log('[webadb] step 6: instantiate Adb');
   const adb = new Adb(transport);
+  console.log('[webadb] step 7: done', { product: transport.banner.product });
   // banner.product 是手机的 ro.product.name (如 "raven" / "OnePlus9Pro")
   const deviceName = transport.banner.product || device.name || 'Android 设备';
   current = { adb, deviceName, serial: device.serial };

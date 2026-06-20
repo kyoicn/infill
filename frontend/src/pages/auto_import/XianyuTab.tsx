@@ -47,7 +47,21 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
       message.success(`已连接：${name}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      message.error(`连接失败：${msg}`);
+      const stack = err instanceof Error ? err.stack : '';
+      // eslint-disable-next-line no-console
+      console.error('[webadb] connect failed', err);
+      message.error({
+        content: `连接失败：${msg}`,
+        duration: 0,  // 不自动消失，方便复制
+        key: 'webadb-err',
+        onClick: () => message.destroy('webadb-err'),
+      });
+      // 也写到 DOM 顶部一个红框，方便看堆栈
+      const errBox = document.getElementById('webadb-err-box');
+      if (errBox) {
+        errBox.innerText = `${msg}\n\nstack:\n${stack || '(无堆栈)'}`;
+        errBox.style.display = 'block';
+      }
     } finally {
       setConnecting(false);
     }
@@ -219,6 +233,24 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
           gap: 12,
         }}
       >
+        {/* 错误堆栈展示（调试用）*/}
+        <pre
+          id="webadb-err-box"
+          style={{
+            display: 'none',
+            background: '#fff1f0',
+            border: '1px solid #ffccc7',
+            borderRadius: 6,
+            padding: 10,
+            fontSize: 10,
+            color: '#820014',
+            maxHeight: 200,
+            overflow: 'auto',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+          }}
+        />
+
         {/* 连接状态 */}
         <div
           style={{
