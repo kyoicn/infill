@@ -23,7 +23,7 @@ type AutoImportMode =
   | { kind: 'failure'; error: string };
 
 export default function AutoImport() {
-  const [mode, setMode] = useState<AutoImportMode>({ kind: 'tabs', activeTab: 'xhs' });
+  const [mode, setMode] = useState<AutoImportMode>({ kind: 'tabs', activeTab: 'xianyu' });
 
   const startXhsScan = (_batchId: string, scan: AutoImportScanResponse) => {
     setMode({ kind: 'preview', batch: scan, sourcePlatform: 'xhs' });
@@ -88,10 +88,10 @@ export default function AutoImport() {
           activeTab={mode.activeTab}
           onTabChange={(tab) => setMode({ kind: 'tabs', activeTab: tab })}
         >
-          {mode.activeTab === 'xhs' ? (
-            <XhsTab onScan={startXhsScan} otherInProgress={false} />
-          ) : (
+          {mode.activeTab === 'xianyu' ? (
             <XianyuTab onScan={startXianyuScan} otherInProgress={false} />
+          ) : (
+            <XhsTab onScan={startXhsScan} otherInProgress={false} />
           )}
         </TabsContainer>
       )}
@@ -150,18 +150,18 @@ function TabsContainer({
         }}
       >
         <TabPill
-          active={activeTab === 'xhs'}
-          color="#ff2442"
-          label="小红书千帆"
-          shortLabel="小"
-          onClick={() => onTabChange('xhs')}
-        />
-        <TabPill
           active={activeTab === 'xianyu'}
           color="#ff7a00"
           label="闲鱼"
           shortLabel="闲"
           onClick={() => onTabChange('xianyu')}
+        />
+        <TabPill
+          active={activeTab === 'xhs'}
+          color="#ff2442"
+          label="小红书千帆"
+          shortLabel="小"
+          onClick={() => onTabChange('xhs')}
         />
       </div>
       <div

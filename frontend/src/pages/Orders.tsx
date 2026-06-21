@@ -234,13 +234,28 @@ export default function Orders() {
           size="small"
           pagination={{ pageSize: 20 }}
           columns={[
-            { title: '订单号', dataIndex: 'id', width: 80 },
+            { title: '#', dataIndex: 'id', width: 56 },
             {
-              title: '创建时间', dataIndex: 'created_at', width: 180,
-              render: (v: string) => new Date(v).toLocaleString('zh-CN'),
+              title: '来源 / 买家',
+              key: 'source',
+              width: 240,
+              render: (_: any, rec: any) => <SourceCell order={rec} />,
             },
             {
-              title: '状态', dataIndex: 'status', width: 100,
+              title: '系统创建',
+              dataIndex: 'created_at',
+              width: 130,
+              render: (v: string) => (
+                <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>
+                  {new Date(v).toLocaleString('zh-CN', {
+                    year: '2-digit', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit',
+                  })}
+                </span>
+              ),
+            },
+            {
+              title: '状态', dataIndex: 'status', width: 80,
               render: (v: string) => <Tag color={v === 'pending' ? 'orange' : 'green'}>{v === 'pending' ? '待处理' : '已发货'}</Tag>,
             },
             {
@@ -249,7 +264,7 @@ export default function Orders() {
             },
             {
               title: '收货信息',
-              width: 280,
+              width: 240,
               render: (_: any, rec: any) => (
                 <ShippingBlock
                   name={rec.recipient_name}
@@ -261,7 +276,7 @@ export default function Orders() {
             {
               title: '备注',
               dataIndex: 'notes',
-              width: 120,
+              width: 100,
               ellipsis: { showTitle: false } as any,
               render: (v: string) => v
                 ? <Tooltip title={v}><span style={{ color: '#666' }}>{v}</span></Tooltip>
@@ -428,6 +443,60 @@ export default function Orders() {
           </div>
         )}
       </Modal>
+    </div>
+  );
+}
+
+function SourceCell({ order }: { order: any }) {
+  const { platform, buyer_nickname, external_order_id, external_created_at } = order;
+  if (!platform) {
+    return (
+      <Tag color="default" style={{ margin: 0, fontSize: 11 }}>
+        手工录入
+      </Tag>
+    );
+  }
+  const isXianyu = platform === 'xianyu';
+  return (
+    <div style={{ fontSize: 12, lineHeight: 1.5 }}>
+      <Tag
+        color={isXianyu ? '#fff5e6' : '#fff1f3'}
+        style={{
+          margin: 0,
+          color: isXianyu ? '#ff7a00' : '#ff2442',
+          border: 'none',
+          fontWeight: 500,
+        }}
+      >
+        {isXianyu ? '闲鱼' : '小红书'}
+      </Tag>
+      {buyer_nickname && (
+        <div style={{ marginTop: 4, fontWeight: 500, color: 'rgba(0,0,0,0.88)' }}>
+          {buyer_nickname}
+        </div>
+      )}
+      {external_order_id && (
+        <Tooltip title={`外部单号：${external_order_id}`}>
+          <div
+            style={{
+              fontFamily: 'monospace',
+              fontSize: 11,
+              color: 'rgba(0,0,0,0.45)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              maxWidth: 220,
+            }}
+          >
+            {external_order_id}
+          </div>
+        </Tooltip>
+      )}
+      {external_created_at && (
+        <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', fontFamily: 'monospace' }}>
+          下单 {external_created_at}
+        </div>
+      )}
     </div>
   );
 }
