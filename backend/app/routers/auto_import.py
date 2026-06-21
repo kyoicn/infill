@@ -257,6 +257,7 @@ def _scan_impl(
             recipient_name=(raw.get("recipient_name") or None),
             recipient_phone=(raw.get("recipient_phone") or None),
             recipient_address=(raw.get("recipient_address") or None),
+            source_screen_seqs=list(raw.get("_source_seqs") or []),
         ))
 
     stats = ScanStats(
@@ -448,6 +449,8 @@ async def xianyu_finish_scan(body: FinishScanRequest, db: Session = Depends(get_
             )
             screen["status"] = "parsed"
             for ord_dict in parsed or []:
+                # 记录这条订单来自哪张截屏；去重时合并
+                ord_dict["_source_seq"] = seq
                 parsed_orders.append(ord_dict)
         except LLMProviderError as exc:
             screen["status"] = "failed"
@@ -469,12 +472,19 @@ async def xianyu_finish_scan(body: FinishScanRequest, db: Session = Depends(get_
             error=f"{len(failed)}/{len(screens)} 张截屏解析失败：{first_err}",
         )
 
-    # 2. 去重（按 external_order_id）
+    # 2. 去重（按 external_order_id）；合并多张截屏的来源 seq
     seen: dict[str, dict] = {}
     for parsed in parsed_orders:
         ext_id = (parsed.get("external_order_id") or "").strip()
-        if not ext_id or ext_id in seen:
+        if not ext_id:
             continue
+        src_seq = parsed.get("_source_seq")
+        if ext_id in seen:
+            seqs = seen[ext_id].setdefault("_source_seqs", [])
+            if src_seq is not None and src_seq not in seqs:
+                seqs.append(src_seq)
+            continue
+        parsed["_source_seqs"] = [src_seq] if src_seq is not None else []
         seen[ext_id] = parsed
     raw_orders = list(seen.values())
 

@@ -106,6 +106,8 @@ class PreviewItem(BaseModel):
     recipient_name: Optional[str] = None
     recipient_phone: Optional[str] = None
     recipient_address: Optional[str] = None
+    # v0.4.9 闲鱼专用：该单来自哪几张截屏（按 seq）。去重后可能是多张
+    source_screen_seqs: list[int] = []
 
 
 class DroppedOrder(BaseModel):

@@ -225,6 +225,8 @@ export interface AutoImportPreviewItem {
   recipient_name?: string | null;
   recipient_phone?: string | null;
   recipient_address?: string | null;
+  /** 闲鱼专用：该单源截屏的 seq 列表 */
+  source_screen_seqs?: number[];
 }
 
 export interface AutoImportDroppedOrder {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -95,6 +95,11 @@ export default function PreviewTable(props: PreviewTableProps) {
   const { batch, sourcePlatform, onCommit, onCancel } = props;
 
   const [filter, setFilter] = useState<FilterKey>('all');
+  // 双向高亮：hover 截屏下的订单号 → 高亮表格行；hover 表格行 → 高亮源截屏 + 订单号
+  const [highlightedOid, setHighlightedOid] = useState<string | null>(null);
+  // 点击订单号跳转时短暂高亮闪一下
+  const [flashOid, setFlashOid] = useState<string | null>(null);
+  const flashTimerRef = useRef<number | null>(null);
   const [rows, setRows] = useState<RowState[]>(() =>
     batch.items.map((item) => ({
       item,
@@ -184,6 +189,37 @@ export default function PreviewTable(props: PreviewTableProps) {
         })),
     });
   }
+
+  // ---------- 截屏 → 订单号 映射 ----------
+
+  const seqToOids = useMemo(() => {
+    const m = new Map<number, string[]>();
+    for (const r of rows) {
+      const seqs = r.item.source_screen_seqs ?? [];
+      for (const seq of seqs) {
+        const arr = m.get(seq) ?? [];
+        arr.push(r.item.external_order_id);
+        m.set(seq, arr);
+      }
+    }
+    return m;
+  }, [rows]);
+
+  // 该单的源截屏被 hover 时 → 高亮所有相关行；反向同理
+  const highlightedSeqs = useMemo(() => {
+    if (!highlightedOid) return new Set<number>();
+    const r = rows.find((x) => x.item.external_order_id === highlightedOid);
+    return new Set(r?.item.source_screen_seqs ?? []);
+  }, [highlightedOid, rows]);
+
+  const jumpToRow = useCallback((oid: string) => {
+    const el = document.querySelector<HTMLElement>(`[data-row-oid="${CSS.escape(oid)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashOid(oid);
+    if (flashTimerRef.current !== null) window.clearTimeout(flashTimerRef.current);
+    flashTimerRef.current = window.setTimeout(() => setFlashOid(null), 1500);
+  }, []);
 
   // ---------- filter / counts ----------
 
@@ -550,12 +586,28 @@ export default function PreviewTable(props: PreviewTableProps) {
 
   const rowClassName = (rec: { idx: number }) => {
     const r = rows[rec.idx];
-    if (r.item.is_duplicate && !r.overrideDuplicate) return 'auto-import-row-dup';
-    const min = rowMinConfidence(r.products);
-    if (!rowAllMatched(r.products) || min < MIN_AUTOCHECK_CONFIDENCE)
-      return 'auto-import-row-low';
-    if (min < 0.85) return 'auto-import-row-mid';
-    return '';
+    const oid = r.item.external_order_id;
+    const cls: string[] = [];
+    if (r.item.is_duplicate && !r.overrideDuplicate) cls.push('auto-import-row-dup');
+    else {
+      const min = rowMinConfidence(r.products);
+      if (!rowAllMatched(r.products) || min < MIN_AUTOCHECK_CONFIDENCE)
+        cls.push('auto-import-row-low');
+      else if (min < 0.85) cls.push('auto-import-row-mid');
+    }
+    if (highlightedOid === oid) cls.push('auto-import-row-hover');
+    if (flashOid === oid) cls.push('auto-import-row-flash');
+    return cls.join(' ');
+  };
+
+  const onTableRow = (rec: { idx: number }) => {
+    const oid = rows[rec.idx].item.external_order_id;
+    return {
+      'data-row-oid': oid,
+      onMouseEnter: () => setHighlightedOid(oid),
+      onMouseLeave: () =>
+        setHighlightedOid((cur) => (cur === oid ? null : cur)),
+    } as React.HTMLAttributes<HTMLElement> & { 'data-row-oid': string };
   };
 
   const minConf = rows.length
@@ -577,6 +629,12 @@ export default function PreviewTable(props: PreviewTableProps) {
         .auto-import-row-dup td { background: #f0f0f0 !important; color: rgba(0,0,0,0.25); }
         .auto-import-row-mid td { background: #fffbe6 !important; }
         .auto-import-row-low td { background: #fff1f0 !important; }
+        .auto-import-row-hover td { box-shadow: inset 0 0 0 9999px rgba(22,119,255,0.08); }
+        @keyframes auto-import-row-flash {
+          0%   { box-shadow: inset 0 0 0 9999px rgba(22,119,255,0.32); }
+          100% { box-shadow: inset 0 0 0 9999px rgba(22,119,255,0); }
+        }
+        .auto-import-row-flash td { animation: auto-import-row-flash 1.5s ease-out; }
       `}</style>
 
       <div style={{ marginBottom: 4 }}>
@@ -613,53 +671,117 @@ export default function PreviewTable(props: PreviewTableProps) {
       {sourcePlatform === 'xianyu' && (batch.screen_count ?? 0) > 0 && (
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-            源截屏（{batch.screen_count} 张，点击查看大图）
+            源截屏（{batch.screen_count} 张，点击图片看大图 · 点订单号跳到对应行）
           </div>
           <Image.PreviewGroup>
             <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 6 }}>
-              {Array.from({ length: batch.screen_count ?? 0 }, (_, i) => (
-                <div
-                  key={i}
-                  style={{
-                    flex: '0 0 auto',
-                    width: 120,
-                    aspectRatio: '9 / 19.5',
-                    background: '#000',
-                    borderRadius: 4,
-                    overflow: 'hidden',
-                    position: 'relative',
-                  }}
-                >
-                  <Image
-                    src={`/api/auto-import/xianyu/screen?batch_id=${encodeURIComponent(batch.batch_id)}&seq=${i}`}
-                    alt={`截屏 #${i}`}
-                    width="100%"
-                    height="100%"
-                    style={{ objectFit: 'contain', display: 'block' }}
-                    preview={{ mask: '🔍' }}
-                  />
-                  <span
+              {Array.from({ length: batch.screen_count ?? 0 }, (_, i) => {
+                const oids = seqToOids.get(i) ?? [];
+                const isHighlighted = highlightedSeqs.has(i);
+                return (
+                  <div
+                    key={i}
                     style={{
-                      position: 'absolute',
-                      top: 4,
-                      left: 6,
-                      background: '#ff7a00',
-                      color: '#fff',
-                      width: 20,
-                      height: 20,
-                      borderRadius: '50%',
+                      flex: '0 0 auto',
+                      width: 120,
                       display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: 11,
-                      fontWeight: 700,
-                      pointerEvents: 'none',
+                      flexDirection: 'column',
+                      gap: 6,
                     }}
                   >
-                    {i}
-                  </span>
-                </div>
-              ))}
+                    <div
+                      style={{
+                        width: 120,
+                        aspectRatio: '9 / 19.5',
+                        background: '#000',
+                        borderRadius: 4,
+                        overflow: 'hidden',
+                        position: 'relative',
+                        boxShadow: isHighlighted
+                          ? '0 0 0 3px #1677ff'
+                          : 'none',
+                        transition: 'box-shadow 0.15s',
+                      }}
+                    >
+                      <Image
+                        src={`/api/auto-import/xianyu/screen?batch_id=${encodeURIComponent(batch.batch_id)}&seq=${i}`}
+                        alt={`截屏 #${i}`}
+                        width="100%"
+                        height="100%"
+                        style={{ objectFit: 'contain', display: 'block' }}
+                        preview={{ mask: '🔍' }}
+                      />
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: 4,
+                          left: 6,
+                          background: '#ff7a00',
+                          color: '#fff',
+                          width: 20,
+                          height: 20,
+                          borderRadius: '50%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 11,
+                          fontWeight: 700,
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        {i}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 3,
+                        fontSize: 10.5,
+                      }}
+                    >
+                      {oids.length === 0 ? (
+                        <span style={{ color: 'rgba(0,0,0,0.35)', fontStyle: 'italic' }}>
+                          无订单
+                        </span>
+                      ) : (
+                        oids.map((oid) => {
+                          const isActive = highlightedOid === oid;
+                          return (
+                            <button
+                              key={oid}
+                              type="button"
+                              onMouseEnter={() => setHighlightedOid(oid)}
+                              onMouseLeave={() =>
+                                setHighlightedOid((cur) => (cur === oid ? null : cur))
+                              }
+                              onClick={() => jumpToRow(oid)}
+                              title={`点击跳到 ${oid}`}
+                              style={{
+                                border: 'none',
+                                background: isActive ? '#1677ff' : '#fff5e6',
+                                color: isActive ? '#fff' : '#ff7a00',
+                                fontFamily: 'monospace',
+                                padding: '2px 6px',
+                                borderRadius: 3,
+                                fontSize: 10.5,
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                transition: 'background 0.1s',
+                              }}
+                            >
+                              {oid}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </Image.PreviewGroup>
         </div>
@@ -821,6 +943,7 @@ export default function PreviewTable(props: PreviewTableProps) {
             columns={columns}
             dataSource={dataSource}
             rowClassName={rowClassName}
+            onRow={onTableRow}
             pagination={false}
             size="middle"
             bordered={false}
