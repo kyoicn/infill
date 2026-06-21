@@ -224,7 +224,7 @@ export default function Orders() {
     );
   };
 
-  // 客户端搜索过滤：跨 买家 / 外部单号 / 收件人 / 电话 / 备注 / 内部 id / 产品名 模糊匹配
+  // 客户端搜索过滤：跨 买家 / 外部单号 / 收件人 / 电话 / 地址 / 备注 / 内部 id / 产品名 模糊匹配
   const filteredOrders = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return orders;
@@ -237,6 +237,7 @@ export default function Orders() {
         o.external_order_id,
         o.recipient_name,
         o.recipient_phone,
+        o.recipient_address,
         o.notes,
         String(o.id),
         productNames,
@@ -328,7 +329,7 @@ export default function Orders() {
           <Space>
             <Input
               allowClear
-              placeholder="搜索 买家/单号/收件人/电话/备注"
+              placeholder="搜索 买家/单号/收件人/电话/地址/备注/产品名"
               prefix={<SearchOutlined style={{ color: 'rgba(0,0,0,0.35)' }} />}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -355,11 +356,17 @@ export default function Orders() {
           </div>
         )}
 
+        <div style={{ marginBottom: 8, fontSize: 12, color: 'rgba(0,0,0,0.45)' }}>
+          {filteredOrders.length === orders.length
+            ? <>共 <b style={{ color: 'rgba(0,0,0,0.65)' }}>{orders.length}</b> 单</>
+            : <>过滤后 <b style={{ color: 'rgba(0,0,0,0.65)' }}>{filteredOrders.length}</b> / {orders.length} 单</>}
+        </div>
+
         <Table
           dataSource={filteredOrders}
           rowKey="id"
           size="small"
-          pagination={{ pageSize: 20, showTotal: (n) => `共 ${n} 单` }}
+          pagination={false}  // 不分页，全部展示；密集时用顶部搜索框过滤
           expandable={{
             expandedRowRender: renderExpanded,
             expandedRowKeys: expandedKeys,
