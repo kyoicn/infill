@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Card, Table, Button, Modal, Select, InputNumber, Space, Popconfirm, Tag, Tabs, message, Divider, Input, Tooltip, Typography } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, SearchOutlined, LeftOutlined, DownOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
+import { Resizable } from 'react-resizable';
+import 'react-resizable/css/styles.css';
 import { api } from '../api/client';
 import ShippingBlock from '../components/ShippingBlock';
 
@@ -46,6 +48,22 @@ export default function Orders() {
       window.localStorage.setItem(SORT_LS_KEY, sortOrder === null ? 'null' : sortOrder);
     } catch { /* ignore */ }
   }, [sortOrder]);
+
+  // 列宽持久化（拖拽列头右边缘调整后落到 localStorage）
+  const WIDTH_LS_KEY = 'infill.orders.colWidths';
+  const [widths, setWidths] = useState<Record<string, number>>(() => {
+    try {
+      const v = window.localStorage.getItem(WIDTH_LS_KEY);
+      if (v) return JSON.parse(v);
+    } catch { /* ignore */ }
+    return {};
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(WIDTH_LS_KEY, JSON.stringify(widths)); } catch { /* ignore */ }
+  }, [widths]);
+  const handleResize = (key: string) => (_e: unknown, data: { size: { width: number } }) => {
+    setWidths((prev) => ({ ...prev, [key]: Math.max(60, data.size.width) }));
+  };
   const [drafts, setDrafts] = useState<OrderDraft[]>([]);
   const [editState, setEditState] = useState<EditState | null>(null);
 
@@ -367,6 +385,7 @@ export default function Orders() {
           rowKey="id"
           size="small"
           pagination={false}  // 不分页，全部展示；密集时用顶部搜索框过滤
+          scroll={{ x: 'max-content' }}  // 强制 fixed layout，列宽才会被实际渲染
           expandable={{
             expandedRowRender: renderExpanded,
             expandedRowKeys: expandedKeys,
@@ -383,18 +402,21 @@ export default function Orders() {
               setSortOrder(null);
             }
           }}
+          components={{ header: { cell: ResizableTitle } }}
           columns={[
             {
               title: '来源 / 买家',
               key: 'source',
-              width: 220,
+              width: widths.source ?? 220,
+              onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('source') }),
               render: (_: any, rec: any) => <SourceCell order={rec} />,
             },
             {
               title: '下单日期',
               dataIndex: 'external_created_at',
               key: 'external_created_at',
-              width: 160,
+              width: widths.external_created_at ?? 160,
+              onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('external_created_at') }),
               sortOrder,  // 受控，从 localStorage 恢复
               sorter: (a: any, b: any) => {
                 // 没下单时间（手工录入）的排到最后
@@ -425,7 +447,9 @@ export default function Orders() {
             },
             {
               title: '收货信息',
-              width: 240,
+              key: 'shipping',
+              width: widths.shipping ?? 240,
+              onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('shipping') }),
               render: (_: any, rec: any) => (
                 <ShippingBlock
                   name={rec.recipient_name}
@@ -438,7 +462,9 @@ export default function Orders() {
               ? [{
                   title: '状态',
                   dataIndex: 'status',
-                  width: 80,
+                  key: 'status',
+                  width: widths.status ?? 80,
+                  onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('status') }),
                   render: (v: string) => (
                     <Tag color={v === 'pending' ? 'orange' : 'green'}>
                       {v === 'pending' ? '待处理' : '已发货'}
@@ -448,19 +474,27 @@ export default function Orders() {
               : []),
             {
               title: '产品明细',
+              key: 'products',
+              width: widths.products ?? 360,
+              onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('products') }),
               render: (_: any, rec: any) => renderItems(rec),
             },
             {
               title: '备注',
               dataIndex: 'notes',
-              width: 100,
+              key: 'notes',
+              width: widths.notes ?? 100,
+              onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('notes') }),
               ellipsis: { showTitle: false } as any,
               render: (v: string) => v
                 ? <Tooltip title={v}><span style={{ color: '#666' }}>{v}</span></Tooltip>
                 : <span style={{ color: '#ccc' }}>-</span>,
             },
             {
-              title: '操作', width: 210,
+              title: '操作',
+              key: 'actions',
+              width: widths.actions ?? 210,
+              onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('actions') }),
               render: (_: any, rec: any) => {
                 const isExpanded = expandedKeys.includes(rec.id);
                 return (
@@ -637,6 +671,42 @@ export default function Orders() {
         )}
       </Modal>
     </div>
+  );
+}
+
+// 列头 cell：包一层 Resizable，给右边缘加一条 col-resize 把手
+function ResizableTitle(props: any) {
+  const { onResize, width, ...rest } = props;
+  if (typeof width !== 'number') return <th {...rest} />;
+  return (
+    <Resizable
+      width={width}
+      height={0}
+      axis="x"
+      handle={
+        <span
+          className="react-resizable-handle react-resizable-handle-e"
+          onClick={(e) => e.stopPropagation()}  // 别冒泡到表头触发排序
+          onMouseDown={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            right: -4,
+            top: 0,
+            bottom: 0,
+            width: 8,
+            cursor: 'col-resize',
+            zIndex: 2,
+            background: 'transparent',
+            // 视觉：默认隐形，hover 出一根细蓝线提示可拖
+            backgroundImage: 'none',
+          }}
+        />
+      }
+      onResize={onResize}
+      draggableOpts={{ enableUserSelectHack: false }}
+    >
+      <th {...rest} style={{ ...rest.style, position: 'relative' }} />
+    </Resizable>
   );
 }
 
