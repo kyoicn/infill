@@ -369,6 +369,14 @@ export default function Orders() {
         .orders-col-resize-handle:active {
           background: rgba(22, 119, 255, 0.4);
         }
+        /* AntD 给 <table> 内联了 width:max-content + min-width:100%。
+           min-width:100% 让表至少铺满容器，触发列宽分配 / 挤压。
+           把 min-width 也压成 0，让表宽严格 = 列宽之和；容器有空就空着，
+           超过容器就横向滚动。所有列各干各的，不互相影响。 */
+        .orders-table .ant-table-content > table {
+          width: max-content !important;
+          min-width: 0 !important;
+        }
       `}</style>
       <h2 style={{ marginTop: 0 }}>订单管理</h2>
 
