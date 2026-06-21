@@ -28,18 +28,23 @@ export default function Orders() {
   const [query, setQuery] = useState('');
   const [expandedKeys, setExpandedKeys] = useState<number[]>([]);
 
-  // 下单日期排序方向，持久化到 localStorage；只允许 ascend / descend 两态
-  type SortOrder = 'ascend' | 'descend';
+  // 下单日期排序状态持久化。antd 原生 3 态：'ascend' | 'descend' | null
+  // （null = 用户点了 3 次"取消排序"，按服务端返回顺序展示）
+  type SortOrder = 'ascend' | 'descend' | null;
   const SORT_LS_KEY = 'infill.orders.sortOrder';
   const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
     try {
       const v = window.localStorage.getItem(SORT_LS_KEY);
-      if (v === 'ascend' || v === 'descend') return v;
+      if (v === 'ascend' || v === 'descend' || v === 'null') {
+        return v === 'null' ? null : v;
+      }
     } catch { /* ignore */ }
     return 'ascend';  // 默认升序：老单在前
   });
   useEffect(() => {
-    try { window.localStorage.setItem(SORT_LS_KEY, sortOrder); } catch { /* ignore */ }
+    try {
+      window.localStorage.setItem(SORT_LS_KEY, sortOrder === null ? 'null' : sortOrder);
+    } catch { /* ignore */ }
   }, [sortOrder]);
   const [drafts, setDrafts] = useState<OrderDraft[]>([]);
   const [editState, setEditState] = useState<EditState | null>(null);
@@ -219,16 +224,6 @@ export default function Orders() {
     );
   };
 
-  // 自己按 external_created_at + sortOrder 排序；antd 的 sortOrder 受控只用来显示图标
-  const cmpExternal = (a: any, b: any) => {
-    const va = a.external_created_at || '';
-    const vb = b.external_created_at || '';
-    if (!va && !vb) return 0;
-    if (!va) return 1;
-    if (!vb) return -1;
-    return va.localeCompare(vb);
-  };
-
   // 客户端搜索过滤：跨 买家 / 外部单号 / 收件人 / 电话 / 备注 / 内部 id / 产品名 模糊匹配
   const filteredOrders = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -252,13 +247,6 @@ export default function Orders() {
       return hay.includes(q);
     });
   }, [orders, query, products]);
-
-  // 受 sortOrder 控制的最终 dataSource —— antd 不再 re-sort（避免 onChange 3 态干扰）
-  const visibleOrders = useMemo(() => {
-    const arr = [...filteredOrders];
-    arr.sort((a, b) => (sortOrder === 'ascend' ? cmpExternal(a, b) : -cmpExternal(a, b)));
-    return arr;
-  }, [filteredOrders, sortOrder]);
 
   // 下单时间格式化：'2026-06-18T15:18:50' → '2026-06-18 15:18'
   const fmtExternal = (v: string) => v.replace('T', ' ').slice(0, 16);
@@ -368,7 +356,7 @@ export default function Orders() {
         )}
 
         <Table
-          dataSource={visibleOrders}
+          dataSource={filteredOrders}
           rowKey="id"
           size="small"
           pagination={{ pageSize: 20, showTotal: (n) => `共 ${n} 单` }}
@@ -376,6 +364,17 @@ export default function Orders() {
             expandedRowRender: renderExpanded,
             expandedRowKeys: expandedKeys,
             showExpandColumn: false,  // 隐藏首列默认 + 图标，改成操作列里的自定义按钮
+          }}
+          onChange={(_p, _f, sorter) => {
+            // antd 原生 3 态：ascend → descend → undefined → ascend ...
+            // undefined 表示用户点了 3 次想取消排序；保留并存。
+            if (Array.isArray(sorter)) return;
+            if (sorter.columnKey === 'external_created_at' || sorter.field === 'external_created_at') {
+              setSortOrder(sorter.order ?? null);
+            } else if (!sorter.columnKey && !sorter.order) {
+              // antd 第 3 次点击给了空对象，意思就是当前列回到无序
+              setSortOrder(null);
+            }
           }}
           columns={[
             {
@@ -389,18 +388,16 @@ export default function Orders() {
               dataIndex: 'external_created_at',
               key: 'external_created_at',
               width: 160,
-              sortOrder,  // 受控：图标方向跟 state 走，antd 自己不再管 sortState
-              sortDirections: ['ascend', 'descend'],
-              // 仅为了让 antd 给列头加排序图标和点击样式；数据已在 dataSource 自己排好
-              sorter: true,
-              // antd 默认 onChange 在第 3 次点击会回 columnKey:undefined，
-              // 拦截不到。改在表头直接监听，手动 flip。
-              onHeaderCell: () => ({
-                onClick: () => {
-                  setSortOrder((prev) => (prev === 'ascend' ? 'descend' : 'ascend'));
-                },
-                style: { cursor: 'pointer' } as React.CSSProperties,
-              }),
+              sortOrder,  // 受控，从 localStorage 恢复
+              sorter: (a: any, b: any) => {
+                // 没下单时间（手工录入）的排到最后
+                const va = a.external_created_at || '';
+                const vb = b.external_created_at || '';
+                if (!va && !vb) return 0;
+                if (!va) return 1;
+                if (!vb) return -1;
+                return va.localeCompare(vb);
+              },
               render: (v: string | null, rec: any) => {
                 const sysCreated = `系统创建：${new Date(rec.created_at).toLocaleString('zh-CN')}`;
                 if (!v) {
