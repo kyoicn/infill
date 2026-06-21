@@ -41,6 +41,12 @@ export default defineConfig({
   // 'this' or returning from derived constructor"。把 target 拔到 ES2022
   // 让 esbuild 跳过降级。
   optimizeDeps: { esbuildOptions: { target: 'es2022' } },
+  // react-draggable（react-resizable 的依赖）里有 `if (process.env.NODE_ENV)` 这种
+  // node-only 写法，浏览器跑会抛 ReferenceError: process is not defined。
+  // vite 默认不替换这类引用，显式 define 兜住。
+  define: {
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
+  },
   build: {
     target: 'es2022',
     // 用 terser 而不是默认 esbuild 做最小化。esbuild 在 derived class

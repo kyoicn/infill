@@ -3,7 +3,8 @@ import { Card, Table, Button, Modal, Select, InputNumber, Space, Popconfirm, Tag
 import { PlusOutlined, DeleteOutlined, EditOutlined, SearchOutlined, LeftOutlined, DownOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { Resizable } from 'react-resizable';
-import 'react-resizable/css/styles.css';
+// 故意不导 react-resizable/css/styles.css — 默认是 20x20 右下角 svg 图标，
+// 跟列头垂直拖拽场景不搭。下面自己写一条 .orders-col-resize-handle
 import { api } from '../api/client';
 import ShippingBlock from '../components/ShippingBlock';
 
@@ -340,6 +341,22 @@ export default function Orders() {
 
   return (
     <div>
+      <style>{`
+        .orders-col-resize-handle {
+          position: absolute;
+          right: -4px;
+          top: 0;
+          bottom: 0;
+          width: 8px;
+          cursor: col-resize;
+          z-index: 2;
+          user-select: none;
+        }
+        .orders-col-resize-handle:hover,
+        .orders-col-resize-handle:active {
+          background: rgba(22, 119, 255, 0.4);
+        }
+      `}</style>
       <h2 style={{ marginTop: 0 }}>订单管理</h2>
 
       <Card
@@ -683,25 +700,17 @@ function ResizableTitle(props: any) {
       width={width}
       height={0}
       axis="x"
-      handle={
+      handle={(_axis: string, ref: React.Ref<HTMLSpanElement>) => (
+        // react-resizable v4 要求 handle 是函数：DraggableCore 用 nodeRef={ref}
+        // 拿到这个 span，才能在它上面挂 mousedown 监听
         <span
-          className="react-resizable-handle react-resizable-handle-e"
-          onClick={(e) => e.stopPropagation()}  // 别冒泡到表头触发排序
-          onMouseDown={(e) => e.stopPropagation()}
-          style={{
-            position: 'absolute',
-            right: -4,
-            top: 0,
-            bottom: 0,
-            width: 8,
-            cursor: 'col-resize',
-            zIndex: 2,
-            background: 'transparent',
-            // 视觉：默认隐形，hover 出一根细蓝线提示可拖
-            backgroundImage: 'none',
-          }}
+          ref={ref}
+          className="orders-col-resize-handle"
+          // 别 stopPropagation mousedown — 那是 DraggableCore 启动拖拽的入口。
+          // 只挡 click 防止冒泡到表头触发排序
+          onClick={(e) => e.stopPropagation()}
         />
-      }
+      )}
       onResize={onResize}
       draggableOpts={{ enableUserSelectHack: false }}
     >
