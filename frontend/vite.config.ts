@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process'
+import { watch as fsWatch } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
@@ -41,14 +42,20 @@ function appVersionPlugin(): Plugin {
       }
     },
     configureServer(server) {
-      server.watcher.add(gitLogsHead)
-      server.watcher.on('change', (file) => {
-        if (file === gitLogsHead) {
+      // vite/chokidar 默认忽略 .git/，server.watcher.add() 不一定生效。
+      // 直接用 node:fs.watch 监听，不走 vite 的过滤
+      try {
+        fsWatch(gitLogsHead, { persistent: false }, () => {
+          // eslint-disable-next-line no-console
+          console.log('[app-version] .git/logs/HEAD changed, invalidating')
           const mod = server.moduleGraph.getModuleById(resolvedId)
           if (mod) server.moduleGraph.invalidateModule(mod)
           server.ws.send({ type: 'full-reload' })
-        }
-      })
+        })
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[app-version] could not watch .git/logs/HEAD:', e)
+      }
     },
     // 源码 HMR 时顺手失效一下（兜底）
     handleHotUpdate({ server }) {
