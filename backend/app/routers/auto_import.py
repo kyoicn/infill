@@ -67,6 +67,51 @@ def _batch_tmp_dir(batch_id: str) -> Path:
     return _DATA_DIR / (safe or "default")
 
 
+_DEBUG_DIR = _DATA_DIR / "_debug"
+
+
+def _body_hash_for_dedup(png_bytes: bytes) -> str:
+    """哈希 PNG 主体像素（裁掉顶部状态栏 + 底部系统栏 + 详情页底部操作栏），用于本 batch 内去重。
+
+    裁切策略：顶部 100px（状态栏：时钟/电量/信号），底部 300px（系统导航 + 详情页操作栏）。
+    主体一致则两张图判定为同款（即使状态栏时钟差几秒也不影响）。
+    """
+    try:
+        from io import BytesIO
+        from hashlib import sha256
+
+        from PIL import Image
+
+        with Image.open(BytesIO(png_bytes)) as im:
+            w, h = im.size
+            top = 100
+            bottom = max(top + 1, h - 300)
+            if bottom <= top:
+                return ""
+            body = im.crop((0, top, w, bottom))
+            return sha256(body.tobytes()).hexdigest()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _save_debug_png(kind: str, png_bytes: bytes) -> str:
+    """落盘一张调试用 PNG（最多保留 50 张），返回相对路径名供错误信息回带。"""
+    try:
+        _DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        from time import time as _now
+        fname = f"{kind}_{int(_now() * 1000)}.png"
+        (_DEBUG_DIR / fname).write_bytes(png_bytes)
+        files = sorted(_DEBUG_DIR.glob("*.png"))
+        for old in files[:-50]:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+        return f"_debug/{fname}"
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _confidence_bucket(c: float) -> str:
     if c >= 0.85:
         return "high"
@@ -348,6 +393,22 @@ async def xianyu_screencap(
         "tmp_dir": str(_batch_tmp_dir(batch_id)),
     })
 
+    # 去重：哈希「PNG 主体区域」（裁掉顶部状态栏 + 底部系统栏，避开时钟变化）
+    # 若与本 batch 已上传的某张完全一致，说明 scroll 不够导致重复扫到同一单 → 拒收
+    body_hash = _body_hash_for_dedup(png_bytes)
+    if body_hash:
+        for existing_s in state["screens"]:
+            if existing_s.get("_body_hash") and existing_s["_body_hash"] == body_hash:
+                return ScreencapResponse(
+                    ok=False,
+                    error_kind="duplicate",
+                    error=(
+                        f"与 seq={existing_s['seq']} 同款（主体像素逐字节一致）"
+                        f"——scroll 不够大，扫到了同一单"
+                    ),
+                    seq=existing_s["seq"],
+                )
+
     # seq 单调递增，不复用已删除的号，避免文件名冲突 + 前端 React key 错位
     existing = state["screens"]
     seq = (max((s["seq"] for s in existing), default=-1) + 1)
@@ -363,7 +424,12 @@ async def xianyu_screencap(
             error=str(exc),
         )
 
-    state["screens"].append({"seq": seq, "status": "captured", "error": None})
+    state["screens"].append({
+        "seq": seq,
+        "status": "captured",
+        "error": None,
+        "_body_hash": body_hash,
+    })
     return ScreencapResponse(
         ok=True,
         screen_id=f"{batch_id}-{seq}",
@@ -436,23 +502,33 @@ async def xianyu_detect_list_layout(
             ok=False, error_kind="upload_failed", error=str(exc)
         )
 
+    debug_path = _save_debug_png("list", png_bytes)
+
     try:
         data = await asyncio.to_thread(
             auto_import_llm.detect_xianyu_list_layout, png_bytes
         )
     except LLMProviderError as exc:
         return DetectListLayoutResponse(
-            ok=False, error_kind=exc.error_kind, error=exc.message
+            ok=False,
+            error_kind=exc.error_kind,
+            error=f"{exc.message} | debug={debug_path}",
         )
     except Exception as exc:  # noqa: BLE001
         return DetectListLayoutResponse(
-            ok=False, error_kind="detect_failed", error=str(exc)
+            ok=False, error_kind="detect_failed", error=f"{exc} | debug={debug_path}"
         )
 
+    centers = list(data.get("card_centers_y") or [])
+    print(
+        f"[detect_list_layout] card_x={data.get('card_x')} "
+        f"centers={centers} h={data.get('card_height_px')} debug={debug_path}",
+        flush=True,
+    )
     return DetectListLayoutResponse(
         ok=True,
         card_x=int(data.get("card_x") or 0),
-        card_centers_y=list(data.get("card_centers_y") or []),
+        card_centers_y=centers,
         card_height_px=int(data.get("card_height_px") or 0),
     )
 
@@ -473,24 +549,33 @@ async def xianyu_detect_expand_button(
             ok=False, error_kind="upload_failed", error=str(exc)
         )
 
+    debug_path = _save_debug_png("expand", png_bytes)
+
     try:
         data = await asyncio.to_thread(
             auto_import_llm.detect_xianyu_expand_button, png_bytes
         )
     except LLMProviderError as exc:
         return DetectExpandButtonResponse(
-            ok=False, error_kind=exc.error_kind, error=exc.message
+            ok=False,
+            error_kind=exc.error_kind,
+            error=f"{exc.message} | debug={debug_path}",
         )
     except Exception as exc:  # noqa: BLE001
         return DetectExpandButtonResponse(
-            ok=False, error_kind="detect_failed", error=str(exc)
+            ok=False, error_kind="detect_failed", error=f"{exc} | debug={debug_path}"
         )
 
-    return DetectExpandButtonResponse(
-        ok=True,
-        x=int(data.get("x") or 0),
-        y=int(data.get("y") or 0),
-    )
+    x = int(data.get("x") or 0)
+    y = int(data.get("y") or 0)
+    print(f"[detect_expand_button] x={x} y={y} debug={debug_path}", flush=True)
+    if x == 0 and y == 0:
+        return DetectExpandButtonResponse(
+            ok=False,
+            error_kind="expand_button_not_found",
+            error=f"LLM 在截屏里没找到「订单编号」行 | debug={debug_path}",
+        )
+    return DetectExpandButtonResponse(ok=True, x=x, y=y)
 
 
 @router.post("/xianyu/finish-scan", response_model=ScanResponse)

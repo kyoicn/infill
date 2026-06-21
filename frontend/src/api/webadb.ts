@@ -202,6 +202,29 @@ export async function swipe(
   ]);
 }
 
+/**
+ * `input draganddrop` — Android 7+ 才有，相对 `input swipe` 系统会把这当成**拖拽手势**而不是
+ * 可触发 fling 的 swipe。同样接 X1 Y1 X2 Y2 [DUR]，DUR 默认 ~300ms（够慢就完全无 fling）。
+ * 比 input swipe 更适合在列表里做精确滚动。
+ */
+export async function dragAndDrop(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  durationMs = 2000,
+): Promise<void> {
+  await shellRun([
+    'input',
+    'draganddrop',
+    String(Math.round(x1)),
+    String(Math.round(y1)),
+    String(Math.round(x2)),
+    String(Math.round(y2)),
+    String(Math.round(durationMs)),
+  ]);
+}
+
 export async function pressBack(): Promise<void> {
   // KEYCODE_BACK = 4
   await shellRun(['input', 'keyevent', '4']);

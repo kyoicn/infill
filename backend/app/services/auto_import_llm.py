@@ -306,10 +306,32 @@ def _vision_json_call(
     return data
 
 
+def _image_size_from_bytes(image_bytes: bytes) -> tuple[int, int]:
+    """读 PNG 头部拿到 (W, H)；失败时返回 (0, 0)。"""
+    try:
+        from PIL import Image
+        import io
+        with Image.open(io.BytesIO(image_bytes)) as im:
+            return im.size  # (W, H)
+    except Exception:  # noqa: BLE001
+        return (0, 0)
+
+
+def _maybe_unnormalize(values: list[int], full: int) -> list[int]:
+    """Qwen 视觉模型常给 0-1000 归一化坐标——若所有值都 ≤1000 且 full > 1000，
+    按 full/1000 比例还原回像素空间。"""
+    if not values or full <= 1000:
+        return values
+    if all(0 <= v <= 1000 for v in values):
+        return [int(v * full / 1000) for v in values]
+    return values
+
+
 def detect_xianyu_list_layout(image_bytes: bytes) -> dict:
     """从一张闲鱼列表页截屏推断卡片中心点像素坐标。
 
     返回 `{"card_x": int, "card_centers_y": list[int], "card_height_px": int}`。
+    LLM (Qwen3-Omni-Flash 实测) 一般以 0-1000 归一化空间作答 —— 这里做反归一化。
     """
     data = _vision_json_call(
         image_bytes,
@@ -318,12 +340,12 @@ def detect_xianyu_list_layout(image_bytes: bytes) -> dict:
     )
 
     try:
-        card_x = int(data.get("card_x") or 0)
+        card_x_raw = int(data.get("card_x") or 0)
         centers_raw = data.get("card_centers_y") or []
         if not isinstance(centers_raw, list):
             raise ValueError("card_centers_y 不是 list")
-        card_centers_y = [int(v) for v in centers_raw]
-        card_height_px = int(data.get("card_height_px") or 0)
+        centers_int = [int(v) for v in centers_raw]
+        h_raw = int(data.get("card_height_px") or 0)
     except (TypeError, ValueError) as exc:
         raise LLMProviderError(
             "schema_invalid",
@@ -331,10 +353,16 @@ def detect_xianyu_list_layout(image_bytes: bytes) -> dict:
             json.dumps(data)[:200],
         ) from exc
 
+    img_w, img_h = _image_size_from_bytes(image_bytes)
+    # 反归一化：x 用 W，y / 高度差 用 H
+    card_x_arr = _maybe_unnormalize([card_x_raw], img_w) if img_w else [card_x_raw]
+    centers = _maybe_unnormalize(centers_int, img_h) if img_h else centers_int
+    h_arr = _maybe_unnormalize([h_raw], img_h) if img_h else [h_raw]
+
     return {
-        "card_x": card_x,
-        "card_centers_y": card_centers_y,
-        "card_height_px": card_height_px,
+        "card_x": card_x_arr[0],
+        "card_centers_y": centers,
+        "card_height_px": h_arr[0],
     }
 
 
@@ -342,6 +370,7 @@ def detect_xianyu_expand_button(image_bytes: bytes) -> dict:
     """从一张闲鱼详情页截屏推断「订单编号」展开按钮位置。
 
     返回 `{"x": int, "y": int}`，未找到时 0/0。
+    LLM 输出按需反归一化（0-1000 → 像素）。
     """
     data = _vision_json_call(
         image_bytes,
@@ -349,12 +378,16 @@ def detect_xianyu_expand_button(image_bytes: bytes) -> dict:
         "下面是闲鱼订单详情页截屏，请按 schema 找出「订单编号」展开按钮坐标，输出 JSON。",
     )
     try:
-        x = int(data.get("x") or 0)
-        y = int(data.get("y") or 0)
+        x_raw = int(data.get("x") or 0)
+        y_raw = int(data.get("y") or 0)
     except (TypeError, ValueError) as exc:
         raise LLMProviderError(
             "schema_invalid",
             f"detect_xianyu_expand_button 字段类型不对：{exc}",
             json.dumps(data)[:200],
         ) from exc
+
+    img_w, img_h = _image_size_from_bytes(image_bytes)
+    x = _maybe_unnormalize([x_raw], img_w)[0] if img_w else x_raw
+    y = _maybe_unnormalize([y_raw], img_h)[0] if img_h else y_raw
     return {"x": x, "y": y}
