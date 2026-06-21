@@ -27,6 +27,20 @@ export default function Orders() {
   const [tab, setTab] = useState('pending');
   const [query, setQuery] = useState('');
   const [expandedKeys, setExpandedKeys] = useState<number[]>([]);
+
+  // 下单日期排序方向，持久化到 localStorage；只允许 ascend / descend 两态
+  type SortOrder = 'ascend' | 'descend';
+  const SORT_LS_KEY = 'infill.orders.sortOrder';
+  const [sortOrder, setSortOrder] = useState<SortOrder>(() => {
+    try {
+      const v = window.localStorage.getItem(SORT_LS_KEY);
+      if (v === 'ascend' || v === 'descend') return v;
+    } catch { /* ignore */ }
+    return 'ascend';  // 默认升序：老单在前
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(SORT_LS_KEY, sortOrder); } catch { /* ignore */ }
+  }, [sortOrder]);
   const [drafts, setDrafts] = useState<OrderDraft[]>([]);
   const [editState, setEditState] = useState<EditState | null>(null);
 
@@ -346,6 +360,17 @@ export default function Orders() {
             expandedRowKeys: expandedKeys,
             showExpandColumn: false,  // 隐藏首列默认 + 图标，改成操作列里的自定义按钮
           }}
+          onChange={(_pagination, _filters, sorter) => {
+            // antd 默认 cycle: ascend → descend → undefined → ascend ...
+            // 我们拦截 undefined，把它翻成相反方向 — 用户感受到的就只有两态
+            if (Array.isArray(sorter)) return;
+            if (sorter.columnKey !== 'external_created_at') return;
+            if (sorter.order === 'ascend' || sorter.order === 'descend') {
+              setSortOrder(sorter.order);
+            } else {
+              setSortOrder((prev) => (prev === 'ascend' ? 'descend' : 'ascend'));
+            }
+          }}
           columns={[
             {
               title: '来源 / 买家',
@@ -358,8 +383,8 @@ export default function Orders() {
               dataIndex: 'external_created_at',
               key: 'external_created_at',
               width: 160,
-              defaultSortOrder: 'descend',
-              sortDirections: ['ascend', 'descend'],  // 不要 antd 默认的第三态「取消排序」，只在升降之间循环
+              sortOrder,  // 受控 — 由我们的 onChange 维护，从不为 undefined
+              sortDirections: ['ascend', 'descend'],  // 同时移除指示器里的"无序"图标
               sorter: (a: any, b: any) => {
                 // 没下单时间（手工录入）的排到最后
                 const va = a.external_created_at || '';
