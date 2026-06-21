@@ -12,7 +12,7 @@ set -e
 cd "$(dirname "$0")/.."
 
 BACKEND_PORT="${QA_BACKEND_PORT:-8765}"  # override via env if 8765 占用
-BACKEND_CMD="python -m uvicorn app.main:app --host 0.0.0.0 --port $BACKEND_PORT"
+BACKEND_CMD="python -m uvicorn app.main:app --reload --host 0.0.0.0 --port $BACKEND_PORT"
 BACKEND_DIR="backend"
 FRONTEND_CMD="npm run dev"
 FRONTEND_DIR="frontend"

@@ -1,5 +1,36 @@
+import { execSync } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+
+// dev 模式下显示 git tag + 短 SHA + 脏标记，让侧边栏的"部署版本"在本地
+// 也有用。生产构建走 Dockerfile 的 VITE_APP_VERSION env，那个会赢。
+//
+// vite 8/rolldown 对 `define: 'import.meta.env.VITE_*'` 不再做替换；
+// 而 import.meta.env 的字段又只认 .env 文件里的 VITE_*。于是我们生成一份
+// .env.local — vite 自己读，优先级最高且不进 git。
+function resolveAppVersion(): string {
+  if (process.env.VITE_APP_VERSION) return process.env.VITE_APP_VERSION
+  try {
+    const tag = execSync('git describe --tags --abbrev=0', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    const sha = execSync('git rev-parse --short HEAD', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    const dirty = execSync('git status --porcelain', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() ? '+' : ''
+    return `dev · ${tag} · ${sha}${dirty}`
+  } catch {
+    return 'dev'
+  }
+}
+const APP_VERSION = resolveAppVersion()
+// 把版本写进 .env.local，让 vite 的 loadEnv 接到。生产里 .env.local 不存在，
+// 生产 build 时 Dockerfile 设的 VITE_APP_VERSION 环境变量本身会被 vite 看到。
+const __dirname = dirname(fileURLToPath(import.meta.url))
+try {
+  writeFileSync(resolve(__dirname, '.env.local'), `VITE_APP_VERSION=${APP_VERSION}\n`, 'utf8')
+} catch {
+  // 写不进去就放弃 — 不影响主流程
+}
 
 // https://vite.dev/config/
 export default defineConfig({
