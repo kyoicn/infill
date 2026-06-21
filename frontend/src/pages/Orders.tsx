@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, Table, Button, Modal, Select, InputNumber, Space, Popconfirm, Tag, Tabs, message, Divider, Input, Tooltip, Typography } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EditOutlined, SearchOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ShippingBlock from '../components/ShippingBlock';
@@ -25,6 +25,7 @@ export default function Orders() {
   const [products, setProducts] = useState<any[]>([]);
   const [modal, setModal] = useState(false);
   const [tab, setTab] = useState('pending');
+  const [query, setQuery] = useState('');
   const [drafts, setDrafts] = useState<OrderDraft[]>([]);
   const [editState, setEditState] = useState<EditState | null>(null);
 
@@ -182,21 +183,115 @@ export default function Orders() {
   const renderItems = (rec: any) => {
     const items = rec.items || [];
     return (
-      <span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
         {items.map((item: any, idx: number) => {
           const missing = isProdMissing(item.product_id);
-          const text = `${getProdName(item.product_id)} x${item.quantity}`;
-          const sep = idx < items.length - 1 ? ', ' : '';
+          const name = getProdName(item.product_id);
           return (
-            <span key={idx}>
-              {missing
-                ? <Typography.Text type="danger">{text}</Typography.Text>
-                : <span>{text}</span>}
-              {sep}
-            </span>
+            <Tag
+              key={idx}
+              color={missing ? 'red' : 'blue'}
+              style={{ margin: 0, fontSize: 12 }}
+            >
+              {name}
+              <span style={{ color: missing ? '#a8071a' : '#1677ff', fontWeight: 600, marginLeft: 4 }}>
+                ×{item.quantity}
+              </span>
+            </Tag>
           );
         })}
-      </span>
+      </div>
+    );
+  };
+
+  // 客户端搜索过滤：跨 buyer / external_order_id / recipient_name / phone / notes 模糊匹配
+  const filteredOrders = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return orders;
+    return orders.filter((o) => {
+      const hay = [
+        o.buyer_nickname,
+        o.external_order_id,
+        o.recipient_name,
+        o.recipient_phone,
+        o.notes,
+        String(o.id),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [orders, query]);
+
+  // 下单时间格式化：'2026-06-18T15:18:50' → '2026-06-18 15:18'
+  const fmtExternal = (v: string) => v.replace('T', ' ').slice(0, 16);
+
+  const renderExpanded = (rec: any) => {
+    const items = rec.items || [];
+    return (
+      <div style={{ padding: '4px 12px', fontSize: 13, color: 'rgba(0,0,0,0.75)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', rowGap: 6, columnGap: 12 }}>
+          <span style={{ color: 'rgba(0,0,0,0.45)' }}>内部编号</span>
+          <span style={{ fontFamily: 'monospace' }}>#{rec.id}</span>
+
+          <span style={{ color: 'rgba(0,0,0,0.45)' }}>系统创建</span>
+          <span style={{ fontFamily: 'monospace' }}>{new Date(rec.created_at).toLocaleString('zh-CN')}</span>
+
+          {rec.shipped_at && (
+            <>
+              <span style={{ color: 'rgba(0,0,0,0.45)' }}>发货时间</span>
+              <span style={{ fontFamily: 'monospace' }}>{new Date(rec.shipped_at).toLocaleString('zh-CN')}</span>
+            </>
+          )}
+
+          {rec.external_order_id && (
+            <>
+              <span style={{ color: 'rgba(0,0,0,0.45)' }}>外部单号</span>
+              <span style={{ fontFamily: 'monospace' }}>{rec.external_order_id}</span>
+            </>
+          )}
+
+          {(rec.recipient_address || rec.recipient_name || rec.recipient_phone) && (
+            <>
+              <span style={{ color: 'rgba(0,0,0,0.45)' }}>完整收货</span>
+              <span>
+                {rec.recipient_name} {rec.recipient_phone}
+                {rec.recipient_address && (
+                  <>
+                    <br />
+                    {rec.recipient_address}
+                  </>
+                )}
+              </span>
+            </>
+          )}
+
+          {rec.notes && (
+            <>
+              <span style={{ color: 'rgba(0,0,0,0.45)' }}>完整备注</span>
+              <span style={{ whiteSpace: 'pre-wrap' }}>{rec.notes}</span>
+            </>
+          )}
+
+          <span style={{ color: 'rgba(0,0,0,0.45)' }}>所有商品</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {items.map((it: any, idx: number) => {
+              const missing = isProdMissing(it.product_id);
+              return (
+                <div key={idx}>
+                  {missing
+                    ? <Typography.Text type="danger">{getProdName(it.product_id)}</Typography.Text>
+                    : <span>{getProdName(it.product_id)}</span>}
+                  <span style={{ color: 'rgba(0,0,0,0.45)', marginLeft: 8 }}>
+                    × {it.quantity}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
     );
   };
 
@@ -207,6 +302,14 @@ export default function Orders() {
       <Card
         extra={
           <Space>
+            <Input
+              allowClear
+              placeholder="搜索 买家/单号/收件人/电话/备注"
+              prefix={<SearchOutlined style={{ color: 'rgba(0,0,0,0.35)' }} />}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              style={{ width: 280 }}
+            />
             <Button onClick={() => navigate('/orders/import')}>自动导入 →</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={openModal}>新增订单</Button>
           </Space>
@@ -229,23 +332,24 @@ export default function Orders() {
         )}
 
         <Table
-          dataSource={orders}
+          dataSource={filteredOrders}
           rowKey="id"
           size="small"
-          pagination={{ pageSize: 20 }}
+          pagination={{ pageSize: 20, showTotal: (n) => `共 ${n} 单` }}
+          expandable={{ expandedRowRender: renderExpanded, expandRowByClick: false }}
           columns={[
-            { title: '#', dataIndex: 'id', width: 56 },
             {
               title: '来源 / 买家',
               key: 'source',
-              width: 200,
+              width: 220,
               render: (_: any, rec: any) => <SourceCell order={rec} />,
             },
             {
               title: '下单日期',
               dataIndex: 'external_created_at',
               key: 'external_created_at',
-              width: 140,
+              width: 160,
+              defaultSortOrder: 'descend',
               sorter: (a: any, b: any) => {
                 // 没下单时间（手工录入）的排到最后
                 const va = a.external_created_at || '';
@@ -255,10 +359,23 @@ export default function Orders() {
                 if (!vb) return -1;
                 return va.localeCompare(vb);
               },
-              render: (v: string | null) =>
-                v
-                  ? <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'rgba(0,0,0,0.75)' }}>{v}</span>
-                  : <span style={{ color: '#ccc' }}>-</span>,
+              render: (v: string | null, rec: any) => {
+                const sysCreated = `系统创建：${new Date(rec.created_at).toLocaleString('zh-CN')}`;
+                if (!v) {
+                  return (
+                    <Tooltip title={sysCreated}>
+                      <span style={{ color: '#ccc' }}>-</span>
+                    </Tooltip>
+                  );
+                }
+                return (
+                  <Tooltip title={sysCreated}>
+                    <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'rgba(0,0,0,0.75)' }}>
+                      {fmtExternal(v)}
+                    </span>
+                  </Tooltip>
+                );
+              },
             },
             {
               title: '收货信息',
@@ -271,26 +388,21 @@ export default function Orders() {
                 />
               ),
             },
-            {
-              title: '状态', dataIndex: 'status', width: 80,
-              render: (v: string) => <Tag color={v === 'pending' ? 'orange' : 'green'}>{v === 'pending' ? '待处理' : '已发货'}</Tag>,
-            },
+            ...(tab === 'all'
+              ? [{
+                  title: '状态',
+                  dataIndex: 'status',
+                  width: 80,
+                  render: (v: string) => (
+                    <Tag color={v === 'pending' ? 'orange' : 'green'}>
+                      {v === 'pending' ? '待处理' : '已发货'}
+                    </Tag>
+                  ),
+                }]
+              : []),
             {
               title: '产品明细',
               render: (_: any, rec: any) => renderItems(rec),
-            },
-            {
-              title: '系统创建',
-              dataIndex: 'created_at',
-              width: 130,
-              render: (v: string) => (
-                <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>
-                  {new Date(v).toLocaleString('zh-CN', {
-                    year: '2-digit', month: '2-digit', day: '2-digit',
-                    hour: '2-digit', minute: '2-digit',
-                  })}
-                </span>
-              ),
             },
             {
               title: '备注',
@@ -313,7 +425,7 @@ export default function Orders() {
                       <Button size="small" type="primary">发货</Button>
                     </Popconfirm>
                   )}
-                  <Popconfirm title="确定删除？" onConfirm={() => deleteOrder(rec.id)}>
+                  <Popconfirm title="删除此订单？此操作无法恢复" onConfirm={() => deleteOrder(rec.id)}>
                     <Button size="small" danger icon={<DeleteOutlined />} />
                   </Popconfirm>
                 </Space>
@@ -467,28 +579,46 @@ export default function Orders() {
 }
 
 function SourceCell({ order }: { order: any }) {
-  const { platform, buyer_nickname, external_order_id } = order;
+  const { id, platform, buyer_nickname, external_order_id } = order;
+  const idBadge = (
+    <span
+      style={{
+        color: 'rgba(0,0,0,0.35)',
+        fontSize: 10.5,
+        fontFamily: 'monospace',
+        marginLeft: 6,
+      }}
+    >
+      #{id}
+    </span>
+  );
   if (!platform) {
     return (
-      <Tag color="default" style={{ margin: 0, fontSize: 11 }}>
-        手工录入
-      </Tag>
+      <span>
+        <Tag color="default" style={{ margin: 0, fontSize: 11 }}>
+          手工录入
+        </Tag>
+        {idBadge}
+      </span>
     );
   }
   const isXianyu = platform === 'xianyu';
   return (
     <div style={{ fontSize: 12, lineHeight: 1.5 }}>
-      <Tag
-        color={isXianyu ? '#fff5e6' : '#fff1f3'}
-        style={{
-          margin: 0,
-          color: isXianyu ? '#ff7a00' : '#ff2442',
-          border: 'none',
-          fontWeight: 500,
-        }}
-      >
-        {isXianyu ? '闲鱼' : '小红书'}
-      </Tag>
+      <span>
+        <Tag
+          color={isXianyu ? '#fff5e6' : '#fff1f3'}
+          style={{
+            margin: 0,
+            color: isXianyu ? '#ff7a00' : '#ff2442',
+            border: 'none',
+            fontWeight: 500,
+          }}
+        >
+          {isXianyu ? '闲鱼' : '小红书'}
+        </Tag>
+        {idBadge}
+      </span>
       {buyer_nickname && (
         <div style={{ marginTop: 4, fontWeight: 500, color: 'rgba(0,0,0,0.88)' }}>
           {buyer_nickname}
