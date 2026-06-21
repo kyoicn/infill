@@ -12,8 +12,10 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 
 const { Sider, Content } = Layout;
 
-// 构建时由 Vite 注入；Dockerfile 把 release tag 通过 build-arg 传进容器再 export 为 VITE_APP_VERSION
-const APP_VERSION = import.meta.env.VITE_APP_VERSION || 'dev';
+// 来自 vite 虚拟模块 — 每次浏览器硬刷 vite 会 re-run git 命令，
+// 所以 dev 模式下显示的永远是 HEAD 当前 commit。
+// 生产 docker 构建时走 Dockerfile 的 VITE_APP_VERSION env，优先级最高。
+import APP_VERSION from 'virtual:app-version';
 
 const menuItems = [
   { key: '/', icon: <DashboardOutlined />, label: '仪表盘' },
