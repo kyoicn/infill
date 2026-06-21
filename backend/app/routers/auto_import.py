@@ -782,6 +782,7 @@ def commit(body: CommitRequest, db: Session = Depends(get_db)) -> CommitResponse
                 recipient_name=item.recipient_name,
                 recipient_phone=item.recipient_phone,
                 recipient_address=item.recipient_address,
+                notes=(item.notes or "").strip() or None,
             )
             db.add(order)
             db.flush()

@@ -4,6 +4,7 @@ import {
   Button,
   Checkbox,
   Image,
+  Input,
   InputNumber,
   Modal,
   Table,
@@ -36,6 +37,8 @@ interface RowState {
   checked: boolean;
   overrideDuplicate: boolean;
   products: RowProduct[];
+  /** 用户在预览页手填的备注（提交时 → Order.notes） */
+  notes: string;
   /** cache last picked name per sku_code for nicer display when api only returned code */
   pickedNames: Record<string, string>;
 }
@@ -113,9 +116,14 @@ export default function PreviewTable(props: PreviewTableProps) {
         confidence: p.confidence,
         reasoning: p.reasoning,
       })),
+      notes: '',
       pickedNames: {},
     })),
   );
+
+  function setNotes(idx: number, notes: string) {
+    updateRow(idx, (r) => ({ ...r, notes }));
+  }
 
   // ---------- mutations ----------
 
@@ -317,6 +325,7 @@ export default function PreviewTable(props: PreviewTableProps) {
         recipient_name: r.item.recipient_name ?? null,
         recipient_phone: r.item.recipient_phone ?? null,
         recipient_address: r.item.recipient_address ?? null,
+        notes: r.notes.trim() || null,
       });
     }
     onCommit(items);
@@ -577,6 +586,26 @@ export default function PreviewTable(props: PreviewTableProps) {
               )}
             </div>
           </div>
+        );
+      },
+    },
+    {
+      title: '备注',
+      key: 'notes',
+      width: 200,
+      render: (_, rec) => {
+        const r = rows[rec.idx];
+        const isDup = r.item.is_duplicate && !r.overrideDuplicate;
+        return (
+          <Input.TextArea
+            value={r.notes}
+            placeholder={isDup ? '' : '可填发货提醒等'}
+            disabled={isDup}
+            onChange={(e) => setNotes(rec.idx, e.target.value)}
+            autoSize={{ minRows: 2, maxRows: 6 }}
+            maxLength={500}
+            style={{ fontSize: 12 }}
+          />
         );
       },
     },

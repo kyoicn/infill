@@ -162,6 +162,8 @@ class CommitItem(BaseModel):
     recipient_name: Optional[str] = None
     recipient_phone: Optional[str] = None
     recipient_address: Optional[str] = None
+    # v0.4.12 在预览页用户可手填的订单备注
+    notes: Optional[str] = None
 
 
 class CommitRequest(BaseModel):

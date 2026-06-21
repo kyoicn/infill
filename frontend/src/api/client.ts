@@ -312,6 +312,7 @@ export interface AutoImportCommitItem {
   recipient_name?: string | null;
   recipient_phone?: string | null;
   recipient_address?: string | null;
+  notes?: string | null;
 }
 
 export interface AutoImportCommitStats {
