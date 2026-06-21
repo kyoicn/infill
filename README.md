@@ -140,6 +140,35 @@ docs/       详细设计文档（STATUS.md 为整体状态概览）
 
 ---
 
+## 本地开发
+
+端口约定（在 `vite.config.ts` + `scripts/qa-server.sh` 同步固定）：
+
+| 服务 | dev 端口 | 备注 |
+|---|---|---|
+| 前端（vite dev） | `5173` | `/api` 代理到后端 |
+| 后端（uvicorn） | `8765` | 避开 8000 常见冲突；生产 docker 仍是 `8000` |
+
+vite 配了 `strictPort: true`，5173 被占就直接报错退出，绝不静默跳 5174。
+
+一键起：
+
+```bash
+bash scripts/qa-server.sh start   # 起前后端
+bash scripts/qa-server.sh stop    # 关
+```
+
+不走脚本：
+
+```bash
+(cd backend && uvicorn app.main:app --reload --port 8765) &
+(cd frontend && npm run dev) &
+```
+
+QA 入口：http://localhost:5173
+
+---
+
 ## Release 发布流程（仅维护者）
 
 ```bash

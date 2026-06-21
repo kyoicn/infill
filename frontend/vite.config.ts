@@ -21,9 +21,15 @@ export default defineConfig({
     minify: 'terser',
   },
   server: {
+    // dev 端口约定：前端固定 5173，后端固定 8765（避开 8000 常见冲突）。
+    // 生产 docker 容器照旧 8000 — 只有本机 dev 用 8765。
+    // strictPort 让 vite 在 5173 被占时报错退出，而不是静默跳 5174（用户
+    // 访问 5173 看到空白页半天找不到原因）。
+    port: 5173,
+    strictPort: true,
     proxy: {
-      '/api': 'http://localhost:8000',
-      '/static': 'http://localhost:8000',
+      '/api': 'http://localhost:8765',
+      '/static': 'http://localhost:8765',
     },
   },
 })

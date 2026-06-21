@@ -4,14 +4,14 @@
 # operations. Do not invoke npm/uvicorn/kill/lsof/tail directly during QA.
 #
 # 本项目开发模式需要两个进程：
-#   backend  — uvicorn app.main:app，端口 8000
-#   frontend — vite dev server，端口 5173（/api 代理到 8000）
+#   backend  — uvicorn app.main:app，端口 8765（生产 docker 仍用 8000）
+#   frontend — vite dev server，端口 5173（/api 代理到 8765）
 # QA 入口 URL：http://localhost:5173
 set -e
 
 cd "$(dirname "$0")/.."
 
-BACKEND_PORT="${QA_BACKEND_PORT:-8000}"  # override via env if 8000 占用
+BACKEND_PORT="${QA_BACKEND_PORT:-8765}"  # override via env if 8765 占用
 BACKEND_CMD="python -m uvicorn app.main:app --host 0.0.0.0 --port $BACKEND_PORT"
 BACKEND_DIR="backend"
 FRONTEND_CMD="npm run dev"
@@ -37,10 +37,10 @@ case "${1:-}" in
     fi
     rm -f "$PID_FILE"
     : > "$LOG_FILE"
-    # Temporarily patch vite proxy target if backend port differs from default 8000.
-    if [ "$BACKEND_PORT" != "8000" ] && [ -f "$VITE_CFG" ] && [ ! -f "$VITE_CFG_BAK" ]; then
+    # Temporarily patch vite proxy target if backend port differs from default 8765.
+    if [ "$BACKEND_PORT" != "8765" ] && [ -f "$VITE_CFG" ] && [ ! -f "$VITE_CFG_BAK" ]; then
       cp "$VITE_CFG" "$VITE_CFG_BAK"
-      sed -i.tmp "s|http://localhost:8000|http://localhost:$BACKEND_PORT|g" "$VITE_CFG"
+      sed -i.tmp "s|http://localhost:8765|http://localhost:$BACKEND_PORT|g" "$VITE_CFG"
       rm -f "$VITE_CFG.tmp"
     fi
     (cd "$BACKEND_DIR" && nohup $BACKEND_CMD >> "../$LOG_FILE" 2>&1 & echo $! > "../$PID_FILE")
