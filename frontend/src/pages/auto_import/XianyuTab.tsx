@@ -28,8 +28,7 @@ const TAP_TO_DETAIL_LOADED_MIN_BYTES = 800_000;  // 加载完的详情页 PNG �
 const TAP_TO_DETAIL_POLL_MS = 500;
 const TAP_TO_EXPAND_MS = 600;        // 「订单编号」点击 → 展开动画
 const BACK_TO_LIST_MS = 900;         // back → 列表稳定
-const SCROLL_SETTLE_MS = 2500;       // swipe → 列表稳定（含弹性回弹 / fling 余动）
-const SCROLL_STEP_SLEEP_MS = 500;    // 多步 swipe 每步之间留时间让 ACTION_UP 不残留动量
+const SCROLL_SETTLE_MS = 2500;       // dragAndDrop → 列表稳定（含弹性回弹 / 残余动量）
 
 // 🚨 详情页底部 12% 高危带：「联系买家 / 取消订单 / 去发货」固定操作栏的覆盖区。
 //    只在详情页（展开按钮 tap）时启用——LLM 落到这区里立即中止。
