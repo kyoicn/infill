@@ -1,13 +1,19 @@
 import { execSync } from 'node:child_process'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
 
 // 侧边栏版号在 dev 模式也显示 `dev · v0.4.9 · ce617d0+`。生产 build 走
 // Dockerfile 的 VITE_APP_VERSION env，那个会赢。
 //
-// 之前用 .env.local 一次性生成，每次 commit 都得重启 vite 才会更新 — 烦。
-// 改成 vite 虚拟模块：浏览器每次请求 Layout（硬刷或新 tab）vite 会 re-run
-// 这个 load()，git 命令现跑现取，永远是最新提交。
+// 实现：vite 虚拟模块 + .git/logs/HEAD 文件监听。
+// - load() 现跑 git 命令拿 HEAD
+// - 监听 .git/logs/HEAD（每次 commit / reset / rebase 都会被改写），变化
+//   时让虚拟模块失效 + 通知浏览器 full-reload。整套效果：commit 完不用
+//   重启 vite，硬刷或等 HMR 立即看到新 SHA
 function resolveAppVersion(): string {
   if (process.env.VITE_APP_VERSION) return process.env.VITE_APP_VERSION
   try {
@@ -23,6 +29,7 @@ function resolveAppVersion(): string {
 function appVersionPlugin(): Plugin {
   const virtualId = 'virtual:app-version'
   const resolvedId = '\0' + virtualId
+  const gitLogsHead = resolve(__dirname, '..', '.git', 'logs', 'HEAD')
   return {
     name: 'infill-app-version',
     resolveId(id) {
@@ -30,11 +37,20 @@ function appVersionPlugin(): Plugin {
     },
     load(id) {
       if (id === resolvedId) {
-        // 每次 load 都现取 — 浏览器硬刷就能看到新 commit
         return `export default ${JSON.stringify(resolveAppVersion())};`
       }
     },
-    // 文件改动时让虚拟模块失效，触发 HMR 重新 load
+    configureServer(server) {
+      server.watcher.add(gitLogsHead)
+      server.watcher.on('change', (file) => {
+        if (file === gitLogsHead) {
+          const mod = server.moduleGraph.getModuleById(resolvedId)
+          if (mod) server.moduleGraph.invalidateModule(mod)
+          server.ws.send({ type: 'full-reload' })
+        }
+      })
+    },
+    // 源码 HMR 时顺手失效一下（兜底）
     handleHotUpdate({ server }) {
       const mod = server.moduleGraph.getModuleById(resolvedId)
       if (mod) server.moduleGraph.invalidateModule(mod)
