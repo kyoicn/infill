@@ -30,6 +30,8 @@ from ..schemas_auto_import import (
     CommitRequest,
     CommitResponse,
     CommitStats,
+    DetectExpandButtonResponse,
+    DetectListLayoutResponse,
     DroppedOrder,
     ExtensionStatusResponse,
     FinishScanRequest,
@@ -415,6 +417,79 @@ def xianyu_scan_status(batch_id: str) -> ScanStatusResponse:
         batch_id=batch_id,
         screens=list(state.get("screens") or []),
         parsed_orders=list(state.get("parsed_orders") or []),
+    )
+
+
+@router.post("/xianyu/detect-list-layout", response_model=DetectListLayoutResponse)
+async def xianyu_detect_list_layout(
+    png: UploadFile = File(...),
+) -> DetectListLayoutResponse:
+    """喂一张闲鱼列表页截屏给 LLM，拿回每张卡片中心点的像素坐标（自动扫描的入口）。"""
+    try:
+        png_bytes = await png.read()
+        if not png_bytes:
+            return DetectListLayoutResponse(
+                ok=False, error_kind="empty_png", error="上传的 PNG 字节为空"
+            )
+    except Exception as exc:  # noqa: BLE001
+        return DetectListLayoutResponse(
+            ok=False, error_kind="upload_failed", error=str(exc)
+        )
+
+    try:
+        data = await asyncio.to_thread(
+            auto_import_llm.detect_xianyu_list_layout, png_bytes
+        )
+    except LLMProviderError as exc:
+        return DetectListLayoutResponse(
+            ok=False, error_kind=exc.error_kind, error=exc.message
+        )
+    except Exception as exc:  # noqa: BLE001
+        return DetectListLayoutResponse(
+            ok=False, error_kind="detect_failed", error=str(exc)
+        )
+
+    return DetectListLayoutResponse(
+        ok=True,
+        card_x=int(data.get("card_x") or 0),
+        card_centers_y=list(data.get("card_centers_y") or []),
+        card_height_px=int(data.get("card_height_px") or 0),
+    )
+
+
+@router.post("/xianyu/detect-expand-button", response_model=DetectExpandButtonResponse)
+async def xianyu_detect_expand_button(
+    png: UploadFile = File(...),
+) -> DetectExpandButtonResponse:
+    """喂一张闲鱼详情页截屏给 LLM，拿回「订单编号」展开按钮的坐标。"""
+    try:
+        png_bytes = await png.read()
+        if not png_bytes:
+            return DetectExpandButtonResponse(
+                ok=False, error_kind="empty_png", error="上传的 PNG 字节为空"
+            )
+    except Exception as exc:  # noqa: BLE001
+        return DetectExpandButtonResponse(
+            ok=False, error_kind="upload_failed", error=str(exc)
+        )
+
+    try:
+        data = await asyncio.to_thread(
+            auto_import_llm.detect_xianyu_expand_button, png_bytes
+        )
+    except LLMProviderError as exc:
+        return DetectExpandButtonResponse(
+            ok=False, error_kind=exc.error_kind, error=exc.message
+        )
+    except Exception as exc:  # noqa: BLE001
+        return DetectExpandButtonResponse(
+            ok=False, error_kind="detect_failed", error=str(exc)
+        )
+
+    return DetectExpandButtonResponse(
+        ok=True,
+        x=int(data.get("x") or 0),
+        y=int(data.get("y") or 0),
     )
 
 

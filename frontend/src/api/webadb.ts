@@ -161,3 +161,61 @@ export async function screencap(): Promise<Uint8Array> {
   }
   return result.stdout;
 }
+
+// ===== 自动化原语 =====
+// 全自动扫描需要：tap / swipe / back / 读屏幕尺寸。
+// 都走 `input` / `wm` 系统命令，Android 4+ 都有。
+
+async function shellRun(argv: string[]): Promise<string> {
+  if (!current) throw new Error('未连接手机');
+  const shell = current.adb.subprocess.shellProtocol;
+  if (!shell || !shell.isSupported) {
+    throw new Error('设备 ADB 太旧不支持 shellProtocol — 请用 Android 7+');
+  }
+  const result = await shell.spawnWait(argv);
+  if (result.exitCode !== 0) {
+    const err = new TextDecoder().decode(result.stderr);
+    throw new Error(`${argv.join(' ')} 失败 (exit ${result.exitCode}): ${err || '(无 stderr)'}`);
+  }
+  return new TextDecoder().decode(result.stdout);
+}
+
+export async function tap(x: number, y: number): Promise<void> {
+  await shellRun(['input', 'tap', String(Math.round(x)), String(Math.round(y))]);
+}
+
+export async function swipe(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  durationMs = 300,
+): Promise<void> {
+  await shellRun([
+    'input',
+    'swipe',
+    String(Math.round(x1)),
+    String(Math.round(y1)),
+    String(Math.round(x2)),
+    String(Math.round(y2)),
+    String(Math.round(durationMs)),
+  ]);
+}
+
+export async function pressBack(): Promise<void> {
+  // KEYCODE_BACK = 4
+  await shellRun(['input', 'keyevent', '4']);
+}
+
+export async function getScreenSize(): Promise<{ w: number; h: number }> {
+  const out = await shellRun(['wm', 'size']);
+  // 典型输出："Physical size: 1080x2340\n" 或 "Physical size: 1080x2340\nOverride size: 1080x2340"
+  // Override 是用户自定义分辨率，优先用它（实际渲染就是这个尺寸）。
+  const physical = out.match(/Physical size:\s*(\d+)x(\d+)/);
+  const override = out.match(/Override size:\s*(\d+)x(\d+)/);
+  const m = override || physical;
+  if (!m) {
+    throw new Error(`wm size 输出无法解析：${out.slice(0, 200)}`);
+  }
+  return { w: parseInt(m[1], 10), h: parseInt(m[2], 10) };
+}

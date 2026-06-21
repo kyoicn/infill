@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Alert, Button, Spin, Tooltip, message } from 'antd';
-import { ApiOutlined, DisconnectOutlined } from '@ant-design/icons';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Button, InputNumber, Spin, Tooltip, message } from 'antd';
+import { ApiOutlined, DisconnectOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import {
   api,
   type AutoImportScanResponse,
@@ -9,11 +9,22 @@ import {
   connectPhone,
   currentDeviceName,
   disconnectPhone,
+  getScreenSize,
   isConnected,
   isWebUsbSupported,
+  pressBack,
   screencap as webadbScreencap,
+  swipe as webadbSwipe,
+  tap as webadbTap,
 } from '../../api/webadb';
 import ScreencapGrid, { type ScreenEntry } from './ScreencapGrid';
+
+const AUTO_SCAN_MAX = 50;
+const TAP_TO_DETAIL_MS = 2200;       // 列表 tap → 详情页 loading 完成
+const TAP_TO_EXPAND_MS = 500;        // 「订单编号」点击 → 展开动画
+const BACK_TO_LIST_MS = 700;         // back → 列表稳定
+const SCROLL_SETTLE_MS = 800;        // swipe → 列表稳定
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface XianyuTabProps {
   onScan: (batchId: string, scan: AutoImportScanResponse) => void;
@@ -27,6 +38,11 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
   const [screens, setScreens] = useState<ScreenEntry[]>([]);
   const [screencapBusy, setScreencapBusy] = useState(false);
   const [finishing, setFinishing] = useState(false);
+  const [autoN, setAutoN] = useState<number>(10);
+  const [autoRunning, setAutoRunning] = useState(false);
+  const [autoProgress, setAutoProgress] = useState<number>(0);
+  const [autoStatus, setAutoStatus] = useState<string>('');
+  const autoAbortRef = useRef<boolean>(false);
 
   const connected = deviceName !== null;
   const webusbOk = isWebUsbSupported();
@@ -158,6 +174,151 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
     setScreens([]);
   }, [batchId]);
 
+  const handleAutoAbort = useCallback(() => {
+    autoAbortRef.current = true;
+    setAutoStatus('正在中止…');
+  }, []);
+
+  /**
+   * 自动扫描 N 单：
+   *   tap 列表卡片 → 等详情页 loading → tap「订单编号」展开 → 截屏 → back → 下一单。
+   *   首次进入详情页通过 LLM 拿展开按钮坐标，之后整轮缓存；卡片坐标每批可视范围都重新喂 LLM。
+   */
+  const handleAutoScan = useCallback(async () => {
+    if (!isConnected() || autoRunning || finishing || screencapBusy) return;
+    if (!autoN || autoN < 1) {
+      message.warning('请填一个正整数');
+      return;
+    }
+
+    autoAbortRef.current = false;
+    setAutoRunning(true);
+    setAutoProgress(0);
+    setAutoStatus('准备中…');
+
+    // 复用已有 batchId，方便和手动截屏混用
+    let currentBatch = batchId;
+    if (!currentBatch) {
+      currentBatch =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `xy-${Date.now()}`;
+      setBatchId(currentBatch);
+    }
+
+    try {
+      const screenSize = await getScreenSize();
+
+      let cardX = Math.round(screenSize.w / 2);
+      let cardHeightPx = 0;
+      let visibleCardYs: number[] = [];
+      let expandX = 0;
+      let expandY = 0;
+      let scanned = 0;
+
+      while (scanned < autoN && !autoAbortRef.current) {
+        // —— 1. 没有可视卡片队列时，截屏 → LLM 拿坐标 ——
+        if (visibleCardYs.length === 0) {
+          setAutoStatus(`截屏识别列表布局（已扫 ${scanned}/${autoN}）…`);
+          const listPng = await webadbScreencap();
+          const layout = await api.autoImport.xianyu.detectListLayout(listPng);
+          if (!layout.ok) {
+            throw new Error(`列表布局识别失败：${layout.error ?? layout.error_kind ?? '未知错误'}`);
+          }
+          if (!layout.card_centers_y || layout.card_centers_y.length === 0) {
+            message.info(
+              scanned === 0
+                ? '当前画面识别不到待发货卡片，请先在手机上打开「卖出 - 待发货」页'
+                : `已扫到列表底部，共完成 ${scanned} 单`,
+            );
+            break;
+          }
+          if (layout.card_x > 0) cardX = layout.card_x;
+          if (layout.card_height_px > 0) cardHeightPx = layout.card_height_px;
+          visibleCardYs = [...layout.card_centers_y];
+        }
+
+        if (autoAbortRef.current) break;
+
+        // —— 2. tap 列表卡片 → 等详情页 ——
+        const targetY = visibleCardYs.shift()!;
+        setAutoStatus(`点开第 ${scanned + 1} 单（共 ${autoN}）…`);
+        await webadbTap(cardX, targetY);
+        await sleep(TAP_TO_DETAIL_MS);
+        if (autoAbortRef.current) {
+          await pressBack();
+          break;
+        }
+
+        // —— 3. 首次进入详情：LLM 找「订单编号」按钮坐标 ——
+        if (expandX === 0 && expandY === 0) {
+          setAutoStatus('识别「订单编号」展开按钮…');
+          const detailPng = await webadbScreencap();
+          const expand = await api.autoImport.xianyu.detectExpandButton(detailPng);
+          if (!expand.ok || (expand.x === 0 && expand.y === 0)) {
+            // back 出去以免卡在详情页
+            await pressBack();
+            throw new Error(
+              `「订单编号」按钮识别失败：${expand.error ?? expand.error_kind ?? '坐标返回 0/0'}`,
+            );
+          }
+          expandX = expand.x;
+          expandY = expand.y;
+        }
+
+        // —— 4. tap 展开 + 截屏 + 上传 ——
+        setAutoStatus(`展开 + 截屏第 ${scanned + 1} 单…`);
+        await webadbTap(expandX, expandY);
+        await sleep(TAP_TO_EXPAND_MS);
+        const finalPng = await webadbScreencap();
+        const upRes = await api.autoImport.xianyu.uploadScreencap(currentBatch, finalPng);
+        if (!upRes.ok) {
+          await pressBack();
+          throw new Error(`上传截屏失败：${upRes.error ?? upRes.error_kind ?? '未知'}`);
+        }
+        const seq = upRes.seq ?? scanned;
+        setScreens((prev) =>
+          prev.some((s) => s.seq === seq)
+            ? prev
+            : [...prev, { seq, status: 'captured' as const, error: null }],
+        );
+
+        // —— 5. back 回列表 ——
+        await pressBack();
+        await sleep(BACK_TO_LIST_MS);
+
+        scanned += 1;
+        setAutoProgress(scanned);
+
+        // —— 6. 可视卡片消耗光 → 滚一段，让下一批进入视野 ——
+        if (visibleCardYs.length === 0 && scanned < autoN && !autoAbortRef.current) {
+          const scrollDy = cardHeightPx > 0 ? cardHeightPx * 3 : Math.round(screenSize.h * 0.6);
+          const startY = Math.round(screenSize.h * 0.8);
+          const endY = Math.max(Math.round(screenSize.h * 0.15), startY - scrollDy);
+          setAutoStatus('向下滑动列表…');
+          await webadbSwipe(cardX, startY, cardX, endY, 400);
+          await sleep(SCROLL_SETTLE_MS);
+        }
+      }
+
+      if (autoAbortRef.current) {
+        message.info(`已中止，保留前 ${scanned} 单截屏`);
+      } else if (scanned > 0) {
+        message.success(`自动扫描完成：${scanned} 单`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line no-console
+      console.error('[xianyu auto-scan] failed', err);
+      message.error(`自动扫描失败：${msg}`);
+    } finally {
+      setAutoRunning(false);
+      setAutoStatus('');
+      setAutoProgress(0);
+      autoAbortRef.current = false;
+    }
+  }, [autoN, autoRunning, finishing, screencapBusy, batchId]);
+
   // 卸载时断开
   useEffect(() => {
     return () => {
@@ -166,9 +327,11 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
   }, []);
 
   const captureCount = screens.length;
-  const canScreencap = connected && !otherInProgress && !screencapBusy && !finishing;
-  const canFinish = connected && captureCount >= 1 && !finishing;
-  const canCancel = captureCount >= 1 && !finishing;
+  const canScreencap = connected && !otherInProgress && !screencapBusy && !finishing && !autoRunning;
+  const canFinish = connected && captureCount >= 1 && !finishing && !autoRunning;
+  const canCancel = captureCount >= 1 && !finishing && !autoRunning;
+  const canAutoScan =
+    connected && !otherInProgress && !screencapBusy && !finishing && !autoRunning && autoN >= 1;
 
   // ---- Renderers ----
 
@@ -285,7 +448,90 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
           )}
         </div>
 
-        {/* 操作说明 */}
+        {/* 自动扫描（推荐） */}
+        <div
+          style={{
+            background: '#fff',
+            border: '1px solid #ffd591',
+            borderRadius: 8,
+            padding: '12px 14px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <ThunderboltOutlined style={{ color: '#ff7a00' }} />
+            <b style={{ color: 'rgba(0,0,0,0.88)', fontSize: 13 }}>自动扫描（推荐）</b>
+          </div>
+          {!autoRunning ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>扫描前</span>
+                <InputNumber
+                  size="small"
+                  min={1}
+                  max={AUTO_SCAN_MAX}
+                  value={autoN}
+                  onChange={(v) => setAutoN(typeof v === 'number' ? v : 10)}
+                  style={{ width: 64 }}
+                  disabled={!canAutoScan && !autoRunning}
+                />
+                <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>单</span>
+              </div>
+              <Tooltip
+                title={
+                  !connected
+                    ? '先连接手机'
+                    : !canAutoScan
+                      ? '当前不能开始'
+                      : '手机停在「卖出 - 待发货」列表第一屏，点击开始'
+                }
+              >
+                <Button
+                  block
+                  size="small"
+                  type="primary"
+                  icon={<ThunderboltOutlined />}
+                  disabled={!canAutoScan}
+                  onClick={handleAutoScan}
+                  style={canAutoScan ? { background: '#ff7a00', borderColor: '#ff7a00' } : undefined}
+                >
+                  开始自动扫描
+                </Button>
+              </Tooltip>
+              <div
+                style={{
+                  marginTop: 8,
+                  fontSize: 11,
+                  color: 'rgba(0,0,0,0.45)',
+                  lineHeight: 1.6,
+                }}
+              >
+                先把手机停在闲鱼「卖出 - 待发货」列表的第一屏，剩下交给电脑：识别卡片 → 点开
+                → 展开订单编号 → 截屏 → 返回 → 滚动 → 下一单。
+              </div>
+            </>
+          ) : (
+            <>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: 'rgba(0,0,0,0.65)',
+                  marginBottom: 4,
+                  minHeight: 18,
+                }}
+              >
+                {autoStatus || '运行中…'}
+              </div>
+              <div style={{ fontSize: 13, marginBottom: 8 }}>
+                进度 <b>{autoProgress}</b> / {autoN}
+              </div>
+              <Button block size="small" danger onClick={handleAutoAbort}>
+                中止自动扫描
+              </Button>
+            </>
+          )}
+        </div>
+
+        {/* 操作说明（手动备用） */}
         <div
           style={{
             background: '#fff',
@@ -297,13 +543,10 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
             lineHeight: 1.7,
           }}
         >
-          <b style={{ color: 'rgba(0,0,0,0.88)' }}>典型流程：</b>
+          <b style={{ color: 'rgba(0,0,0,0.88)' }}>手动截屏（备用）：</b>
           <ol style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-            <li>USB 线把手机插电脑（开了 USB 调试）</li>
-            <li>点「连接手机」→ 浏览器弹设备列表，选你的手机</li>
-            <li>手机弹「允许 USB 调试吗？」点允许</li>
             <li>闲鱼 App → 待发货 → 点开第 1 单详情</li>
-            <li>点「截屏 (+1)」</li>
+            <li>点下方「截屏 (+1)」</li>
             <li>手机点返回 → 第 2 单详情 → 重复</li>
             <li>都截完点「完成截屏，开始解析」</li>
           </ol>

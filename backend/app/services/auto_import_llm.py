@@ -202,3 +202,141 @@ def parse_xianyu_screenshot(
             cleaned[:200],
         )
     return orders
+
+
+# ---------- 闲鱼自动化：定位 UI 元素 ----------
+
+XIANYU_DETECT_LIST_PROMPT = """你是 Android UI 视觉助理。任务：分析一张**闲鱼 App「卖出/待发货」列表页**截屏，找出当前画面里**所有完整可见的订单卡片**的中心点像素坐标。
+
+闲鱼订单卡片的视觉特征：
+- 每张卡片占据屏幕全宽，上下卡片之间有明显灰色分隔。
+- 卡片顶部是买家头像 + 昵称 + 「等待卖家发货」状态文字；
+- 卡片中部是商品缩略图 + 商品标题 + 价格；
+- 卡片底部是「更多 / 求小红花 / 联系买家 / 去发货」四个操作按钮。
+
+要求：
+- 「完整可见」= 卡片的顶部和底部都没被屏幕边缘 / 顶部 tab 栏 / 底部导航 / 被遮挡。半截露出的卡片不算。
+- 中心点坐标用**原始截屏像素坐标**（不是缩放后），原点在左上角。
+- 卡片可点击区域很大（整张卡都能点开详情），所以中心点取**商品缩略图所在那一行的垂直中心**最稳，避免和「更多/联系买家」按钮重叠。
+
+输出严格 JSON（不要 markdown 包装、不要解释文字），schema：
+{
+  "card_x": <int，卡片中心列 x 坐标，所有卡片共享同一个 x>,
+  "card_centers_y": [<int>, <int>, ...],
+  "card_height_px": <int，相邻卡片中心点 y 差值的中位数，用于后续滚动；如果只看见一张卡填 0>
+}
+
+如果整张图不是闲鱼待发货列表页（比如截到了详情页 / 其他 App / 闲鱼首页），返回 `{"card_x": 0, "card_centers_y": [], "card_height_px": 0}`。"""
+
+
+XIANYU_DETECT_EXPAND_PROMPT = """你是 Android UI 视觉助理。任务：分析一张**闲鱼订单详情页**截屏，找出「订单编号」那一行右侧那个**可点击的展开/折叠箭头**的中心点像素坐标。
+
+闲鱼订单详情页的特征：
+- 顶部「买家已付款，请尽快发货」/「等待卖家发货」之类的状态条
+- 收货地址卡片（姓名 + 电话 + 地址）
+- 商品卡片
+- 价格汇总
+- **关键行**：标签写「订单编号」，紧跟一串 19 位左右的纯数字，最右侧有一个小箭头（^ 或 v），可点击展开 / 收起「交易快照」「支付宝交易号」「买家昵称」「下单时间」「付款时间」几行。
+
+要求：
+- 中心点坐标用**原始截屏像素坐标**，原点在左上角。
+- 点击坐标尽量靠近箭头本身，但落在「订单编号」整行的 hit-area 里也能展开 — 所以可以**就取整行的几何中心 y、x 取「订单编号」字样和数字之间的空白 x**，最稳。
+- 不要选中支付宝交易号那一行的箭头（如果有的话），只要订单编号那一行。
+
+输出严格 JSON（不要 markdown 包装、不要解释文字），schema：
+{
+  "x": <int，点击中心 x>,
+  "y": <int，「订单编号」一行的中心 y>
+}
+
+如果整张图不是闲鱼订单详情页或者没看到「订单编号」标签，返回 `{"x": 0, "y": 0}`。"""
+
+
+def _vision_json_call(
+    image_bytes: bytes,
+    system_prompt: str,
+    user_hint: str,
+    *,
+    timeout_seconds: int = 30,
+) -> dict:
+    """Run a vision LLM call expecting a single JSON object response."""
+    provider = get_active_provider()
+    if provider is None:
+        raise LLMProviderError("no_api_key", "未配置 LLM API key", "")
+
+    user_content = [
+        {"type": "text", "text": user_hint},
+        {
+            "type": "image_url",
+            "image_url": {"url": _image_bytes_to_data_url(image_bytes)},
+        },
+    ]
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+
+    content = provider.chat_completion(
+        messages,
+        json_object=True,
+        timeout_seconds=timeout_seconds,
+    )
+    cleaned = _strip_markdown_json(content)
+    data = _safe_json_loads(cleaned)
+    if not isinstance(data, dict):
+        raise LLMProviderError("schema_invalid", "顶层不是 object", cleaned[:200])
+    return data
+
+
+def detect_xianyu_list_layout(image_bytes: bytes) -> dict:
+    """从一张闲鱼列表页截屏推断卡片中心点像素坐标。
+
+    返回 `{"card_x": int, "card_centers_y": list[int], "card_height_px": int}`。
+    """
+    data = _vision_json_call(
+        image_bytes,
+        XIANYU_DETECT_LIST_PROMPT,
+        "下面是闲鱼「卖出 / 待发货」列表页截屏，请按 schema 输出 JSON。",
+    )
+
+    try:
+        card_x = int(data.get("card_x") or 0)
+        centers_raw = data.get("card_centers_y") or []
+        if not isinstance(centers_raw, list):
+            raise ValueError("card_centers_y 不是 list")
+        card_centers_y = [int(v) for v in centers_raw]
+        card_height_px = int(data.get("card_height_px") or 0)
+    except (TypeError, ValueError) as exc:
+        raise LLMProviderError(
+            "schema_invalid",
+            f"detect_xianyu_list_layout 字段类型不对：{exc}",
+            json.dumps(data)[:200],
+        ) from exc
+
+    return {
+        "card_x": card_x,
+        "card_centers_y": card_centers_y,
+        "card_height_px": card_height_px,
+    }
+
+
+def detect_xianyu_expand_button(image_bytes: bytes) -> dict:
+    """从一张闲鱼详情页截屏推断「订单编号」展开按钮位置。
+
+    返回 `{"x": int, "y": int}`，未找到时 0/0。
+    """
+    data = _vision_json_call(
+        image_bytes,
+        XIANYU_DETECT_EXPAND_PROMPT,
+        "下面是闲鱼订单详情页截屏，请按 schema 找出「订单编号」展开按钮坐标，输出 JSON。",
+    )
+    try:
+        x = int(data.get("x") or 0)
+        y = int(data.get("y") or 0)
+    except (TypeError, ValueError) as exc:
+        raise LLMProviderError(
+            "schema_invalid",
+            f"detect_xianyu_expand_button 字段类型不对：{exc}",
+            json.dumps(data)[:200],
+        ) from exc
+    return {"x": x, "y": y}

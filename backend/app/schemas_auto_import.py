@@ -240,3 +240,21 @@ class ProbeXianyuResponse(BaseModel):
     diagnostics: list[Diagnostic] = []
     error_kind: Optional[str] = None
     error: Optional[str] = None
+
+
+# 自动扫描：把截屏喂 LLM 拿坐标
+class DetectListLayoutResponse(BaseModel):
+    ok: bool
+    card_x: int = 0
+    card_centers_y: list[int] = []
+    card_height_px: int = 0
+    error_kind: Optional[str] = None
+    error: Optional[str] = None
+
+
+class DetectExpandButtonResponse(BaseModel):
+    ok: bool
+    x: int = 0
+    y: int = 0
+    error_kind: Optional[str] = None
+    error: Optional[str] = None

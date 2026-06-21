@@ -149,6 +149,37 @@ export const api = {
           method: 'POST',
           body: JSON.stringify({ batch_id: batchId }),
         }),
+      detectListLayout: async (pngBytes: Uint8Array) => {
+        const fd = new FormData();
+        fd.append('png', new Blob([pngBytes as BlobPart], { type: 'image/png' }), 'list.png');
+        const resp = await fetch('/api/auto-import/xianyu/detect-list-layout', {
+          method: 'POST',
+          body: fd,
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json() as Promise<AutoImportDetectListLayoutResponse>;
+      },
+      detectExpandButton: async (pngBytes: Uint8Array) => {
+        const fd = new FormData();
+        fd.append('png', new Blob([pngBytes as BlobPart], { type: 'image/png' }), 'detail.png');
+        const resp = await fetch('/api/auto-import/xianyu/detect-expand-button', {
+          method: 'POST',
+          body: fd,
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json() as Promise<AutoImportDetectExpandResponse>;
+      },
+      uploadScreencap: async (batchId: string, pngBytes: Uint8Array) => {
+        const fd = new FormData();
+        fd.append('batch_id', batchId);
+        fd.append('png', new Blob([pngBytes as BlobPart], { type: 'image/png' }), 'auto.png');
+        const resp = await fetch('/api/auto-import/xianyu/screencap', {
+          method: 'POST',
+          body: fd,
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        return resp.json() as Promise<AutoImportScreencapResponse>;
+      },
       testAdb: (cfg: AutoImportAdbConfig) =>
         request<AutoImportTestAdbResponse>('/auto-import/xianyu/test-adb', {
           method: 'POST',
@@ -349,4 +380,21 @@ export interface AutoImportScanStatusResponse {
   batch_id: string;
   screens: AutoImportScanStatusScreen[];
   parsed_orders: unknown[];
+}
+
+export interface AutoImportDetectListLayoutResponse {
+  ok: boolean;
+  card_x: number;
+  card_centers_y: number[];
+  card_height_px: number;
+  error_kind?: string;
+  error?: string;
+}
+
+export interface AutoImportDetectExpandResponse {
+  ok: boolean;
+  x: number;
+  y: number;
+  error_kind?: string;
+  error?: string;
 }
