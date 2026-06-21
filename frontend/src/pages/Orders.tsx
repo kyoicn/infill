@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card, Table, Button, Modal, Select, InputNumber, Space, Popconfirm, Tag, Tabs, message, Divider, Input, Tooltip, Typography } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, SearchOutlined, LeftOutlined, DownOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -62,9 +62,22 @@ export default function Orders() {
   useEffect(() => {
     try { window.localStorage.setItem(WIDTH_LS_KEY, JSON.stringify(widths)); } catch { /* ignore */ }
   }, [widths]);
-  const handleResize = (key: string) => (_e: unknown, data: { size: { width: number } }) => {
-    setWidths((prev) => ({ ...prev, [key]: Math.max(60, data.size.width) }));
-  };
+  // 用 useCallback + Map 缓存每列的 resize 处理器，避免每次 render 都生成新函数
+  // ref — react-resizable 的 Resizable 看到 onResize 变了可能重新初始化引发循环
+  const resizeHandlerCacheRef = useMemo(() => new Map<string, (e: unknown, data: { size: { width: number } }) => void>(), []);
+  const handleResize = useCallback((key: string) => {
+    const cached = resizeHandlerCacheRef.get(key);
+    if (cached) return cached;
+    const fn = (_e: unknown, data: { size: { width: number } }) => {
+      setWidths((prev) => {
+        const newW = Math.max(60, Math.round(data.size.width));
+        if (prev[key] === newW) return prev;  // 同值不更新，防止无谓 re-render
+        return { ...prev, [key]: newW };
+      });
+    };
+    resizeHandlerCacheRef.set(key, fn);
+    return fn;
+  }, [resizeHandlerCacheRef]);
   const [drafts, setDrafts] = useState<OrderDraft[]>([]);
   const [editState, setEditState] = useState<EditState | null>(null);
 
