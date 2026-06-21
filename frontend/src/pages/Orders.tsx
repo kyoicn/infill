@@ -238,8 +238,46 @@ export default function Orders() {
             {
               title: '来源 / 买家',
               key: 'source',
-              width: 240,
+              width: 200,
               render: (_: any, rec: any) => <SourceCell order={rec} />,
+            },
+            {
+              title: '下单日期',
+              dataIndex: 'external_created_at',
+              key: 'external_created_at',
+              width: 140,
+              sorter: (a: any, b: any) => {
+                // 没下单时间（手工录入）的排到最后
+                const va = a.external_created_at || '';
+                const vb = b.external_created_at || '';
+                if (!va && !vb) return 0;
+                if (!va) return 1;
+                if (!vb) return -1;
+                return va.localeCompare(vb);
+              },
+              render: (v: string | null) =>
+                v
+                  ? <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'rgba(0,0,0,0.75)' }}>{v}</span>
+                  : <span style={{ color: '#ccc' }}>-</span>,
+            },
+            {
+              title: '收货信息',
+              width: 240,
+              render: (_: any, rec: any) => (
+                <ShippingBlock
+                  name={rec.recipient_name}
+                  phone={rec.recipient_phone}
+                  address={rec.recipient_address}
+                />
+              ),
+            },
+            {
+              title: '状态', dataIndex: 'status', width: 80,
+              render: (v: string) => <Tag color={v === 'pending' ? 'orange' : 'green'}>{v === 'pending' ? '待处理' : '已发货'}</Tag>,
+            },
+            {
+              title: '产品明细',
+              render: (_: any, rec: any) => renderItems(rec),
             },
             {
               title: '系统创建',
@@ -252,25 +290,6 @@ export default function Orders() {
                     hour: '2-digit', minute: '2-digit',
                   })}
                 </span>
-              ),
-            },
-            {
-              title: '状态', dataIndex: 'status', width: 80,
-              render: (v: string) => <Tag color={v === 'pending' ? 'orange' : 'green'}>{v === 'pending' ? '待处理' : '已发货'}</Tag>,
-            },
-            {
-              title: '产品明细',
-              render: (_: any, rec: any) => renderItems(rec),
-            },
-            {
-              title: '收货信息',
-              width: 240,
-              render: (_: any, rec: any) => (
-                <ShippingBlock
-                  name={rec.recipient_name}
-                  phone={rec.recipient_phone}
-                  address={rec.recipient_address}
-                />
               ),
             },
             {
@@ -448,7 +467,7 @@ export default function Orders() {
 }
 
 function SourceCell({ order }: { order: any }) {
-  const { platform, buyer_nickname, external_order_id, external_created_at } = order;
+  const { platform, buyer_nickname, external_order_id } = order;
   if (!platform) {
     return (
       <Tag color="default" style={{ margin: 0, fontSize: 11 }}>
@@ -485,17 +504,12 @@ function SourceCell({ order }: { order: any }) {
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              maxWidth: 220,
+              maxWidth: 180,
             }}
           >
             {external_order_id}
           </div>
         </Tooltip>
-      )}
-      {external_created_at && (
-        <div style={{ fontSize: 11, color: 'rgba(0,0,0,0.45)', fontFamily: 'monospace' }}>
-          下单 {external_created_at}
-        </div>
       )}
     </div>
   );
