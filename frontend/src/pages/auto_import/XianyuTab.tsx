@@ -24,7 +24,24 @@ const TAP_TO_DETAIL_MS = 2200;       // 列表 tap → 详情页 loading 完成
 const TAP_TO_EXPAND_MS = 500;        // 「订单编号」点击 → 展开动画
 const BACK_TO_LIST_MS = 700;         // back → 列表稳定
 const SCROLL_SETTLE_MS = 800;        // swipe → 列表稳定
+
+// 🚨 高危坐标安全闸：屏幕底部 12% 一律视为「联系买家 / 取消订单 / 去发货」操作栏区，
+// LLM 返回的任何 tap 落到这里就立即中止——比 LLM 输出更靠谱的最后一道防线。
+const DANGER_ZONE_FRAC = 0.12;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function assertSafeTap(label: string, x: number, y: number, screenW: number, screenH: number): void {
+  const dangerY = screenH - Math.round(screenH * DANGER_ZONE_FRAC);
+  if (y >= dangerY) {
+    throw new Error(
+      `安全闸触发：${label} y=${y} 落在屏幕底部高危带（≥${dangerY}），` +
+      `禁止点击（怕误碰「去发货 / 取消订单 / 联系买家」按钮）`,
+    );
+  }
+  if (x < 0 || x > screenW || y < 0) {
+    throw new Error(`安全闸触发：${label} 坐标 (${x},${y}) 越界（屏幕 ${screenW}x${screenH}）`);
+  }
+}
 
 interface XianyuTabProps {
   onScan: (batchId: string, scan: AutoImportScanResponse) => void;
@@ -242,6 +259,8 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
 
         // —— 2. tap 列表卡片 → 等详情页 ——
         const targetY = visibleCardYs.shift()!;
+        // 🚨 安全闸：坐标落在底部高危带就立刻终止
+        assertSafeTap(`卡片 #${scanned + 1}`, cardX, targetY, screenSize.w, screenSize.h);
         setAutoStatus(`点开第 ${scanned + 1} 单（共 ${autoN}）…`);
         await webadbTap(cardX, targetY);
         await sleep(TAP_TO_DETAIL_MS);
@@ -261,6 +280,13 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
             throw new Error(
               `「订单编号」按钮识别失败：${expand.error ?? expand.error_kind ?? '坐标返回 0/0'}`,
             );
+          }
+          // 🚨 安全闸：展开按钮 y 落在底部高危带也拒绝（防 LLM 把「去发货」黄按钮误识成展开箭头）
+          try {
+            assertSafeTap('「订单编号」展开按钮', expand.x, expand.y, screenSize.w, screenSize.h);
+          } catch (e) {
+            await pressBack();
+            throw e;
           }
           expandX = expand.x;
           expandY = expand.y;
@@ -463,6 +489,37 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
           </div>
           {!autoRunning ? (
             <>
+              <div
+                style={{
+                  marginBottom: 10,
+                  padding: '8px 10px',
+                  background: '#fff7e6',
+                  border: '1px solid #ffd591',
+                  borderRadius: 6,
+                  fontSize: 11,
+                  color: 'rgba(0,0,0,0.75)',
+                  lineHeight: 1.55,
+                }}
+              >
+                ⚠️ 开始前请把手机停在闲鱼「<b>卖出 - 待发货</b>」列表的<b>第一屏</b>
+                （最新单在最上面）。程序会从顶部往下逐单扫描；中途切到别的页面会失败。
+              </div>
+              <div
+                style={{
+                  marginBottom: 10,
+                  padding: '8px 10px',
+                  background: '#fff1f0',
+                  border: '1px solid #ffa39e',
+                  borderRadius: 6,
+                  fontSize: 11,
+                  color: '#a8071a',
+                  lineHeight: 1.55,
+                }}
+              >
+                🚨 已加硬性安全闸：自动点击坐标如果落在屏幕底部
+                {Math.round(DANGER_ZONE_FRAC * 100)}% 高危带（「联系买家 / 取消订单 / 去发货」按钮区域），
+                立即中止——杜绝误触。
+              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                 <span style={{ fontSize: 12, color: 'rgba(0,0,0,0.65)' }}>扫描前</span>
                 <InputNumber
@@ -497,17 +554,6 @@ export default function XianyuTab({ onScan, otherInProgress }: XianyuTabProps) {
                   开始自动扫描
                 </Button>
               </Tooltip>
-              <div
-                style={{
-                  marginTop: 8,
-                  fontSize: 11,
-                  color: 'rgba(0,0,0,0.45)',
-                  lineHeight: 1.6,
-                }}
-              >
-                先把手机停在闲鱼「卖出 - 待发货」列表的第一屏，剩下交给电脑：识别卡片 → 点开
-                → 展开订单编号 → 截屏 → 返回 → 滚动 → 下一单。
-              </div>
             </>
           ) : (
             <>
