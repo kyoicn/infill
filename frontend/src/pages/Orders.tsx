@@ -356,6 +356,11 @@ export default function Orders() {
         .orders-col-resize-handle:active {
           background: rgba(22, 119, 255, 0.4);
         }
+        /* tableLayout:'fixed' 时 antd 不自动撑满，强制 100% 让\`产品明细\`
+           这种没设 width 的伸缩列有空间 */
+        .orders-table .ant-table-content > table {
+          width: 100% !important;
+        }
       `}</style>
       <h2 style={{ marginTop: 0 }}>订单管理</h2>
 
@@ -398,11 +403,13 @@ export default function Orders() {
         </div>
 
         <Table
+          className="orders-table"
           dataSource={filteredOrders}
           rowKey="id"
           size="small"
           pagination={false}  // 不分页，全部展示；密集时用顶部搜索框过滤
-          scroll={{ x: 'max-content' }}  // 强制 fixed layout，列宽才会被实际渲染
+          tableLayout="fixed"  // 让列 width 真正生效；不用 scroll.x:'max-content' —
+                               // 那个让总宽随单列拖宽涨，导致拖动时列"飘走"
           expandable={{
             expandedRowRender: renderExpanded,
             expandedRowKeys: expandedKeys,
@@ -424,7 +431,7 @@ export default function Orders() {
             {
               title: '来源 / 买家',
               key: 'source',
-              width: widths.source ?? 220,
+              width: widths.source ?? 180,
               onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('source') }),
               render: (_: any, rec: any) => <SourceCell order={rec} />,
             },
@@ -432,7 +439,7 @@ export default function Orders() {
               title: '下单日期',
               dataIndex: 'external_created_at',
               key: 'external_created_at',
-              width: widths.external_created_at ?? 160,
+              width: widths.external_created_at ?? 140,
               onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('external_created_at') }),
               sortOrder,  // 受控，从 localStorage 恢复
               sorter: (a: any, b: any) => {
@@ -465,7 +472,7 @@ export default function Orders() {
             {
               title: '收货信息',
               key: 'shipping',
-              width: widths.shipping ?? 240,
+              width: widths.shipping ?? 200,
               onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('shipping') }),
               render: (_: any, rec: any) => (
                 <ShippingBlock
@@ -490,17 +497,17 @@ export default function Orders() {
                 }]
               : []),
             {
+              // 产品明细当伸缩列：不设 width，吸收其它列拖宽/拖窄的差额，
+              // 总表宽始终 = 容器宽度。这样拖其它列就不会飘。
               title: '产品明细',
               key: 'products',
-              width: widths.products ?? 360,
-              onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('products') }),
               render: (_: any, rec: any) => renderItems(rec),
             },
             {
               title: '备注',
               dataIndex: 'notes',
               key: 'notes',
-              width: widths.notes ?? 100,
+              width: widths.notes ?? 80,
               onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('notes') }),
               ellipsis: { showTitle: false } as any,
               render: (v: string) => v
@@ -510,7 +517,7 @@ export default function Orders() {
             {
               title: '操作',
               key: 'actions',
-              width: widths.actions ?? 210,
+              width: widths.actions ?? 180,
               onHeaderCell: (col: any) => ({ width: col.width, onResize: handleResize('actions') }),
               render: (_: any, rec: any) => {
                 const isExpanded = expandedKeys.includes(rec.id);
