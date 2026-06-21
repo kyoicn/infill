@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card, Table, Button, Modal, Select, InputNumber, Space, Popconfirm, Tag, Tabs, message, Divider, Input, Tooltip, Typography } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, SearchOutlined } from '@ant-design/icons';
+import { PlusOutlined, DeleteOutlined, EditOutlined, SearchOutlined, LeftOutlined, DownOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api/client';
 import ShippingBlock from '../components/ShippingBlock';
@@ -26,6 +26,7 @@ export default function Orders() {
   const [modal, setModal] = useState(false);
   const [tab, setTab] = useState('pending');
   const [query, setQuery] = useState('');
+  const [expandedKeys, setExpandedKeys] = useState<number[]>([]);
   const [drafts, setDrafts] = useState<OrderDraft[]>([]);
   const [editState, setEditState] = useState<EditState | null>(null);
 
@@ -204,11 +205,14 @@ export default function Orders() {
     );
   };
 
-  // 客户端搜索过滤：跨 buyer / external_order_id / recipient_name / phone / notes 模糊匹配
+  // 客户端搜索过滤：跨 买家 / 外部单号 / 收件人 / 电话 / 备注 / 内部 id / 产品名 模糊匹配
   const filteredOrders = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return orders;
     return orders.filter((o) => {
+      const productNames = (o.items || [])
+        .map((it: any) => getProdName(it.product_id))
+        .join(' ');
       const hay = [
         o.buyer_nickname,
         o.external_order_id,
@@ -216,13 +220,14 @@ export default function Orders() {
         o.recipient_phone,
         o.notes,
         String(o.id),
+        productNames,
       ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [orders, query]);
+  }, [orders, query, products]);
 
   // 下单时间格式化：'2026-06-18T15:18:50' → '2026-06-18 15:18'
   const fmtExternal = (v: string) => v.replace('T', ' ').slice(0, 16);
@@ -336,7 +341,11 @@ export default function Orders() {
           rowKey="id"
           size="small"
           pagination={{ pageSize: 20, showTotal: (n) => `共 ${n} 单` }}
-          expandable={{ expandedRowRender: renderExpanded, expandRowByClick: false }}
+          expandable={{
+            expandedRowRender: renderExpanded,
+            expandedRowKeys: expandedKeys,
+            showExpandColumn: false,  // 隐藏首列默认 + 图标，改成操作列里的自定义按钮
+          }}
           columns={[
             {
               title: '来源 / 买家',
@@ -350,6 +359,7 @@ export default function Orders() {
               key: 'external_created_at',
               width: 160,
               defaultSortOrder: 'descend',
+              sortDirections: ['ascend', 'descend'],  // 不要 antd 默认的第三态「取消排序」，只在升降之间循环
               sorter: (a: any, b: any) => {
                 // 没下单时间（手工录入）的排到最后
                 const va = a.external_created_at || '';
@@ -414,22 +424,38 @@ export default function Orders() {
                 : <span style={{ color: '#ccc' }}>-</span>,
             },
             {
-              title: '操作', width: 180,
-              render: (_: any, rec: any) => (
-                <Space>
-                  <Tooltip title="编辑订单">
-                    <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(rec)} />
-                  </Tooltip>
-                  {rec.status === 'pending' && (
-                    <Popconfirm title="确认发货？库存将自动扣减。" onConfirm={() => shipOrder(rec.id)}>
-                      <Button size="small" type="primary">发货</Button>
+              title: '操作', width: 210,
+              render: (_: any, rec: any) => {
+                const isExpanded = expandedKeys.includes(rec.id);
+                return (
+                  <Space>
+                    <Tooltip title="编辑订单">
+                      <Button size="small" icon={<EditOutlined />} onClick={() => openEditModal(rec)} />
+                    </Tooltip>
+                    {rec.status === 'pending' && (
+                      <Popconfirm title="确认发货？库存将自动扣减。" onConfirm={() => shipOrder(rec.id)}>
+                        <Button size="small" type="primary">发货</Button>
+                      </Popconfirm>
+                    )}
+                    <Popconfirm title="删除此订单？此操作无法恢复" onConfirm={() => deleteOrder(rec.id)}>
+                      <Button size="small" danger icon={<DeleteOutlined />} />
                     </Popconfirm>
-                  )}
-                  <Popconfirm title="删除此订单？此操作无法恢复" onConfirm={() => deleteOrder(rec.id)}>
-                    <Button size="small" danger icon={<DeleteOutlined />} />
-                  </Popconfirm>
-                </Space>
-              ),
+                    <Tooltip title={isExpanded ? '收起详情' : '展开详情'}>
+                      <Button
+                        size="small"
+                        icon={isExpanded ? <DownOutlined /> : <LeftOutlined />}
+                        onClick={() =>
+                          setExpandedKeys((prev) =>
+                            prev.includes(rec.id)
+                              ? prev.filter((k) => k !== rec.id)
+                              : [...prev, rec.id],
+                          )
+                        }
+                      />
+                    </Tooltip>
+                  </Space>
+                );
+              },
             },
           ]}
         />
