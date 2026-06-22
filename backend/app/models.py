@@ -7,6 +7,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     String,
@@ -119,6 +120,18 @@ class Printer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
+    # prd-007 凭证三列：用于守护进程查询打印机状态（Bambu MQTT）。
+    # 旧机型无凭证 → 全 NULL；nullable=True 允许逐步补齐。
+    ip = Column(String(64), nullable=True, default=None)
+    serial = Column(String(32), nullable=True, default=None)
+    access_code = Column(String(16), nullable=True, default=None)
+
+    status_samples = relationship(
+        "PrinterStatusSample",
+        back_populates="printer",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
 
 class ScheduleConfig(Base):
@@ -179,3 +192,23 @@ class PrintTask(Base):
     batch = relationship("PrintBatch", back_populates="tasks")
     printer = relationship("Printer")
     print_config = relationship("PrintConfig")
+
+
+class PrinterStatusSample(Base):
+    __tablename__ = "printer_status_sample"
+
+    id = Column(Integer, primary_key=True, index=True)
+    printer_id = Column(
+        Integer,
+        ForeignKey("printers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    ts = Column(DateTime, nullable=False, index=True)
+    state = Column(String(16), nullable=False)  # running / pause / idle / offline
+
+    __table_args__ = (
+        Index("ix_printer_status_sample_printer_ts", "printer_id", "ts"),
+    )
+
+    printer = relationship("Printer", back_populates="status_samples")
