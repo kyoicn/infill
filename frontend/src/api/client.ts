@@ -12,6 +12,58 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// ============================================================================
+// 打印机状态相关类型（prd-007 / printer-status）
+// ============================================================================
+
+export type PrinterState = 'running' | 'pause' | 'idle' | 'offline';
+export type PrinterStateOrUnconfigured = PrinterState | 'unconfigured';
+
+export interface TimelineSegment {
+  start_minute: number;
+  end_minute: number;
+  state: PrinterState;
+}
+
+export interface PrinterStatusSnapshot {
+  printer_id: number;
+  name: string;
+  state: PrinterStateOrUnconfigured;
+  today_working_minutes: number;
+  today_total_minutes: number;
+  last_state_change_ts: string | null;
+  timeline: TimelineSegment[];
+}
+
+export interface PrinterStatusEvent {
+  type: 'state_change';
+  printer_id: number;
+  state: PrinterState;
+  ts: string;
+}
+
+export interface PrinterStatusPing {
+  type: 'ping';
+  ts?: string;
+}
+
+export type PrinterWSMessage = PrinterStatusEvent | PrinterStatusPing;
+
+export interface Printer {
+  id: number;
+  name: string;
+  ip: string | null;
+  serial: string | null;
+  access_code_masked: string | null;
+}
+
+export type PrinterUpdateBody = Partial<{
+  name: string;
+  ip: string;
+  serial: string;
+  access_code: string;
+}>;
+
 export const api = {
   // 目录（只读，数据源为 catalog.yaml）
   getComponents: () => request<any[]>('/components'),
@@ -33,10 +85,12 @@ export const api = {
   getSurplus: () => request<any[]>('/inventory/surplus'),
 
   // 打印机
-  getPrinters: () => request<any[]>('/printers'),
+  getPrinters: () => request<Printer[]>('/printers'),
   createPrinter: (data: any) => request<any>('/printers', { method: 'POST', body: JSON.stringify(data) }),
-  updatePrinter: (id: number, data: any) => request<any>(`/printers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updatePrinter: (id: number, body: PrinterUpdateBody) =>
+    request<Printer>(`/printers/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deletePrinter: (id: number) => request<any>(`/printers/${id}`, { method: 'DELETE' }),
+  getPrinterStatusSnapshot: () => request<PrinterStatusSnapshot[]>('/printers/status/snapshot'),
 
   // 配置
   getScheduleConfigs: () => request<any[]>('/config/schedule'),
