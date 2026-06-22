@@ -1,8 +1,227 @@
 # PM Review
 
-Last updated: 2026-06-18 23:10:00 (UTC+8)
-Iteration: 4（prd-006 自动导入订单 — CUJ-1/2/3/4 端到端实现）
-Scope: prd-006-auto-import-orders 4 个 CUJ（CUJ-1 小红书扫单 / CUJ-2 闲鱼扫单 / CUJ-3 预览校对 + 一键导入 / CUJ-4 自动导入设置）。prd-005 在 iter3 已 completed，本轮未触及；prd-000~004 同样不在产品评审范围。
+Last updated: 2026-06-23 00:30:00 (UTC+8)
+Iteration: 5（prd-007 打印机状态与每日利用率监测 — CUJ-1/2 端到端实现）
+Scope: prd-007-printer-status 2 个 CUJ（CUJ-1 配置打印机网络凭证 / CUJ-2 查看打印机状态页）。prd-006 仍 active 待 PM 重新评审；prd-005 在 iter3 已 completed；prd-000~004 不在本轮范围。
+
+---
+
+## Iter5 — prd-007
+
+### Overall Assessment
+
+iter5 把"作坊主肉眼跑去看 LCD 才知道哪几台还在打"压到了"打开页面 4 张卡片一眼扫完"的工程骨架 — CUJ-1 编辑弹窗（名称+IP+Serial+访问码 + access_code 三态：unchanged/set/cleared）+ CUJ-2 状态页（4 卡片 + 状态徽章 + 利用率 + 24h 时间轴 + WS 三态指示器）端到端落地；后端契约（凭证 partial update + reconcile_one / unsubscribe_one + utilization 纯函数 + Broadcaster fanout + WS endpoint）扎实。QA Retry 1 把首轮 2 HIGH（mount 不拉 snapshot / vite proxy 缺 ws:true）+ 2 MEDIUM + 3 LOW（antd deprecation）全部闭环，11/13 AC PASS。
+
+但走完整 product walk（启动 backend + frontend、亲手点编辑弹窗、亲眼看时间轴渲染、亲手杀 backend 看失败态）后我有**两个 CUJ 都判 Caveats** — 主流程跑得通，作坊主能完成"补凭证 + 查状态"，但有若干 PRD 写了 / 实现取了简化方向 / 用户首次体验会困惑的体感毛刺。
+
+**Per-verdict 计数**：Satisfied = 0；Caveats = 2（CUJ-1、CUJ-2）；Not done = 0。
+
+价值校验：作坊主拿到"打开页一眼看哪几台在打 / 今日跑了多少"的产品承诺，在以下条件下成立 ——
+1. 4 台机都在同一局域网、IP 可达、access_code 正确（PRD 关键约束 #4：MQTT 握手失败统一显示离线，用户得自己排查）
+2. 守护进程没崩、后端没重启（PRD 关键约束 #1：进程崩了丢订阅状态、重启窗口期假象离线）
+3. 用户认知到"24h bar = 自然日 0:00→现在"而不是"最近 24 小时滚动窗口"（PRD 设计原意，但用户首次心智可能错位）
+4. 用户知道访问码在打印机 LCD 哪里找（PRD CUJ-1 Step 1 写了"placeholder「LCD → 设置 → 网络 → 访问码取得」"，但实现的 placeholder 是"留空保持不变，输入新值覆盖"覆盖掉了来源提示）
+
+满足这 4 条时主流程顺畅。不满足任一条时 fallback 路径**没那么 actionable**：离线徽章没有"为什么 / 怎么办"指引；时间轴没有 legend；snapshot 失败时弹"请求失败: 502"对作坊主不友好。这不是阻断发布的 bug，是 v1 起步形态对体感的妥协。**整体可接受，但建议下一 iter 用半个 sprint 收 UX 抛光 + 真硬件接受测试再升 completed。**
+
+### Walk 覆盖
+
+- CUJ-1：8/9 Journey Step + Edge case「清除凭证 / 编辑名称未改 / 三字段只填一两个」3 项 + AC 1/2/3 walk（gen real browser；clear 路径走通；access_code 三态实测；自然日时间轴渲染观察）
+- CUJ-2：6/6 Journey Step + Edge case「打印机全部未配置 / snapshot 失败 / 离线段渲染 / 三态指示器 / Empty 重试」5 项 + AC 1/2/3/4/5/7 walk（real browser + curl 直查 snapshot / DB sample / daemon 心跳行为）
+- 真打印机相关 AC 8/11/edge「WS 重连屡次失败」**未 walk**（无真硬件，且超出 dev-cycle 本轮 scope，沿用 QA WAIVED 处理）
+
+### Per-CUJ Verdict
+
+#### CUJ-1（prd-007）: 配置打印机网络凭证 — Caveats
+
+**QA verdict** (from qa-report.md): PASS（retry 1）
+**PM verdict**: Caveats
+
+**Assessment**:
+
+按用户"作坊主拿到打印机 → 在 LCD 上找 IP / Serial / Access Code → 进系统补凭证 → 编辑弹窗 → 保存 → 状态页看徽章切活"路径 walk —
+
+1. **入口**：「系统设置 → 打印机管理」表格每行右侧有「编辑」按钮 + 删除按钮；名称右侧若三字段缺一则跟一个「未配置监测」灰色 Tag。AC #1 / #8 PASS。**这是 PRD CUJ-1 + iter4 PM Review prd-004 差异 #6（改名无 UI 入口）的同时解决** — 一个入口承担两个职责（改名 + 补凭证），心智合理。
+
+2. **编辑弹窗 — 整体结构对**：4 字段（名称 / IP / Serial / 访问码）纵向排列，访问码是 password 框（带 antd 内置眼睛图标），底部一段灰色 hint「IP / 序列号 / 访问码三项全填才会启动监测；任一为空显示「未配置」。访问码勿外传。」结构与 PRD 描述一致。
+
+3. **「Cancel」「OK」按钮是英文 — 真实损失**：弹窗底部 antd 默认 footer 按钮渲染为 `Cancel` / `OK` 而非中文。这是 antd 6.x 没在 `ConfigProvider` 注入 `zh_CN` locale 的副作用 — 整页中文里突然两个英文按钮，**作坊主首次进来会停顿一秒**「我点哪个 / 保存是哪个」。这是 v1 体感的真实瑕疵。**PRD AC 没明示按钮文案，但作为 UX 标准这条该补**。属于 LOW UX bug 范畴，但发生在产品最关键的"保存凭证"路径上，建议下一 iter 必修。
+
+4. **「访问码勿外传」OK 但缺关键引导**：PRD CUJ-1 Step 1 明确写**「访问码 Access Code」字段的 placeholder「LCD → 设置 → 网络 → 访问码取得」**。实际实现 placeholder 是 `留空保持不变，输入新值覆盖` — 这覆盖了 "编辑/不编辑" 的语义提示，但**完全丢失了"去哪里找访问码"的引导**。同样，IP / Serial 字段的 placeholder 是格式示例（`192.168.1.123` / `01P00A123456789`），也没告诉首次用户"这两个在打印机 LCD 哪一页找"。**实际影响**：作坊主第一次配 4 台机时，得自己去 google / 翻 Bambu 文档才知道访问码在 "LCD → 设置 → 网络"。**这是 PRD 写了 / 实现没做的明确差异点**，属于 spec-impl drift，且后果直接（多花 5~10 分钟找信息）。
+
+5. **「清除访问码」link 太显眼且无二次确认 — 真实误点损失风险**：实现把「清除访问码」做成 antd `Button type="link"`，**贴在 label 行右侧**（CLEAR_BTN_BOX 实测在 label 同一行 y=410），蓝色文字、cursor pointer。**首次进编辑弹窗的作坊主可能本能去试点它看会怎样** → 进入 cleared 模式（access_code 字段下方变红字 "将清除访问码"）→ 用户没特别留意 / 顺手点 OK → DB access_code 被 NULL 化 → 守护进程立刻 unsubscribe 该机。**虽然有 in-place warning text 显示，但**：
+   - 没有 antd Popconfirm 二次确认
+   - 没有 "如果你只是想关掉这台机的监测，请改去删整行" 的引导
+   - 操作不可撤销（清掉后用户得回去 LCD 重抄访问码）
+   
+   **建议下一 iter 把「清除访问码」改为 Popconfirm 包一层「确定清除？需要重新到打印机 LCD 抄写 8 位访问码才能恢复监测」二次确认**。code 改动 5 行。
+   
+   PRD CUJ-1 Step 1 Details 没明示二次确认要求 — 这是 spec gap，**PM 角度建议补**。
+
+6. **三态 access_code（unchanged/set/cleared）的设计是好的**：用户没动密码框 → 不发送 access_code → 后端保留旧值；输了新值 → 发送新值；点了清除按钮 → 发送空串。代码 `EditPrinterModal.tsx:60-82` 把这三态用 `accessCodeMode` 显式建模，**比"靠输入框是否 dirty 推断"更稳**。`exclude_unset` 在后端配合得严丝合缝。AC #2 / #3 / #9 PASS。
+
+7. **「当前：****8888；留空则保持不变」hint**：清晰直观（已实测 `CURRENT_UNSET=1`、密码框预填空状态下显示 "当前：未设置"），让用户知道"我现在看到的是掩码 / 未设置"。这条做得好。
+
+8. **批量新增弹窗保持只填名称**：PRD CUJ-1 Step 3 明确保留这条快路径（凭证每台都不一样 → 不混入批量弹窗）。Settings.tsx 的批量新增 modal 没改，OK。
+
+9. **删除打印机 + FK CASCADE**：AC #6 自动测覆盖 + 路由 unsubscribe_one 有 try/except 容错（`c469c8f` TL fix）。
+
+10. **凭证错时统一显示「离线」(PRD ack)**：PRD Edge case 已 ack "不区分网络不通 / 凭证错"。但**离线徽章本身在状态页上没有 actionable 提示**（"凭证可能错 / 网络可能不通 / 点这里重试" 等），用户得自己回 Settings 编辑。这条**算 CUJ-2 的 caveat 不算 CUJ-1**，但与 CUJ-1 是配套关系，体感上是一体的。
+
+**Caveats / gaps**:
+- 「Cancel」「OK」按钮文案英文（antd locale 未注入 zh_CN）— v1 真实体感瑕疵
+- 访问码字段 placeholder「LCD → 设置 → 网络 → 访问码取得」**未实现** — 与 PRD CUJ-1 Step 1 直接 drift；首次用户找凭证多走 5~10 分钟
+- IP / Serial 字段 placeholder 仅给格式示例，缺"去 LCD 哪一页找"引导
+- 「清除访问码」link 太显眼 + 无二次确认 — 误点直接清掉凭证（有 in-place warning text 但弱保护）
+
+**Spec gap**:
+- PRD CUJ-1 Step 1 Details 没明示「清除访问码」是否需要二次确认 — 建议下一 iter 修 PRD 加这条 + 加 Popconfirm
+- IP / Serial 字段的"去 LCD 哪一页找"提示要不要加（PRD 只提到访问码 placeholder，对 IP / Serial 未明示） — 建议下一 iter 把三字段引导都加上
+
+---
+
+#### CUJ-2（prd-007）: 查看打印机状态页 — Caveats
+
+**QA verdict** (from qa-report.md): PASS（retry 1）
+**PM verdict**: Caveats
+
+**Assessment**:
+
+按用户"作坊主想知道当下哪几台还在打 / 哪几台空 / 今天产能"路径 walk —
+
+1. **入口 + 4 卡片网格**：主导航「打印机状态」入口 click 进 `/printers/status`，渲染 4 张卡片网格，标题「打印机状态」+ 右上角 ✓「实时连接中」绿点。响应式 4/2/1 列断点（lg/sm/xs）实测在 1440 视口下 4 列。AC #1 / #2 PASS。**导航顺序：仪表盘 → 产品目录 → 产品录入 → 订单管理 → 库存管理 → 排班中心 → 打印机状态 → 系统设置** — PRD 写「在 Dashboard 与系统设置之间」字面上达成（中间夹了多个旧菜单），但**意图上是「Dashboard 旁边 + 系统设置旁边」**，实际位置是"系统设置左侧"。这条没违 spec，但**首次用户可能找一会儿**（菜单一长串中间）— 建议下一 iter 考虑把"打印机状态"提到主导航靠前位置（如 Dashboard 之后），或者在 Dashboard 加一个状态卡片直跳。
+
+2. **状态卡片版式 — 紧凑且信息密度对**：标题（左：1号 加粗 / 右：状态徽章）、主体（今日已工作 X 分 / 24 小时、利用率 Z.Z%）、底部 24h timeline + 0/6/12/18/24 刻度。视觉上**第一眼能扫完 4 张** — 心智负担低。AC #3 / #5 / #6 PASS。
+
+3. **「打印中」徽章呼吸点动画**：`PrinterCard.tsx:46-58` 实测代码层实现了 6px 小圆点 + `printerStatusPulse` 1.4s 呼吸动画，**但本次实测没有真机 running 状态可观察** — 沿用 QA WAIVED 处理。
+
+4. **24h 时间轴 — 这是最大的体感问题**：实测 1 号机（凭证齐全但 IP 不通）渲染为「时间轴左端 1.6%（00:00~00:23）一条小红条纹 + 右侧 98.4% 全空白灰底 + 黑色"现在"竖线在 1.6% 处」。**作坊主第一眼会困惑**：「我家 1 号离线了一晚上啊，怎么 bar 只有最左边一小段红？」
+   
+   根因是 PRD 设计 「24h bar = 自然日 0:00~24:00（黑竖线指示当前时刻）」，**但用户的心智模型是「24h bar = 最近 24 小时滚动窗口（黑竖线在右端）」**。当用户在凌晨 00:23 看时间轴时（实测当下时间），这两个口径产生最大差异：自然日口径下整 bar 左端 1.6% 有内容、右端 98.4% 是"未来"灰；滚动口径下 bar 整条 24h 都填满了历史。
+   
+   **PRD 设计有意按自然日切**（"利用率分母固定自然日 24h，按服务器本地时区切日"）。这是合理的 — 利用率分母固定 1440 让早晨 0~6 点不会出现 utilization%=NaN 或者前一天数据污染。**但 UX 没消化这个模型** — 没有任何视觉信号告诉用户「右半部分灰底 = 今天还没到 / 不是数据缺失」。
+   
+   **建议下一 iter**：
+     - 在时间轴下方刻度旁加一个小字 hint "今日 0:00 起" / "Today's timeline starts at midnight"
+     - 或者在"现在"黑竖线**右侧** 把灰底改为淡条纹（`repeating-linear-gradient 浅灰`）表示"未到"，与"已过去但 idle" 的实灰区分
+     - 或者在状态页顶部加一行小字「按自然日统计；利用率分母 = 24h（00:00~24:00）」
+   
+   PRD AC #6 只要求"画一条深色竖线指示『现在』"，**没规定竖线右侧 UI** — 这是 spec gap。
+
+5. **「未配置」卡片 — tooltip 文案错位**：实测 2/3/4 号「未配置监测」灰色 dashed Tag 显示 OK。`PrinterCard.tsx:70-74` 的 Tooltip 文案是 **「点右上角『设置』补填 IP / 序列号 / 访问码」**。**但状态页右上角是 WS 三态指示器，不是设置入口** —— 这是真实文案错位。用户照 tooltip 提示去找右上角设置 → 找不到 → 困惑。**建议下一 iter 改为「去『系统设置 → 打印机管理』补填 IP / 序列号 / 访问码」并加 link 直跳 `/settings`**。修改 1 行。
+
+6. **离线徽章无 actionable 提示**：1 号红底「离线」徽章渲染，但**没有任何"为什么 / 怎么办"指引**。PRD Edge case 已 ack "不区分网络不通 / 凭证错"，但完全没出 escape hatch — 作坊主看到「离线」要自己推断「可能是凭证错 / 可能是机断电 / 可能是 WiFi 离了 / 可能是后端 daemon 挂了」，然后自己回 Settings 编辑 OR 物理走过去看 LCD。**这对单人作坊主是个真实的产品问题** — 监控仪表盘没告诉他下一步该做什么。
+   
+   **建议下一 iter**：离线徽章 hover → tooltip「最后一次成功连接：xx 分钟前。可能原因：(a) 打印机断电/离网，(b) IP 变了，(c) 访问码错。[去 Settings 检查凭证 →]」link。代码改动 ~20 行（PrinterCard 加 tooltip）。
+
+7. **时间轴无 legend** — 实测 `LEGEND_PRESENT=0`：状态页没有"绿=打印中 / 黄=暂停 / 灰=空闲 / 红条纹=离线"的颜色图例。**首次用户看不懂颜色**。tooltip 要 hover 才出来，且只对单段有效。**PRD AC 没明示要 legend，但 UX 标准这条该有**。
+   
+   **建议下一 iter**：状态页顶部 / 右下角加一行小字图例 `🟢 打印中  🟡 暂停  ⚫ 空闲  🔴 离线`（用与时间轴一致的色块）。代码改动 ~10 行。
+
+8. **WS 三态指示器**：实测「实时连接中」绿点正常显示，杀 backend 后 `重连中…` 黄色文案预期工作（QA 场景 D 已验过）；「实时连接断开」红文案我没等到 90s+ 触发（与 QA 一致 WAIVED），代码路径在 `usePrinterStatusWS.ts:67` 已实现。AC #7 PASS（功能层）。
+
+9. **mount 时先 snapshot 再 WS**：实测 Network requests 看到 `/api/printers/status/snapshot` 在 mount 时被请求 3 次（useEffect 调一次 + WS onopen 调一次 + dev StrictMode 双 mount artifact 一次）。**功能层 OK**（QA Retry 1 已验 PRD AC #7「先 snapshot 后 WS」契约）。但 3 次请求对单用户、4 台机、SQLite 是无压力的，**未来若 100+ 台机或多用户**这条 N+1 + 3x 重复会成问题。TL P2 carry-over 已记。
+
+10. **空态「暂无打印机」+ 链接到 `/settings`**：代码层 `PrinterStatus.tsx:108` 写了 `<a href="/settings">` — **会触发整页 reload**（不是 react-router 的 navigate），用户跳过去会丢前端态，回退时状态页要重连 WS。**建议下一 iter 改用 react-router `<Link>`**。微差，本轮 QA 没触发（4 台机都有）。
+
+11. **snapshot 失败「请求失败: 502」**：实测杀 backend 后状态页 Empty + 「重试」按钮渲染 OK，但**错误描述是 "请求失败: 502"** — 这是 raw HTTP error 透出来的，**作坊主不知道 502 是什么意思**。PRD CUJ-2 Step 1 Details 写「snapshot 失败 → 整页空态显示『连接失败』+「重试」按钮」 — **PRD 设计是固定文案「连接失败」**，实现把 raw error message 直接渲染。
+   
+   **建议下一 iter**：把 `description` 改成「无法连接后端，请检查服务是否启动」固定文案；技术错误码（502）放 console.log 给排查用。代码改动 1 行。
+
+12. **跨午夜 UI 重置**：算法纯函数测覆盖 + UI 层 `setInterval(setNow, 60_000)` 实现了"每分钟刷新 now" — PRD Edge case "服务器跨午夜时 利用率归零重算" 在功能层 OK，但**用户在跨午夜瞬间看到的是「时间轴突然左端清空 + 现在竖线回到最左」**，无任何过渡 / 提示 / 动画。本轮无法直接观察（要等真午夜），QA 同样 WAIVED。**建议下一 iter 加一句"已切到 06-24 / 利用率重置"toast 或在 0:00~0:05 时段在卡片上挂个小角标"今日刚开始"**。
+
+13. **2/3/4 号未配置卡的渲染**：实测时间轴整条 `#f0f0f0` 灰底 + dashed border + 居中文字「未配置」— 清晰直观，比"红条纹离线"更好懂。AC #4 PASS。
+
+14. **「未配置」与「离线」的视觉对比**：未配置 = 灰底 + dashed + 「未配置」文字；离线 = 红条纹 + 红徽章。**视觉区分明显**，PRD 关键约束 #7「凭证「未配置」与「凭证错（离线）」是两种不同徽章」达成。
+
+15. **真硬件 AC 8/11/edge 「WS 重连屡次失败 90s+」**：沿用 QA WAIVED 处理，作为产品评审 caveat 而**不是** Satisfied — 因为没有真打印机 / 没有等满 90s 触发降级文案，**所以无法在产品层确认"红色降级文案落在右上角的位置 / 文案 / 时间戳显示是否对作坊主可读"**。这三条进下一 iter 的真硬件接受测试。
+
+**Caveats / gaps**:
+- 24h 时间轴在 0~6 点早晨视觉上"大段灰底空白"，用户心智模型（滚动 24h）与 PRD 模型（自然日 24h）错位，**无任何视觉信号区分"未到时间"vs"已过去但 idle"** — 体感上易困惑
+- 时间轴没有颜色 legend — 首次用户看不懂颜色
+- 「未配置监测」tooltip 文案"点右上角『设置』" — 文案错位（状态页右上角是 WS 指示器不是设置）
+- 离线徽章无 actionable 指引 — 单人作坊主看到"离线"不知下一步做什么
+- snapshot 失败时错误描述 "请求失败: 502" — raw HTTP error 透出来，不是 user-friendly 固定文案
+- 跨午夜 UI 无过渡 / 提示
+- 空态「暂无打印机」link 用 `<a href>` 触发整页 reload — 应该用 react-router `<Link>`
+- AC 8 / AC 11 / Edge case「WS 重连屡次失败」3 项**WAIVED — 等真打印机做接受测试**（不能直接判 Satisfied）
+
+**Spec gap**:
+- PRD CUJ-2 Step 1 Details 没规定 snapshot 失败时具体错误文案 → 实现透 raw error；建议下一 iter 修 PRD 明示固定文案 "连接失败" 或类似
+- PRD AC #6 只要求"画一条深色竖线指示『现在』"，没规定竖线右侧 UI；用户心智错位是 spec 没考虑到的部分
+- PRD 没要求时间轴 legend；UX 标准建议补
+- 「未配置监测」tooltip 文案在 PRD 里没明示要给 link；建议补
+- 离线徽章是否要 actionable hint，PRD ack 了"不区分网络不通/凭证错"，但没明示是否要给 retry / 检查凭证 link
+
+**关于明确不做的项（不算 caveat）**：
+
+PRD 23-28 行明确 MVP 不做：告警 / 推送通知（打印中断 / 长时间空闲）/ 7-30 天滚动趋势 / 远程控制 / 硬件遥测（温度 / 层数 / 进度 / 摄像头）/ 任务排班关联。这些是 user 在 PRD 设计阶段明确的取舍 — **不算 caveat**，但 product 角度要 ack:
+
+- **没有报警** — 用户晚上睡觉打印机离线了，第二天才看到状态页才发现。这是 MVP scope 的明确取舍（与 PRD-003 收菜闹钟没耦合）；**未来若把 WS 推送复用到浏览器 Notification API 或邮件，能从"被动查看"升级到"主动提醒"**。下一 iter+1 可议。
+
+**关于利用率分母（24h vs 操作窗口）**：
+
+PRD 23 行明示"利用率分母固定 24h（1440 分钟）"，用户原话「想监测每一台每天的使用率（工作时间/24h）」 — MVP 用 24h 是对的（用户认知一致）。**但作坊主实际只在操作窗口内可工作**（PRD-004 配的每日时间窗口，比如 08:00~23:00 = 15h 而非 24h），所以 24h 分母会让"实际跑满"的机看起来只有 60%~70% 利用率（15/24 = 62.5%）。
+
+**这不是 caveat — 是产品取向问题**。MVP 阶段维持 24h 是对的（用户原话最优先），**但建议下一 iter+1 在卡片上加一个 toggle「24h 分母 / 操作窗口分母」让用户切换**。两种口径对应两种问题：
+- 24h 分母 = "这台机相对设备折旧 / 电费占用而言被用了多少"
+- 操作窗口分母 = "这台机在我能干预的时间段被用了多少 / 排班够不够吃满"
+
+第二种口径与 PRD-003 排班算法的"产能预算"更直接挂钩。
+
+---
+
+### Recommended Next-Iteration Priorities
+
+ordered by user-value × cost：
+
+1. **CUJ-1 凭证编辑弹窗 v2 抛光**（高价值 / 低成本，1-2 小时）
+   - 注入 antd `ConfigProvider locale={zh_CN}` → "Cancel" / "OK" 自动变中文「取消」/「确定」
+   - 访问码字段 placeholder 改为 `从打印机 LCD → 设置 → 网络 → 访问码 抄取（8 位数字）`
+   - IP / Serial 字段 placeholder 后追加 hint（IP：`在 LCD 网络页可见` / Serial：`在 LCD 关于页或机身贴纸`）
+   - 「清除访问码」改为 antd `Popconfirm` 二次确认，文案「确定清除？需重新到打印机 LCD 抄写才能恢复监测」
+   
+   这四项是 CUJ-1 体感最直接的 4 个高价值低成本改动。修完 CUJ-1 可考虑升 Satisfied。
+
+2. **CUJ-2 状态页 v2 体感抛光**（高价值 / 中成本，半天）
+   - 时间轴 legend：状态页右上角 / 卡片右下角 加 inline 图例「🟢 打印中  🟡 暂停  ⚫ 空闲  🔴 离线」
+   - 时间轴"现在"竖线右侧改为淡条纹（`repeating-linear-gradient(45deg, #f9f9f9, #f9f9f9 4px, #fff 4px, #fff 8px)`）表示"未到"，区分"已过去但 idle"灰底
+   - 离线徽章 hover tooltip 加 actionable 提示：「最后成功连接 X 分钟前。可能原因：断电/凭证错/网络。去 [系统设置](/settings) 检查 →」
+   - 「未配置监测」tooltip 文案改「去『系统设置 → 打印机管理』补填」+ link 直跳
+   - snapshot 失败错误描述改固定文案「连接失败，请检查后端服务」
+   - 空态 link 改为 react-router `<Link to="/settings">`
+   
+   修完这些 + 真硬件接受测试通过，CUJ-2 可升 Satisfied。
+
+3. **真打印机硬件接受测试**（高价值 / 真机依赖）
+   - AC 8: 真打印机 MQTT push → 后端 → WS 推送 → 前端徽章变「打印中」全程时延 < 1 秒
+   - AC 11: 改 access_code 为错 → ≤30s 切离线；改回正确 → ≤30s 切回真实状态
+   - Edge case「WS 重连屡次失败」：等 90s+ 累计退避，观察右上角是否显示「实时连接断开，X 秒前 snapshot」+ 卡片是否仍展示 snapshot 内容
+   - 跨午夜实地观察利用率重置（建议 23:55 进页面 + 等到 00:05 观察）
+   
+   **建议作为用户首次拿到真硬件时的「上手测试 checklist」一次走完**。这三条不是工程层能消化的、必须用户参与。
+
+4. **CUJ-2 + PRD-003 收菜闹钟耦合**（中价值 / 中成本，1 天）
+   - 当某机从 `running` → `idle` 且本批是排班最后一批 → 复用现有收菜闹钟逻辑发桌面 Notification「1 号机收菜了」
+   - 把"被动看仪表盘"升级到"主动推送"
+   - 这是真正解决 "用户晚上睡觉离线了第二天才发现" 痛点的方向
+   
+   依赖 PRD-003 CUJ-5（收菜闹钟）已 merged，但需要把 PrintTask 状态机与 PrinterStatusSample 对齐 — 可能要小开 PRD-008 设计。
+
+5. **TL Phase 3.6 carry-over 收尾**（不阻塞 / 加固）
+   - P2: snapshot 端点 N+1 查询（4 台机不痛，但与 prd-006 同类 carry-over 一起做）
+   - P2: lifespan race window（startup 后第一条 MQTT 前 ≤3s 窗口）— 真硬件接受测试后看实际影响再定优先级
+   - LOW: 守护进程无 watchdog 自动重启（PRD #1 已 ack）
+
+6. **利用率分母 toggle**（低价值 / 低成本，迭代 +1）
+   - 在卡片上加一个 segmented control「24h / 操作窗口」让用户切换
+   - PRD-004 操作窗口数据直接可用
+   - 默认 24h（保持 MVP 用户认知），切换后利用率分子分母都按操作窗口算
+   - 这条对"晚上看排班够不够吃满"价值大但不紧急
+
+### PRD Lifecycle Changes（iter5）
+
+- **prd-007-printer-status: 保持 `active`** — 2 CUJ 全 Caveats，无 Satisfied 项；建议下一 iter 用 1 个半 sprint 收齐上述优先级 1 + 2 + 3 后再升 `completed`。frontmatter 状态本次**不变**。
 
 ---
 
