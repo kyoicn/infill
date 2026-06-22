@@ -7,6 +7,7 @@ import {
   ScheduleOutlined,
   SettingOutlined,
   ScanOutlined,
+  DesktopOutlined,
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 
@@ -24,6 +25,7 @@ const menuItems = [
   { key: '/orders', icon: <ShoppingCartOutlined />, label: '订单管理' },
   { key: '/inventory', icon: <InboxOutlined />, label: '库存管理' },
   { key: '/schedule', icon: <ScheduleOutlined />, label: '排班中心' },
+  { key: '/printers/status', icon: <DesktopOutlined />, label: '打印机状态' },
   { key: '/settings', icon: <SettingOutlined />, label: '系统设置' },
 ];
 

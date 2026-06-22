@@ -8,6 +8,7 @@ import Intake from './pages/Intake';
 import Orders from './pages/Orders';
 import Inventory from './pages/Inventory';
 import Schedule from './pages/Schedule';
+import PrinterStatus from './pages/PrinterStatus';
 import Settings from './pages/Settings';
 
 const AutoImport = lazy(() => import('./pages/AutoImport'));
@@ -31,6 +32,7 @@ function App() {
           />
           <Route path="/inventory" element={<Inventory />} />
           <Route path="/schedule" element={<Schedule />} />
+          <Route path="/printers/status" element={<PrinterStatus />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Route>
