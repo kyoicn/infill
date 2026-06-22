@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse
 
 from .database import Base, engine, SessionLocal
 from .routers import catalog, orders, inventory, printers, schedule, config
+from .routers import printer_status as printer_status_router
 from app.routers import intake
 from app.routers import auto_import as auto_import_router
 from .services.catalog import (
@@ -34,6 +35,8 @@ from .services.catalog import (
     load_catalog,
 )
 from .services.migrate import auto_migrate
+from .services.printer_mqtt_daemon import MqttDaemon
+from .services.printer_status_sampler import Broadcaster, Sampler
 
 
 @asynccontextmanager
@@ -60,7 +63,21 @@ async def lifespan(app: FastAPI):
         print(f"目录已加载: {stats}")
     finally:
         db.close()
-    yield
+
+    # 5. prd-007：起 MQTT 守护进程 + 心跳循环；三对象挂到 app.state 供 router 取
+    broadcaster = Broadcaster()
+    sampler = Sampler(broadcaster)
+    daemon = MqttDaemon(sampler)
+    app.state.printer_status_broadcaster = broadcaster
+    app.state.printer_status_sampler = sampler
+    app.state.printer_status_daemon = daemon
+    daemon.startup()  # 同步：paho loop_start 非阻塞
+    await sampler.start_heartbeat_loop()
+    try:
+        yield
+    finally:
+        sampler.stop_heartbeat_loop()
+        daemon.shutdown()
 
 
 app = FastAPI(title="3D打印排班系统", lifespan=lifespan)
@@ -81,6 +98,8 @@ app.include_router(schedule.router)
 app.include_router(config.router)
 app.include_router(intake.router)
 app.include_router(auto_import_router.router)
+app.include_router(printer_status_router.router)
+app.include_router(printer_status_router.ws_router)
 
 
 @app.get("/api/health")
