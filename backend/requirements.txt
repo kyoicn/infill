@@ -6,3 +6,4 @@ pyyaml==6.0.3
 Pillow>=10.0,<12.0
 python-multipart>=0.0.9
 httpx>=0.27
+paho-mqtt>=2.1.0,<3.0
