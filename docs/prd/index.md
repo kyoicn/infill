@@ -10,9 +10,9 @@
 
 ## 范围边界
 
-- **核心**：产品目录（catalog.yaml 单一数据源）、订单队列、组件库存、排班生成（三种策略）、系统配置
+- **核心**：产品目录（catalog.yaml 单一数据源）、订单队列、组件库存、排班生成（三种策略）、系统配置、打印机状态监测（局域网 MQTT 「是否在打印」+ 每日利用率）
 - **规划中**：甘特图视图、排班手动调整、Dashboard 深化、自动导入订单（小红书千帆 Chrome 扩展 + 闲鱼 ADB 截屏）
-- **明确不做**：云端多用户、打印机实时监控
+- **明确不做**：云端多用户、打印机硬件层深度遥测（温度 / 层数 / 进度）
 
 ## PRD 列表
 
@@ -25,6 +25,7 @@
 | [prd-004-settings](prd-004-settings.md) | 系统配置（打印机管理·批量增删 / 操作时间窗口按星期几多时段 / 换版时间 / 数据库重置） | active |
 | [prd-005-intake](prd-005-intake.md) | 产品录入（从切片截图识别 BOM + 打印盘 + 颜色变体 / 合并入 catalog.yaml） | completed |
 | [prd-006-auto-import-orders](prd-006-auto-import-orders.md) | 自动导入订单（小红书千帆 Chrome 扩展 + 闲鱼 ADB 截屏 / LLM 匹配 catalog SKU / 预览校对去重导入） | active |
+| [prd-007-printer-status](prd-007-printer-status.md) | 打印机状态与每日利用率监测（局域网 MQTT 监听 RUNNING/PAUSE/IDLE / 4 卡片状态页 + 今日工作时长 + 24h 时间轴 bar） | active |
 
 ## 参考文档（Reference docs）
 
