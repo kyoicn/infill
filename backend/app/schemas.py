@@ -1,6 +1,6 @@
 from datetime import datetime, date
-from typing import Optional
-from pydantic import BaseModel
+from typing import Any, Optional
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 # ---- Component ----
@@ -121,15 +121,67 @@ class InventoryAdjust(BaseModel):
 
 # ---- Printer ----
 
+def _mask_access_code(access_code: Optional[str]) -> Optional[str]:
+    """access_code 掩码：末 4 位明文，前缀 `*` 占位。
+
+    - None → None
+    - 长度 >= 4：前面用 `*` 占位，保留末 4 位明文，总长度等于原长
+      （例：`"12345678"` → `"****5678"`；恰 4 位 `"1234"` → `"****"` 全掩码，
+      避免 4 位时无 `*` 让人看不出是掩码）
+    - 长度 < 4：全 `*`，长度等于原长（例：`"abc"` → `"***"`）
+    """
+    if access_code is None:
+        return None
+    n = len(access_code)
+    if n < 4:
+        return "*" * n
+    if n == 4:
+        return "****"
+    return "*" * (n - 4) + access_code[-4:]
+
+
 class PrinterBase(BaseModel):
     name: str
 
 class PrinterCreate(PrinterBase):
     pass
 
+class PrinterUpdate(BaseModel):
+    name: Optional[str] = None
+    ip: Optional[str] = None
+    serial: Optional[str] = None
+    access_code: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+
 class PrinterOut(PrinterBase):
     id: int
-    model_config = {"from_attributes": True}
+    ip: Optional[str] = None
+    serial: Optional[str] = None
+    access_code_masked: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_access_code_masked(cls, data: Any) -> Any:
+        """从 ORM 对象 / dict 的 access_code 字段派生 access_code_masked。
+
+        不把 access_code 原值往外送 —— 仅在内部读取后转成掩码。
+        """
+        if isinstance(data, dict):
+            if "access_code_masked" not in data and "access_code" in data:
+                data = {**data}
+                data["access_code_masked"] = _mask_access_code(data.get("access_code"))
+            return data
+        # ORM 对象 / 任意 attribute-style 入参
+        if not hasattr(data, "access_code_masked") or getattr(data, "access_code_masked", None) is None:
+            access_code = getattr(data, "access_code", None)
+            masked = _mask_access_code(access_code)
+            if masked is not None:
+                try:
+                    setattr(data, "access_code_masked", masked)
+                except (AttributeError, TypeError):
+                    pass
+        return data
 
 
 # ---- Schedule Config ----
