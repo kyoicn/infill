@@ -45,3 +45,4 @@ docs/issues-attachments/
 docs/gorilla/*/screenshots/
 docs/qa-artifacts/
 .playwright-mcp/
+data.db
