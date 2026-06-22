@@ -85,9 +85,11 @@ export default function EditPrinterModal({ open, printer, onCancel, onSaved }: E
       await api.updatePrinter(printer.id, body);
       message.success('已保存');
       onSaved();
-    } catch (e: any) {
-      if (e?.errorFields) return;
-      message.error(e?.message || '保存失败');
+    } catch (e) {
+      // antd Form.validateFields 失败时抛 { errorFields: [...] }；让弹窗保持打开
+      if (e && typeof e === 'object' && 'errorFields' in e) return;
+      const msg = e instanceof Error ? e.message : '保存失败';
+      message.error(msg);
     } finally {
       setSubmitting(false);
     }

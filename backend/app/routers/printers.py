@@ -56,7 +56,15 @@ def delete_printer(printer_id: int, request: Request, db: Session = Depends(get_
         raise HTTPException(404, "打印机不存在")
     daemon = getattr(request.app.state, "printer_status_daemon", None)
     if daemon is not None:
-        daemon.unsubscribe_one(printer_id)
+        # daemon 异常（如 paho disconnect 失败）不该阻止 DB 删除；
+        # FK CASCADE 仍会清掉 PrinterStatusSample。
+        try:
+            daemon.unsubscribe_one(printer_id)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "printer_status: unsubscribe_one failed for printer_id=%s", printer_id
+            )
     db.delete(printer)
     db.commit()
     return {"ok": True}
