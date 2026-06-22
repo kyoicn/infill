@@ -46,6 +46,12 @@ export default function PrinterStatus() {
 
   const { status: wsStatus } = usePrinterStatusWS(onEvent, loadSnapshot);
 
+  // mount 时立即拉一次 snapshot — 不依赖 WS 是否连得上（PRD CUJ-2 Step 1：
+  // 先 snapshot 再 WS，是两个独立动作）。onReconnect 回调留作断线重连补齐。
+  useEffect(() => {
+    void loadSnapshot();
+  }, [loadSnapshot]);
+
   // 每分钟 tick 一次更新「现在」竖线位置（粒度足够 — 时间轴 1440 分一格）
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000);
@@ -73,9 +79,8 @@ export default function PrinterStatus() {
   if (loading) {
     return (
       <div style={{ textAlign: 'center', padding: 48 }}>
-        <Spin tip="加载中">
-          <div style={{ minHeight: 80 }} />
-        </Spin>
+        <Spin />
+        <div style={{ marginTop: 12, color: '#666' }}>加载中…</div>
       </div>
     );
   }
