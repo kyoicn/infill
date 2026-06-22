@@ -222,6 +222,7 @@ erDiagram
 | 订单与库存 | `Order` · `OrderItem` · `Inventory` | 用户录入 / **自动导入（prd-006）** / 发货扣减 / 手动调整 | `design-orders-inventory.md`（schema 主源） + `design-auto-import.md`（新增 4 列 + partial unique index） |
 | 排班产物 | `PrintPlan` · `PrintBatch` · `PrintTask` | 排班算法生成 + 执行控制更新 | `design-scheduler.md` |
 | 配置 | `Printer` · `ScheduleConfig` · `SystemConfig` | 系统设置页 | `design-frontend.md` / 本文档 |
+| 打印机状态监测 | `Printer.ip/serial/access_code`（凭证扩展） · `printer_status_sample`（新表） | MQTT 守护进程被动采样 + 心跳兜底 | `design-printer-status.md` |
 
 ### 4.3 关键建模约定（跨组件）
 
@@ -481,4 +482,5 @@ flowchart TB
 | `design-intake.md` | 产品录入：截图上传、启发式分类、LLM provider 抽象（共享）、颜色矩阵、合并到 `catalog.yaml`（**写源**，备份 + 回滚） |
 | `design-orders-inventory.md` | 订单队列、发货扣减、BOM 折算、库存调整、富余计算 |
 | `design-auto-import.md` | 自动导入订单：Chrome 扩展抓小红书 DOM、ADB 截屏闲鱼、LLM SKU 匹配、批次预览 + 单事务 commit（**自动写源**之一） |
+| `design-printer-status.md` | 打印机状态与每日利用率监测（prd-007）：`Printer` 凭证三列扩展 + `printer_status_sample` 新表、MQTT 守护进程（paho-mqtt）、进程内 Broadcaster、`WS /api/ws/printers/status`、24h 时间轴 + 利用率算法、首次提供「编辑打印机」UI 入口（关闭 PRD-004 差异 #6） |
 | `design-frontend.md` | 前端路由、`api/client.ts` 封装、各页面职责、甘特图/列表视图实现 |
