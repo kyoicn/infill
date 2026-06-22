@@ -383,3 +383,29 @@ G1 (Schema + 依赖) ─┐
 ## Blocker
 
 无需用户拍板。所有 PRD / 设计 / 验收都已落地、TL 硬性约束已编入任务粒度；执行可直接开始。
+
+---
+
+## QA Fix Tasks（iter5 QA gate FAIL → 回滚生成）
+
+QA 工程门判定 CUJ-2 FAIL（详见 docs/qa-report.md）。CUJ-1 PASS 不动；CUJ-2 必须修以下两个 HIGH bug + 2 个 MEDIUM 阻塞验证项 + 3 条 LOW 清理后重测一遍才能升级 prd-007 frontmatter status。
+
+### 阻塞性（必须修，CUJ-2 完全不可用）
+
+- [x] **QA-fix [HIGH][BUG]**: `frontend/src/pages/PrinterStatus.tsx` mount 时未独立调用 `loadSnapshot()` — snapshot 拉取被绑死在 `usePrinterStatusWS.onReconnect` 回调里，违反 PRD CUJ-2 Step 1 「按序执行两步：(a) 立刻调 snapshot；(b) 打开 WS」。WS 不可达时整页卡死在 Spin。修：在 PrinterStatus.tsx 加 `useEffect(() => { void loadSnapshot(); }, [loadSnapshot])`；保留 `onReconnect` 作为重连补齐路径。— source: qa-report.md 2026-06-22 23:32:57 (UTC+8)
+- [x] **QA-fix [HIGH][BUG]**: `frontend/vite.config.ts:100-103` 的 `server.proxy['/api']` 用字符串简写、未带 `ws: true`，dev 模式 WS upgrade 失败。改成 `{ target: 'http://localhost:8765', ws: true }`，并保留 `/static` 同改。— source: qa-report.md 2026-06-22 23:32:57 (UTC+8)
+
+### 验证阻塞（修上面两条后必须重跑）
+
+- [x] **QA-fix [MEDIUM][BUG]**: snapshot 失败时 PrinterStatus.tsx 的「连接失败 / 重试」降级 UI 因 mount 不调 loadSnapshot 实际不可达；上述 HIGH #1 修完会自然恢复 — 但必须在重测时验证 `/api/printers/status/snapshot` 5xx → 整页 Empty + 重试按钮 + 点击重试再次调 snapshot。— source: qa-report.md 2026-06-22 23:32:57 (UTC+8)
+- [x] **QA-fix [MEDIUM][BUG]**: CUJ-2 大量 AC（4 卡片渲染 / 状态徽章颜色 / 24h 时间轴 bar / 「现在」竖线 / 三态指示 / 重连后再拉 snapshot / 跨午夜归零）因 HIGH #1 阻塞均为 NOT_RUN — 必须在 HIGH 修完后**全部重测一遍**才能签 CUJ-2 PASS。— source: qa-report.md 2026-06-22 23:32:57 (UTC+8)
+
+### LOW 清理（不阻塞 CUJ-2，可顺手做）
+
+- [x] **QA-fix [LOW][BUG]**: antd `Space.direction` → `orientation` 弃用 warning（`frontend/src/pages/Settings.tsx`）— source: qa-report.md 2026-06-22 23:32:57 (UTC+8)
+- [x] **QA-fix [LOW][BUG]**: antd `Modal.destroyOnClose` → `destroyOnHidden` 弃用 warning（`frontend/src/pages/EditPrinterModal.tsx:114`）— source: qa-report.md 2026-06-22 23:32:57 (UTC+8)
+- [x] **QA-fix [LOW][BUG]**: antd `Spin.tip` → `description` 弃用 warning（`frontend/src/pages/PrinterStatus.tsx:76`）— source: qa-report.md 2026-06-22 23:32:57 (UTC+8)
+
+### QA Retry 1 Closeout（2026-06-23 00:00:48 (UTC+8)）
+
+`f72a695`（test E2E commit）+ `998db4a`（merge: QA retry 1 fix CUJ-2）落地后，所有 7 个 QA-fix 项闭环。CUJ-2 5 场景两 run 复测通过：场景 A（未配置卡片）/ 场景 B（凭证错→离线）/ 场景 C（snapshot 502→Empty+重试）/ 场景 D（WS 重连+自动补 snapshot）/ 场景 E（3 条 antd warning 全清）。详见 `docs/qa-report.md ## QA Retry 1` 段。CUJ-2 verdict：PASS（含 3 条 WAIVED AC 需真硬件验证）。

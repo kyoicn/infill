@@ -1,404 +1,271 @@
 # QA Report
 
-Last updated: 2026-06-18 22:43:16 (UTC+8)
-Scope: prd-006-auto-import-orders（Iter4 — 4 CUJ 端到端首轮 QA + Retry 1 闭环验证）
+Last updated: 2026-06-23 00:00:48 (UTC+8) — QA Retry 1
+Scope: prd-007（打印机状态与每日利用率监测）
 
-## Verdict: PASS（Retry 1 后；首轮 FAIL 详见下方）
+## Verdict: PASS（QA Retry 1）
 
-实现层基础完整且自动化测试 340 通过（baseline 330 + 新增 10），核心后端契约（commit 单事务原子性、`-redoN` override、partial unique index、extension zip 4 文件、stateless 预览批次）live 验证全部通过。但 4 个 MEDIUM+ bug 阻断 PASS：① CUJ-1 缺少扩展下载链接（PRD AC 明示要求）；② CUJ-2/4 `adb_connected` 用 device 列表非空当通过条件 → 在配置 endpoint 不可达时仍亮绿灯，等价于「扫描就绪状态被伪造」；③ CUJ-3 缺少空 batch 的「未抓取到任何订单」空态 UI；④ extension probe 与 xhs/probe 实际并不真探活（占位实现），违反 CUJ-1 AC「调 probe 探查千帆 tab」。MEDIUM+ 计 4 + LOW carry-over 1（AntD Spin tip deprecation）+ TL review carry-over 5（已在用户消息中标注）。
+> 历史：上轮（2026-06-22 23:32:57）FAIL — 2 HIGH / 2 MEDIUM / 3 LOW。本轮 retry：HIGH×2 全修、MEDIUM×2 复测通过、LOW×3 全清。CUJ-1 不变 PASS（本轮 coder 未碰相关代码）；CUJ-2 经 5 场景两 run 复测 PASS（含 3 条 AC 因 MVP 范围排除真打印机访问 WAIVED）。详见末尾「## QA Retry 1」段。
 
 ## Automated Test Summary
-- Total tests: 342 (pre-existing: 330 + 2 skipped, new: 10)
-- Passing: 340
+
+- Total tests: 418 (pre-existing: 415, new: 3)
+- Passing: 416
 - Failing: 0
-- Skipped: 2
-- Flaky (failed-then-passed on framework retry): 0
+- Skipped: 2（pre-existing skipped，与 prd-007 无关）
+- Flaky (失败-then-成功 framework retry): 0
+
+`pytest backend/ -q` → `416 passed, 2 skipped in 2.02s`
+`cd frontend && npm run build` → `✓ built in 2.24s`
 
 ## Mock Coverage Summary
-- CUJs with mocks compared: 4（CUJ-1 / CUJ-2 / CUJ-3 / CUJ-4）
-- CUJs without mocks (`NO_MOCK`): 0
+
+- CUJs with mocks compared: 0
+- CUJs without mocks (`NO_MOCK`): 2 — CUJ-1、CUJ-2（`docs/ux/` 下无 prd-007 mock 文件；本轮 PRD 未配套 mock，按 dev-cycle 约定跳过视觉对比，仅做功能验证）
 
 ## Per-CUJ Verification
 
-### CUJ-1: 扫描小红书千帆订单 — FAIL
-
-CUJ-1 默认渲染「扩展未装」态（环境无扩展、`VITE_INFILL_EXT_ID` 未配置），与 `cuj-1-no-extension.html` mock 布局对齐，但**关键下载按钮缺失**（PRD AC 明示「下载扩展压缩包链接（指向 `/static/extensions/infill-xhs-scraper-v0.1.x.zip`）」）+ probe 端点是占位实现（永远返回 has_xhs_tab=true，不真探活）。生产路径 tuple 解包逻辑通过新加单测验证。未走 happy path（无 LLM key / 无扩展 / 无千帆 tab，CI 不可达）。
+### CUJ-1: 配置打印机网络凭证 — PASS
 
 #### Acceptance Criteria
+
 | # | Criterion | Coverage | Result (run1) | Result (run2) | Final |
 |---|-----------|----------|---------------|---------------|-------|
-| 1 | 左侧菜单存在「订单管理 → 自动导入」/ 顶部入口 | manual | PASS | PASS | PASS |
-| 2 | 进入 `/orders/import` 渲染面包屑「订单管理 / 自动导入」+ 标题副标题 | manual | PASS | PASS | PASS |
-| 3 | 双 tab 切换「小红书千帆」红 `#ff2442` / 「闲鱼」橙 `#ff7a00`，切 tab 不丢前端态 | manual | PASS | PASS | PASS |
-| 4 | 进入页面 / 切 tab / 「重新检测」时调 `chrome.runtime.sendMessage(ping)` + `POST /api/auto-import/xhs/probe` | both | PASS（probe 端点返回但是**占位**，并未真探活） | PASS | **FAIL**（占位实现违背 AC「探查千帆 tab」） |
-| 5 | 控制栏三态指示器 ● 就绪 / ● 扩展未装 / ● 未发现千帆 tab，颜色绿/蓝/黄 | manual | PASS（蓝色未装态正确渲染） | PASS | PASS |
-| 6 | 「开始扫描」按钮仅就绪态启用 | manual | PASS（disabled，未装态没显示按钮） | PASS | PASS |
-| 7 | 5 步进度列表 ① 连接扩展 ② 定位千帆 tab ③ 抓取 DOM ④ 解析订单 ⑤ LLM 匹配 SKU | none | NOT_RUN | NOT_RUN | NOT_RUN（无扩展无法触发） |
-| 8 | 5 步完成后自动跳 CUJ-3 预览，面包屑变「预览批次」 | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 9 | 「取消」回到 CUJ-1 初始态 + 5 秒灰提示 | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 10 | 扩展未装态显示蓝色 setup 块 + 4 步安装引导（**下载链接 → 解压 → chrome://extensions/ → 加载**） | manual | **FAIL**（4 步文案有，但下载按钮 / 链接缺失） | **FAIL** | **FAIL** |
-| 11 | 未发现千帆 tab 时显示黄色 warning 块 + 「重新检测」按钮 | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 12 | 抓 0 单仍跳 CUJ-3 空态 | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 13 | 缺必填三件套时后端丢弃该单（不入预览） | automated | PASS | PASS | PASS（test_scan_drops_missing_required_fields） |
-| 14 | LLM 匹配 90 秒超时 → 错误卡片 + 三按钮 | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 15 | 「跳过 SKU 匹配」按钮允许 LLM 故障时仍进 CUJ-3 | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 16 | 闲鱼扫描进行中时小红书「开始扫描」disabled + tooltip | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 17 | 生产路径 `match_listing_to_sku` 返回 tuple 时 router 正确解包 | automated | PASS | PASS | PASS（test_xhs_scan_with_production_tuple_path） |
+| 1 | 打印机表格每行有「编辑」按钮，点击打开含 名称 + IP + 序列号 + 访问码 四字段的弹窗 | both | PASS | PASS | PASS |
+| 2 | 访问码字段为密码样式，预填时仅末 4 位明文 + 掩码点 | both | PASS | PASS | PASS |
+| 3 | 用户未改密码框点保存时，后端记录的访问码保持不变（exclude_unset 语义） | automated | PASS | PASS | PASS |
+| 4 | 保存非空 IP + serial + access_code 后，snapshot 对应机 state 从 `unconfigured` 切到非 `unconfigured` | both | PASS | PASS | PASS |
+| 5 | 清空 IP 字段保存后，snapshot 返回该机 state 为 `unconfigured` | automated | PASS | PASS | PASS |
+| 6 | 删除打印机后，`printer_status_sample` 中该 printer_id 的行全部消失（FK CASCADE） | automated | PASS | PASS | PASS |
+| 7 | 日志中不出现 access_code 原值字符串 | both | PASS | PASS | PASS |
+| 8 | 「未配置监测」徽标在表格名称右侧渲染（凭证不齐时） | manual | PASS | PASS | PASS |
+| 9 | PUT 返回的 PrinterOut 仅含 `access_code_masked`，不含原值 | automated | PASS | PASS | PASS |
+| 10 | POST/PUT/DELETE 触发 daemon.reconcile_one / unsubscribe_one；commit 时序正确 | automated | PASS | PASS | PASS |
 
 #### Edge Cases & Error States
+
 | Scenario | Expected | Observed (run1) | Observed (run2) | Result |
 |----------|----------|-----------------|-----------------|--------|
-| 扩展未装（无 chrome.runtime） | 蓝色 setup 块 + 下载链接 + 4 步 | 蓝色块 + 4 步（无下载链接） | 同 run1 | FAIL |
-| extension-status 在未配置 INFILL_EXT_ID 时 | 返回 `{ok:true, installed:false}` | PASS（live curl） | PASS | PASS |
-| extension-status 在配置 INFILL_EXT_ID 时 | 返回 `{ok:true, installed:true, version}` | PASS（automated） | PASS | PASS |
-| xhs/probe 端点 | 探查千帆 tab 真活性（AC #4） | 占位永远 ok=true（**违反 AC**） | 同 run1 | FAIL |
+| 三字段只填一两个 | 保存允许，snapshot=unconfigured | 同 expected（run1 手测 + run2 自动测覆盖） | 同 | PASS |
+| 清空凭证 | snapshot=unconfigured | sqlite3 / curl 双确认；run2 通过 PUT `{ip:""}` 把 1 号机回归 unconfigured 状态 | 同 | PASS |
+| 访问码不泄露 | 日志 + API 响应均不含原值 | `grep` `.qa-dev-server.log` 无 `qa9to1234`；run2 同 `rerun8888` | 同 | PASS |
 
 #### Manual Verification Notes
-- `/orders/import` 默认渲染未装态（`hasInstallText=true, hasDownloadLink=false`），4 步引导第 1 步文案"下载扩展 zip 并解压到本地"但无 `<a>` 或 `<button>` 实际触发下载，违反 PRD CUJ-1 Mocks `cuj-1-no-extension.html` 明示的"下载扩展 zip (12 KB)"主按钮。
-- 生产路径 LLM tuple 返回值经 curl + automated 双重验证：`match_listing_to_sku` 返回 `(sku|None, confidence, reasoning)` 三元 tuple，router 正确解包。LLM 未配置时降级为 `confidence=0` reasoning="LLM 错误：未配置 LLM API key"，UI 看到的是 low_conf=1。
-- 5 步进度 / 自动跳预览 / 取消 等扫描中流程因无 Chrome 扩展环境不可在 CI 验证，标 NOT_RUN（**待真实环境覆盖**）。
+
+- **Run 1**: 进 `/settings` → 看到 4 行打印机表格，每行右侧有「编辑」按钮 + 删除按钮，名称右侧紧跟「未配置监测」灰色 Tag。点击 1 号机「编辑」→ 弹窗标题「编辑打印机：1号」、四字段（名称预填「1号」，IP/Serial 空，访问码 password 框 + 眼睛图标 + 「清除访问码」次要按钮 + 「当前：未设置；留空则保持不变。」灰字 + 弹窗底部「IP / 序列号 / 访问码三项全填才会启动监测；任一为空显示「未配置」。访问码勿外传。」。填入 IP=`192.168.1.100`、Serial=`01P00ATEST001`、Access=`qa9to1234`、点 OK。弹窗关闭、curl `/api/printers` 返回 `access_code_masked: *****1234`、`sqlite3` 直查 `access_code` 字段 = `qa9to1234`（DB 实存原值，符合 design 决策）、`grep qa9to1234 .qa-dev-server.log` 无命中（日志严控）。
+- **Run 2**: 把 1 号机凭证清空再走一遍（PUT `{ip:"",serial:"",access_code:""}` → DB 三字段 NULL → 弹窗预填空），用 `10.0.0.55` / `SN-RUN2-X` / `rerun8888` 再填入。预填态显示「当前：未设置」（清空后该机 masked=null，符合）；保存后 sqlite3 直查 = `rerun8888`、API 返回 `*****8888`。无 access_code 原值出现在 dev 日志或 API 响应。两 run 结果一致 — 非 flaky。
 
 #### Artifacts
-- Screenshots: `docs/qa-artifacts/iter4-22-12-12/cuj-1/run1/00-initial-no-extension.png`，`.../run2/00-initial-no-extension.png`
-- Console messages (run1): 0 错误
-- Console messages (run2): 0 错误
-- Network requests verified: `GET /api/auto-import/xhs/extension-status` 200，`POST /api/auto-import/xhs/probe` 200（占位）
-- Mocks: `docs/ux/prd-006-auto-import-orders/cuj-1-initial.html`（未触发：默认是未装态）、`cuj-1-no-extension.html`（**对比执行**）、`cuj-1-scanning.html`（NOT_RUN）、`cuj-1-no-xhs-tab.html`（NOT_RUN）
+
+- Screenshots: `docs/qa-artifacts/iter5-23-32-57/cuj-1/run1/`（4 张：00-settings-initial、01-edit-modal-open、02-edit-modal-filled、03-after-save）；同 `cuj-1/run2/`（4 张同步骤）。
+- Console messages (run1): 仅 2 条 antd 弃用 warning（`Space.direction`、`Modal.destroyOnClose`），无 ERROR。
+- Console messages (run2): 同 run1。
+- Network requests verified: PUT `/api/printers/1` 返回 200 两次。
+- Mocks: `NO_MOCK`（本 PRD 未配套 ux mock，按 dev-cycle 约定跳过视觉对比）。
 
 #### Issues Found
-- `[MEDIUM][BUG]` 扩展未装态缺少下载链接 / 按钮 — frontend/src/pages/auto_import/XhsTab.tsx:378（应在 step 1 加 `<a href="/static/extensions/infill-xhs-scraper-v0.1.0.zip" download>` 或主按钮）
-- `[MEDIUM][VISUAL_DEVIATION]` 与 `cuj-1-no-extension.html` 相比缺少"下载扩展 zip (12 KB)"primary 按钮 — XhsTab.tsx:391
-- `[LOW][BUG]` `POST /api/auto-import/xhs/probe` 是占位实现（永远返回 has_xhs_tab=true） — backend/app/routers/auto_import.py:99（违反 AC #4「探查千帆 tab」语义，但实际扩展探活由前端 `chrome.runtime.sendMessage` 完成，可视为「后端意图保留 hook」）
+
+- `[LOW][BUG]` antd `Space.direction` / `Modal.destroyOnClose` 弃用 warning（Settings.tsx 老代码遗留 + EditPrinterModal.tsx 用了 destroyOnClose）— 不影响功能但污染 console。
 
 ---
 
-### CUJ-2: 扫描闲鱼订单 — FAIL
-
-**关键 HIGH 缺陷**：probe 端点的 `adb_connected` 用 `bool(list_devices())` 计算 — 即任何 ADB 设备存在即认定连接成功，**完全没校验配置的 endpoint 是否匹配**。导致用户在 pc_ip="" / 配置 IP 不可达时仍看到绿色"ADB 已连接"，点击"截屏"后端真实失败，UI 仅一秒钟 toast 即消失，留下黑盒状态。等同伪造扫描就绪 — 属于 fabrication 范畴的 HIGH 级 BUG。
+### CUJ-2: 查看打印机状态页 — FAIL
 
 #### Acceptance Criteria
+
 | # | Criterion | Coverage | Result (run1) | Result (run2) | Final |
 |---|-----------|----------|---------------|---------------|-------|
-| 1 | 切「闲鱼」tab 渲染橙色主区 + 触发 `POST /api/auto-import/xianyu/probe` | manual | PASS | PASS | PASS |
-| 2 | 状态指示器「● ADB 就绪」（绿）/「● ADB 错」（红） | manual | **FAIL**（pc_ip="" 时显示绿色） | **FAIL** | **FAIL** |
-| 3 | 控制栏含设备类型下拉 / PC IP / 编辑 link / 4 步操作说明 | manual | PASS | PASS | PASS |
-| 4 | 「截屏」disabled 直到 ADB 就绪 + 「完成截屏」disabled 直到 ≥1 张 | manual | **FAIL**（pc_ip="" 时未 disabled） | **FAIL** | **FAIL** |
-| 5 | ADB 错态下两按钮 disabled | manual | NOT_RUN（实际看到的是 false-green） | NOT_RUN | NOT_RUN |
-| 6 | MVP 不自动滚动；后端不发 `adb shell input swipe` | code | PASS | PASS | PASS（grep 验证无 swipe） |
-| 7 | 每次点截屏触发 ADB screencap + 异步 LLM 解析 | both | PASS（automated TestE2E_xianyu_screencap_async + new TestQAGapXianyuScreencapEnvelope） | PASS | PASS |
-| 8 | 缩略图条状态徽章 🔄 / ● / ! / ✗ | none | NOT_RUN（无可用设备） | NOT_RUN | NOT_RUN |
-| 9 | 截屏与解析重叠跑（异步队列） | automated | PASS（TestE2E_xianyu_screencap_async） | PASS | PASS |
-| 10 | 已解析订单 mini 卡片随后端解析完成不断追加 | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 11 | 「完成截屏，开始解析」后跑二次 LLM + 跳 CUJ-3 | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 12 | 「取消」回 CUJ-2 初始态 + 5 秒灰提示 | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 13 | ADB 连不上时红色 err 块 + 三项实时检查 + 「重新测试 ADB」按钮 + 设置 link | none | NOT_RUN（被 false-green 阻断） | NOT_RUN | NOT_RUN |
-| 14 | `adb` 未装时第 1 项 ✗ + 安装命令；设备 offline 时第 4 项追加 | automated | PASS（TestDiagnoseAdb 系列 5 测试） | PASS | PASS |
-| 15 | 单次截屏失败时红边 + ✗ 徽章，可继续 | both | PASS（new test_screencap_failure_returns_envelope） | PASS | PASS |
-| 16 | LLM 解析失败率 > 30% 时弹 warning | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 17 | 整批 0 单时跳 CUJ-3 空态 | none | NOT_RUN（与 CUJ-3 空态 bug 双重阻塞） | NOT_RUN | NOT_RUN |
-| 18 | 小红书扫描进行中时本 tab 按钮 disabled + tooltip | none | NOT_RUN | NOT_RUN | NOT_RUN |
+| 1 | 主导航有「打印机状态」入口，点击进入 `/printers/status` | manual | PASS | PASS | PASS |
+| 2 | 每台已在 Printer 表的打印机对应一张卡片，不论凭证是否配齐 | manual | **FAIL** | **FAIL** | **FAIL** |
+| 3 | 凭证齐全的打印机卡片正确显示徽章 / 今日工作时长 / 利用率百分比 / 24h 时间轴 bar | manual | **FAIL** | **FAIL** | **FAIL** |
+| 4 | 凭证未齐全的打印机卡片显示「未配置」徽章 + 灰色时间轴 | manual | **FAIL** | **FAIL** | **FAIL** |
+| 5 | 时间轴 bar `running`/绿色 `pause`/黄色 `idle`/灰色 `offline`/红色条纹 | manual | NOT_RUN | NOT_RUN | NOT_RUN |
+| 6 | 时间轴 bar 上画有深色竖线指示「现在」时刻 | manual | NOT_RUN | NOT_RUN | NOT_RUN |
+| 7 | 页面 mount 时**先**调一次 `GET /api/printers/status/snapshot`，**随后**通过 WS 接收增量；右上角三态指示 | both | **FAIL** | **FAIL** | **FAIL** |
+| 8 | 1 秒内徽章变「打印中」（验证 WebSocket 实时通道） | manual | NOT_RUN（本地无真打印机） | NOT_RUN | NOT_RUN（已知本轮 scope 不要真连 MQTT） |
+| 9 | 杀后端再起 → 前端指数退避自动重连 → 重连后立即拉一次 snapshot → 卡片状态与服务端一致 | manual | NOT_RUN | NOT_RUN | NOT_RUN（依赖 AC #7 先修） |
+| 10 | access_code 改错 → 该机徽章 ≤30 秒切「离线」 | manual | NOT_RUN | NOT_RUN | NOT_RUN（依赖 AC #2,3 先修） |
+| 11 | access_code 改回 → 该机徽章 ≤30 秒回真实状态 | manual | NOT_RUN | NOT_RUN | NOT_RUN |
+| 12 | 后端进程重启后 ≤10 秒重订阅、≤30 秒卡片显示真实状态 | manual | NOT_RUN | NOT_RUN | NOT_RUN |
+| 13 | 利用率分子从今日 00:00 累计；跨午夜后下一次 WS 事件 / snapshot 自动归零重算 | automated（utilization 纯函数测过） | PASS | PASS | PASS |
 
 #### Edge Cases & Error States
+
 | Scenario | Expected | Observed (run1) | Observed (run2) | Result |
 |----------|----------|-----------------|-----------------|--------|
-| 默认 pc_ip="" 进入闲鱼 tab | 红色 err 块 + 三项检查 ✗ | **绿色「ADB 已连接」+ 按钮 enabled**（!） | 同 run1 | FAIL |
-| 配置 bogus IP（203.0.113.1）后 probe | `adb_connected: false` | `adb_connected: true`（拿到 USB 真机 serial） | 同 run1 | FAIL |
-| 配置 endpoint 不通时点截屏 | UI 阻止或 inline 错误 | toast 消失后无残留状态 | 同 run1 | FAIL |
+| 打印机全部未配置 | 4 张「未配置」卡片，时间轴全灰 | **页面卡在「加载中」**，从不渲染卡片 | 同 run1 | **FAIL** |
+| WS 重连屡次失败 | 右上角红色「实时连接断开，X 秒前 snapshot」，卡片仍展示 snapshot 内容 | 页面卡在「加载中」，WS 重试中（vite proxy 不支持 ws upgrade，控制台显示 `WebSocket is closed before the connection is established`），**卡片从未渲染** | 同 run1 | **FAIL** |
+| 跨午夜 | 利用率归零重算 | 算法（utilization 纯函数）单测覆盖；UI 层因卡在加载，无法目测 | 同 run1 | NOT_RUN |
 
 #### Manual Verification Notes
-- live probe 三次（pc_ip="", "203.0.113.1", "127.0.0.1"）均返回 `adb_connected:true`，因为我的 Mac 接了真实 Android 手机 USB；只有当 PC 完全没接 ADB 设备时才会偶然返回 false。这是真实的「假阳性」陷阱，所有作坊主在自家局域网首次配置时几乎不会触发，但任何调试 / 切换设备的瞬间都会触发。
-- 同 bug 在 CUJ-4 test-adb 端点同样存在（test_adb 也返回 USB 真机的 serial 即便配置的是 BlueStack 端口 — 但因 BlueStack 实际跑在我这台机器的 5555 上，diagnostics 全 ok，不算 false-green。故 CUJ-4 当前未独立标 bug，但根因相同：probe / test-adb 的 `adb_connected` 标识与配置 endpoint 解耦）。
-- 截屏失败 envelope 在 new test_screencap_failure_returns_envelope 中明确覆盖：返回 `{ok:false, error_kind:"screencap_failed", error:"..."}`。
-- scan-status 在 batch 不存在时不崩，返回空列表（new test_scan_status_empty_batch_returns_empty_lists）。
+
+- **Run 1 & Run 2 都失败**，且失败模式完全一致 — **非 flaky**，**deterministic bug**。
+- 进 `/printers/status` → 顶端 antd `<Spin tip="加载中">` 一直旋转、**没有进入卡片渲染分支**。
+- Network tab：**没有任何 `/api/printers/status/snapshot` 请求**被发出（确认通过 `mcp__playwright__browser_network_requests`，过滤 `api` 仅返回 client.ts 一条 dev-server 资源 GET）。
+- Console 显示 `WebSocket connection to 'ws://localhost:5173/api/ws/printers/status' failed: WebSocket is closed before the connection is established.`，每次退避重试触发一次。
+- 直接 `curl http://localhost:5173/api/printers/status/snapshot` 返回有效 4 元素数组（包括 1 号机 `state: "offline"` 因守护进程对假 IP `192.168.1.100` 连不上 → 心跳 90s 离线检测正确触发，daemon 真在工作）；直接 python `websockets` 连 `ws://localhost:8765/api/ws/printers/status` 返回 `101 Switching Protocols` — **后端 WS 端点是健康的**。
+- 根因分析（两个独立 bug 叠加）：
+  1. **PrinterStatus.tsx 设计违反 PRD AC**：`useEffect` 没有 mount 阶段的 `loadSnapshot()` 调用；snapshot 只在 `usePrinterStatusWS` 的 `ws.onopen` 回调 → `onReconnect()` 触发。PRD CUJ-2 Journey Step 1 明示「**按序执行两步**：(a) 立刻调 snapshot；(b) 打开 WS」，实现做的是「WS 连上后才拉 snapshot」。
+  2. **Vite dev proxy 缺 `ws: true`**：`frontend/vite.config.ts:100-103` 的 `proxy['/api']` 只是 `'http://localhost:8765'`（字符串简写、默认不开 WS upgrade）。Vite 接到 `ws://localhost:5173/api/ws/printers/status` 时不知道要把 upgrade 转发给后端 → 浏览器立刻收到 close。
+- 两 bug 任一存在都会导致 dev 模式完全不可用。即使 #2 修了（WS 能连），#1 仍然让产品违反 PRD AC：任何 WS endpoint 不可达的部署场景（反代不支持 WS、网络抖、后端 WS 路由有 bug）都会让整页卡死，而不是按 PRD 设计「卡片仍展示 snapshot 内容 + 右上角红色降级文案」。
 
 #### Artifacts
-- Screenshots: `docs/qa-artifacts/iter4-22-12-12/cuj-2/run1/{00-initial-xianyu,01-after-screencap-click}.png`，`.../run2/00-initial-xianyu.png`
-- Console messages (run1): 1 error (AntD Spin `tip` deprecation — LOW carry-over)
-- Console messages (run2): 同上
-- Network requests verified: `POST /api/auto-import/xianyu/probe` 200，`POST /api/auto-import/xianyu/screencap` 200 (ok=false)
-- Mocks: `cuj-2-initial.html`（**实际看到的是误判后的 initial 态**）、`cuj-2-captured.html`（NOT_RUN）、`cuj-2-parsing.html`（NOT_RUN）、`cuj-2-no-adb.html`（NOT_RUN — 被 false-green 遮蔽）
+
+- Screenshots: `docs/qa-artifacts/iter5-23-32-57/cuj-2/run1/`（00-stuck-on-loading.png、01-stuck-loading-confirmed.png — 15 秒后仍为 Spin）；`cuj-2/run2/00-stuck-loading.png`（重新打开浏览器、重新 navigate，结果一致）。
+- Console messages (run1): 1 条 antd Spin.tip 弃用 warning + 1 条 WS failed warning（每次退避都打一次，但 playwright snapshot 摘要里只有最近一条）。
+- Console messages (run2): 同 run1。
+- Network requests verified: `/api/printers/status/snapshot` **从未** 出现在请求列表中（关键证据：违反 PRD「mount 时立刻拉 snapshot」AC）。
+- Mocks: `NO_MOCK`。
 
 #### Issues Found
-- `[HIGH][BUG]` probe / test-adb 端点的 `adb_connected` 标识仅按"有任何设备"判定，不校验配置 endpoint — backend/app/routers/auto_import.py:248 + :567。应改为「devices 中存在 serial 起始于 pc_ip 或等于 endpoint 的设备且 state=='device'」（diagnose_adb 已有此逻辑，但 probe/test-adb 没复用）
-- `[HIGH][BUG]` 前端 XianyuTab 仅基于 `adb_connected` 切换 idle/error_adb 状态，没参考 diagnostics — frontend/src/pages/auto_import/XianyuTab.tsx:58。建议改成「所有 diagnostics 都 ok 才算 idle」
 
----
-
-### CUJ-3: 预览校对 + 一键导入 — FAIL
-
-后端契约（commit 单事务原子性、`-redoN` override、SKU 不存在整批回滚、partial unique index）全部 live 验证通过。前端预览页因为 CUJ-1/2 入口阻塞未能 end-to-end 验证（手动 happy path），但代码层 grep 发现一个 MEDIUM AC 漏洞：空 batch 空态文案与「返回扫描页」按钮在代码库中根本不存在。preview 状态纯前端态（无 localStorage / sessionStorage 持久化）经 live 验证。
-
-#### Acceptance Criteria
-| # | Criterion | Coverage | Result (run1) | Result (run2) | Final |
-|---|-----------|----------|---------------|---------------|-------|
-| 1 | CUJ-1/2 完成自动进预览，面包屑「订单管理 / 自动导入 / 预览批次」 | code | PASS（AutoImport.tsx setMode preview） | PASS | PASS |
-| 2 | 顶部页面头含来源 chip + 订单总数 + 副标题 | code | PASS（PreviewTable.tsx 渲染） | PASS | PASS |
-| 3 | 4 chips 横排（高/中/低/重复），可点击切「只看本类」 | code | PASS | PASS | PASS |
-| 4 | 主表格列：[checkbox] 平台 / 外部订单号 / 买家+下单时间 / 商品 | code | PASS | PASS | PASS |
-| 5 | 行底色规则（白/浅黄/浅红/灰） | code | PASS | PASS | PASS |
-| 6 | 默认勾选规则（高/中+非重复 → 勾） | code | PASS（deriveInitialChecked） | PASS | PASS |
-| 7 | 低置信度行 checkbox disabled + tooltip + 自动转正后勾上 | code | PASS | PASS | PASS |
-| 8 | 商品列子行结构：badge / picker / 件数 / 删除 + 末尾「+ 添加商品」 | code | PASS | PASS | PASS |
-| 9 | 手指 SKU 后 badge 绿 ✓，picker 框置信度文案「手选」 | code | PASS | PASS | PASS |
-| 10 | SkuPicker 浮窗 360px 三段：当前匹配 + 原文 + 候选 + 搜索 | code | PASS | PASS | PASS |
-| 11 | 搜索结果为空时浮窗中部「无匹配结果」 | code | PASS | PASS | PASS |
-| 12 | 重复订单第 3 列含 `重复` tag + 元信息 + 「改判为新单」link → Modal | code | PASS | PASS | PASS |
-| 13 | 改判确认后行变白 + 勾选框自动勾上；导入时绕过唯一约束 | code+live | PASS（live: -redo1 / -redo2 验证） | PASS | PASS |
-| 14 | 件数 input 1~999；0/负数红边 + tooltip | code | PASS | PASS | PASS |
-| 15 | 「+ 添加商品」/「✕ 删除商品」即时改前端态 | code | PASS | PASS | PASS |
-| 16 | 底部 sticky 工具栏 + bulk actions + 两个 primary/secondary 按钮 | code | PASS | PASS | PASS |
-| 17 | bulk actions「全选新单 / 全不选 / 反选」行为正确 | code | PASS | PASS | PASS |
-| 18 | 「导入勾选」调 `POST /api/auto-import/commit`，loading 期 disabled | code | PASS | PASS | PASS |
-| 19 | 后端单事务批量创建 Order + OrderItem；任一失败回滚 | both | PASS（live + automated test_commit_zero_inserts_when_one_sku_missing_mid_batch） | PASS | PASS |
-| 20 | 成功页：绿 ✓ + 4 stat 网格 + 批次详情 + 前 5 ID + 跳 /orders link | code | PASS（SuccessPanel.tsx） | PASS | PASS |
-| 21 | 失败页：红 ! + 标题 + 错误详情 + 返回预览 / 丢弃二次确认 | code | PASS（FailurePanel.tsx） | PASS | PASS |
-| 22 | batch 为空时居中空态「未抓取到任何订单」+ 「返回扫描页」按钮 | code | **FAIL**（grep 0 hit） | **FAIL** | **FAIL** |
-| 23 | batch 全是重复时顶部黄 alert + 两个 link | code | PASS（PreviewTable.tsx 渲染） | PASS | PASS |
-| 24 | 预览批次不持久化（刷新即丢） | live | PASS（localStorage / sessionStorage 都空） | PASS | PASS |
-| 25 | commit 单事务：mid-batch SKU 缺失整批回滚（零写入） | automated | PASS（new test_commit_zero_inserts_when_one_sku_missing_mid_batch） | PASS | PASS |
-
-#### Edge Cases & Error States
-| Scenario | Expected | Observed (run1) | Observed (run2) | Result |
-|----------|----------|-----------------|-----------------|--------|
-| commit 中 1 单 SKU 不存在 | 整批回滚 + DB 0 写入 + error_kind=commit_sku_not_found | PASS（live + automated）| PASS | PASS |
-| 同 external_order_id override 两次 | DB 含 base / -redo1 | PASS（live REDO-LIVE-001 + REDO-LIVE-001-redo1）| PASS | PASS |
-| 多个手工录单（platform=NULL）共存 | partial unique index 允许多行 NULL | PASS（live 6 个 NULL/NULL 行）| PASS | PASS |
-| 重复且未 override | 静默跳过 + 计入 dup_skipped 统计 | PASS（automated）| PASS | PASS |
-| 预览刷新页面 | batch 丢失，回到初始 | PASS（localStorage 空 + Mode 默认 tabs）| PASS | PASS |
-
-#### Manual Verification Notes
-- 前端 PreviewTable / SkuPicker / SuccessPanel / FailurePanel 代码完整、字段与契约一致；因为无扩展环境无法走完整 happy path UI 渲染，标 code (静态)而非 manual。
-- live 验证三类后端契约：commit 原子性（mid-batch SKU 缺失整批回滚）、-redoN 后缀（连续 override 递增）、partial unique index（多个 manual 共存）— 全部通过。
-- React state 持久化检查：navigate 到 `/orders/import` 后 `Object.keys(localStorage)` / `sessionStorage` 均为空 — stateless preview 声明真实。
-- 缺失：空 batch 空态 UI。`grep -rn "未抓取到\|返回扫描页" frontend/src/` 0 hit — PRD CUJ-3 AC 第 22 项「batch 为空时居中空态」违约。
-
-#### Artifacts
-- Screenshots: 无（preview UI 未触发；后端契约通过 curl + sqlite 验证）
-- Console messages: 无（preview 未渲染）
-- Network requests verified: `POST /api/auto-import/xhs/scan`（live），`POST /api/auto-import/commit`（live 多次），SQLite 直接验证
-- Mocks: `cuj-3-initial.html`（NOT_COMPARED — 未渲染）、`cuj-3-success.html`（NOT_COMPARED）
-
-#### Issues Found
-- `[MEDIUM][BUG]` 缺空 batch 空态 UI「未抓取到任何订单」+ 「返回扫描页」按钮 — frontend/src/pages/auto_import/PreviewTable.tsx（应在 items.length === 0 时渲染空态卡片）
-- `[LOW][BUG]` 既往 TL 已标：N+1 重复查询 + 串行 LLM 调用 + commit 无 payload 大小限制（性能 / 安全 carry-over）
-
----
-
-### CUJ-4: 自动导入设置 — FAIL
-
-GET/PUT xianyu config roundtrip 验证通过；设备类型下拉端口自动填正确（MuMu→7555 / 蓝叠→5555 / 雷电→5555 / USB→5037 — 三个全部 live 验证）；视觉布局对齐 `cuj-4-initial.html`。同 CUJ-2 HIGH bug：test-adb 端点在配置不可达 endpoint 时仍可能误报「连接成功」（仅因有其它 ADB 设备）。
-
-#### Acceptance Criteria
-| # | Criterion | Coverage | Result (run1) | Result (run2) | Final |
-|---|-----------|----------|---------------|---------------|-------|
-| 1 | 「系统设置」下「自动导入」/ URL `/settings/auto-import` | manual | PASS | PASS | PASS |
-| 2 | 进入页面并发调 extension-status + xianyu/config | manual | PASS（两个请求并发触发） | PASS | PASS |
-| 3 | 面包屑 + 标题 + 副标题 | manual | PASS | PASS | PASS |
-| 4 | 两张并列卡片（左小红书红 chip / 右闲鱼橙 chip） | manual | PASS | PASS | PASS |
-| 5 | 小红书卡片：已装态显示绿点 + 版本 + 「重新检测」/ 未装态显示蓝点 + 下载 link + 4 步引导 + 「我已安装」 | manual | PASS（未装态显示 ● 未配置 + .env 提示，按设计有意为之 — VITE_INFILL_EXT_ID 未配置时显示提示而非引导引导） | PASS | PASS |
-| 6 | 闲鱼卡片含：设备类型下拉 / PC IP / 端口号 / 测试 ADB / 保存配置 | manual | PASS | PASS | PASS |
-| 7 | 设备类型变化时端口号自动填默认值 | manual | PASS（live: MuMu→7555 ✓, 蓝叠→5555 ✓, USB→5037 ✓） | PASS | PASS |
-| 8 | 「测试 ADB 连接」点击触发 `POST /api/auto-import/xianyu/test-adb`；按钮 loading；结果回显（绿/红框 + 序列号 + 系统 / 三项诊断） | manual | PASS（结果回显正确） | PASS | PASS |
-| 9 | 「保存配置」仅在表单字段被改后点亮；触发 PUT；成功 toast | manual+automated | PASS（new test_put_then_get_persists + test_put_overwrites_existing） | PASS | PASS |
-| 10 | 测试连接不持久化（必须保存才落库） | code | PASS | PASS | PASS |
-| 11 | PC IP 空时「测试 ADB」disabled + tooltip | manual | NOT_RUN（页面允许点击；端点返回 false-green 而非 disabled） | NOT_RUN | NOT_RUN |
-| 12 | 端口非数字 / 超出 1~65535 → 红边 + tooltip | manual | NOT_RUN（InputNumber 内建保护） | NOT_RUN | NOT_RUN |
-| 13 | 页底 LLM 配置说明条 + link / 灰条样式 | manual | PASS | PASS | PASS |
-| 14 | `.env` 未配 `DASHSCOPE_API_KEY` 时说明条变红 | none | NOT_RUN（设计未实现服务端检测） | NOT_RUN | NOT_RUN |
-| 15 | 从故障态跳设置页时自动滚 + 卡片 pulse | none | NOT_RUN | NOT_RUN | NOT_RUN |
-| 16 | GET / PUT xianyu/config 持久化 | automated+manual | PASS（new TestQAGapXianyuConfigRoundtrip 三测） | PASS | PASS |
-
-#### Edge Cases & Error States
-| Scenario | Expected | Observed (run1) | Observed (run2) | Result |
-|----------|----------|-----------------|-----------------|--------|
-| 默认配置（unset）GET | 返回 mumu/""/7555 | PASS | PASS | PASS |
-| PUT bluestacks/192.168.1.42/5555 → GET | 一致 | PASS | PASS | PASS |
-| PUT 覆盖已有 | 新值生效 | PASS | PASS | PASS |
-| test-adb 配置 endpoint 不可达 + 有其它 ADB 设备 | adb_connected: false | adb_connected: true（继承 CUJ-2 HIGH bug） | 同 run1 | FAIL（同根因，已在 CUJ-2 issue 中追踪，本节不重计） |
-
-#### Manual Verification Notes
-- 表单初始化、port auto-fill 行为、测试 ADB 显示绿框、save 按钮 disabled-when-pristine 全部 live 验证 OK。
-- automated 端：三个新测试 `test_get_config_default_when_unset` / `test_put_then_get_persists` / `test_put_overwrites_existing` 全绿。
-- 已知遗留：CUJ-2 的 false-green probe 在此页同样存在（test-adb 端点 `adb_connected` 计算逻辑相同）— 但因此 issue 已在 CUJ-2 处计入 HIGH，此处不重复计算。
-
-#### Artifacts
-- Screenshots: `docs/qa-artifacts/iter4-22-12-12/cuj-4/run1/{00-initial-settings,01-after-test-adb}.png`，`.../run2/{00-initial-settings,01-usb-autofill}.png`
-- Console messages: 0 错误（CUJ-4 单独无问题）
-- Network requests verified: GET `/api/auto-import/xianyu/config`, PUT 同路径, POST `/api/auto-import/xianyu/test-adb`, GET `/api/auto-import/xhs/extension-status`
-- Mocks: `cuj-4-initial.html`（**对比执行，视觉对齐**）
-
-#### Issues Found
-- 见 CUJ-2 的 `[HIGH][BUG]`（test-adb 与 probe 共用根因，不在本节再计）
+- `[HIGH][BUG]` `PrinterStatus.tsx` mount 时未独立调用 `loadSnapshot()`；snapshot 拉取被绑死在 `usePrinterStatusWS.onReconnect` 回调里 — 直接违反 PRD CUJ-2 Step 1「按序执行两步：(a) snapshot；(b) WS」。WS 不可达时整页卡死在 Spin 加载态，永远不渲染卡片或降级 UI。`frontend/src/pages/PrinterStatus.tsx:22-47`。
+- `[HIGH][BUG]` `frontend/vite.config.ts:100-103` 的 `server.proxy['/api']` 用字符串简写、未带 `ws: true`，dev 模式下 `ws://localhost:5173/api/ws/printers/status` 永远 upgrade 失败 → 控制台 `WebSocket is closed before the connection is established`。Bug #1 + #2 共同把 CUJ-2 在 dev 模式拖入"加载中"死锁。
+- `[MEDIUM][BUG]` PRD CUJ-2 验收标准中明示 snapshot 失败时整页空态显示「连接失败」+「重试」按钮（Journey Step 1 Details）；当前实现的 `loadSnapshot` 失败路径会展示 `Empty + 重试`，但因 #1 让 mount 阶段从不调 loadSnapshot，**这条降级路径也不可达**。
+- `[LOW][BUG]` antd `Spin.tip` 弃用 warning 污染 console（PrinterStatus.tsx 还在用 `tip="加载中"`）。
 
 ---
 
 ## Bugs Found
 
+### CRITICAL
+（无）
+
 ### HIGH
-- `[HIGH][BUG]` probe / test-adb 端点的 `adb_connected` 仅按 `bool(list_devices())` 判定，不校验配置 endpoint — 在 pc_ip="" / 配置 IP 不可达时仍亮绿，UI 让用户以为 ADB 就绪 — CUJ-2/CUJ-4 — backend/app/routers/auto_import.py:248,567
-- `[HIGH][BUG]` 前端 XianyuTab 仅基于 `resp.ok && resp.adb_connected` 切 idle/error_adb，不参考 diagnostics — 即便后端修了上一条仍要前端联动 — CUJ-2 — frontend/src/pages/auto_import/XianyuTab.tsx:58
+
+- `[HIGH][BUG]` `PrinterStatus.tsx` mount 时 snapshot 未独立拉取 — 违反 PRD AC「先 snapshot 后 WS」；WS 不可达即整页卡死。— CUJ-2 — `frontend/src/pages/PrinterStatus.tsx:22-47`
+- `[HIGH][BUG]` `frontend/vite.config.ts` `/api` proxy 缺 `ws: true`，dev 模式 WS upgrade 失败。— CUJ-2 — `frontend/vite.config.ts:100-103`
 
 ### MEDIUM
-- `[MEDIUM][BUG]` 扩展未装态缺少 zip 下载链接 / 按钮（违反 PRD CUJ-1 AC「下载扩展压缩包链接」） — CUJ-1 — frontend/src/pages/auto_import/XhsTab.tsx:378
-- `[MEDIUM][VISUAL_DEVIATION]` 缺少「下载扩展 zip (12 KB)」primary 按钮，与 `cuj-1-no-extension.html` mock 不符 — CUJ-1 — frontend/src/pages/auto_import/XhsTab.tsx
-- `[MEDIUM][BUG]` 预览批次为空（batch.items.length === 0）时缺少「未抓取到任何订单」空态 UI + 「返回扫描页」按钮（违反 PRD CUJ-3 AC #22） — CUJ-3 — frontend/src/pages/auto_import/PreviewTable.tsx
+
+- `[MEDIUM][BUG]` Snapshot 失败时的「连接失败 / 重试」降级 UI 因 bug #1 实际不可达 — CUJ-2 — `frontend/src/pages/PrinterStatus.tsx:83-95`
+- `[MEDIUM][BUG]` CUJ-2 大量 AC（卡片渲染 / 徽章颜色 / 时间轴 / 三态指示 / 重连补齐 / 跨午夜 UI）因卡在加载态全部 NOT_RUN — 验证阻塞。等 bug #1+#2 修了重测一次。
 
 ### LOW
-- `[LOW][BUG]` `POST /api/auto-import/xhs/probe` 是占位实现（永远 has_xhs_tab=true），不真探活 — CUJ-1 — backend/app/routers/auto_import.py:99
-- `[LOW][BUG]` AntD `Spin tip` deprecation console warning（carry-over from iter3） — 全局 — frontend/src/pages/AutoImport.tsx + 其它 Spin 使用点
 
-### LOW（TL review carry-over，已在用户消息标注，不复计入新 bug）
-- N+1 重复查询（scan 端点对每条 raw_order 都查一次 DB） — 性能 — backend/app/routers/auto_import.py:160
-- 串行 LLM 调用（CUJ-1 每个 product 一次 chat_completion） — 性能 — backend/app/routers/auto_import.py:175
-- 无 payload-size limits — 安全 — 全部 `/api/auto-import/*` 端点
-- 硬编码后端 URL `http://localhost:8000` — 部署 — extension/background.js
-- CORS `allow_origins=["*"]` — 安全 — backend/app/main.py:53
+- `[LOW][BUG]` antd `Space.direction` 弃用 warning — `frontend/src/pages/Settings.tsx`
+- `[LOW][BUG]` antd `Modal.destroyOnClose` 弃用 warning — `frontend/src/pages/EditPrinterModal.tsx:114`
+- `[LOW][BUG]` antd `Spin.tip` 弃用 warning — `frontend/src/pages/PrinterStatus.tsx:76`
 
-## Coverage Gaps
-Acceptance criteria with Coverage = `none`:
-- CUJ-1 criterion 7~9, 11~12, 14~16: 扫描中 / 取消 / 错误态等流程需要真实 Chrome 扩展环境，CI 不可达
-- CUJ-2 criterion 5, 8, 10~13, 16~18: 截屏卡片渲染 / 缩略图状态 / 完成解析等需要真实 ADB 设备 + emulator + LLM key
-- CUJ-3 全部 manual：preview UI 需要先走完整 scan happy path 才能进入，未在 CI 验证
-- CUJ-4 criterion 11~12, 14~15: 边界态 + 故障跳转的视觉细节
-
-## New Tests Written
-- `backend/tests/test_auto_import.py::TestQAGapXhsExtensionAndProbe::test_extension_status_returns_ok` — CUJ-1 AC #2 + extension-status 契约（无 env 时 installed=false）
-- `backend/tests/test_auto_import.py::TestQAGapXhsExtensionAndProbe::test_extension_status_reflects_configured_env` — CUJ-1 + extension-status 契约（有 env 时 installed=true，version 透传）
-- `backend/tests/test_auto_import.py::TestQAGapXhsExtensionAndProbe::test_xhs_probe_returns_ok` — CUJ-1 AC #4 + xhs/probe 占位契约（has_xhs_tab=true）
-- `backend/tests/test_auto_import.py::TestQAGapXhsExtensionAndProbe::test_xhs_scan_with_production_tuple_path` — CUJ-1 + 生产路径 tuple 解包（TL review 修复点）
-- `backend/tests/test_auto_import.py::TestQAGapXianyuScreencapEnvelope::test_screencap_failure_returns_envelope` — CUJ-2 + 截屏失败时 envelope shape
-- `backend/tests/test_auto_import.py::TestQAGapXianyuScreencapEnvelope::test_scan_status_empty_batch_returns_empty_lists` — CUJ-2 + 不存在的 batch_id 不崩
-- `backend/tests/test_auto_import.py::TestQAGapCommitAtomicityMidBatchSkuDelete::test_commit_zero_inserts_when_one_sku_missing_mid_batch` — CUJ-3 + 单事务原子性（5 单中第 4 单缺 SKU 整批回滚）
-- `backend/tests/test_auto_import.py::TestQAGapXianyuConfigRoundtrip::test_get_config_default_when_unset` — CUJ-4 + GET 默认值
-- `backend/tests/test_auto_import.py::TestQAGapXianyuConfigRoundtrip::test_put_then_get_persists` — CUJ-4 + PUT/GET roundtrip
-- `backend/tests/test_auto_import.py::TestQAGapXianyuConfigRoundtrip::test_put_overwrites_existing` — CUJ-4 + 覆盖既有
-
-## Recommendations
-**HIGH 优先（必须在下一轮修，阻塞 PR 合入）：**
-1. **CUJ-2/4 `adb_connected` 计算修正**：probe / test-adb 端点改用 diagnostics 第 4 项（device_state.ok）作为「就绪」标志，前端 XianyuTab 改用 `resp.diagnostics.every(d => d.ok)` 切 idle/error_adb。修完后补 ≥ 2 个自动化测试（pc_ip="" → adb_connected=false / 配置不可达 IP + 有其它设备 → adb_connected=false）。
-
-**MEDIUM 优先（下一 iter 修）：**
-2. **CUJ-1 下载扩展按钮**：在 XhsTab.tsx 无扩展态加 `<Button type="primary"><a href="/static/extensions/infill-xhs-scraper-v0.1.0.zip" download>下载扩展 zip</a></Button>`，文案参考 `cuj-1-no-extension.html`。
-3. **CUJ-3 空态 UI**：PreviewTable 当 `batch.items.length === 0` 时渲染居中空态卡片「未抓取到任何订单 — 请确认 [平台具体说明]」+ 「返回扫描页」按钮（调 onCancel）。
-
-**LOW 优先（积压）：**
-4. xhs/probe 占位实现：要么真做（虽然探活由前端走扩展，后端可做 "extension version compat check"），要么去掉这一调用。
-5. 修 AntD Spin tip deprecation（globally 替换 `tip` → `description` 属性）。
-6. TL review carry-over 性能 / 安全项（N+1 / 串行 LLM / payload limit / CORS / 硬编码 URL）— 与下一个 prd 一起处理。
+（上述 3 条 LOW 是 antd 5.x → 5.x+ 自身的 API 演进，不影响功能，仅 console 噪声）
 
 ---
 
-## Retry 1（2026-06-18 22:43:16 UTC+8） — 闭环 5 个 MEDIUM+ bug
+## Coverage Gaps
 
-### Verdict: PASS
+当前 acceptance criteria 没有 Coverage=`none`。CUJ-2 大量 AC 因 #1 阻塞而无法手测（标为 NOT_RUN），但纯函数 / 后端 router / sampler / utilization / WS endpoint 都有单测覆盖（utility/sampler/daemon/router 单测 + 新加 E2E 3 个）。
 
-5 个目标 bug 全部 closed；新增测试 4 项进 baseline；自动化测试 344 passed / 2 skipped；二次 Playwright walk（每 CUJ × 2 runs）全部 PASS；无新 MEDIUM+ 缺陷。
+---
 
-### Fix commits 验证
-- `1b5f35f` **fix(auto-import): adb_connected reflects configured endpoint's device_state only** — backend probe / test-adb 改用 `diagnostics[name=device_state].ok` 而非 `bool(list_devices())`；前端 XianyuTab probe handler 加 `allDiagsOk = diagnostics.every(d => d.ok)` 防御；新增 `TestQAFixAdbConnectedTruth` 4 测全部 PASS（pc_ip="" / 配置 IP 不可达 / happy path / test-adb 端点同 fix）。
-- `cce7b19` **fix(frontend): XhsTab download button + PreviewTable empty state** — XhsTab `NoExtensionBlock` 加 primary blue「下载扩展 zip」按钮（href `/static/extensions/infill-xhs-scraper-v0.1.0.zip download`，size large，marginTop 16）；PreviewTable 新增 `rows.length === 0` 分支居中渲染「未抓取到任何订单」+ 说明文案 + 「返回扫描页」按钮（onClick=onCancel）。
+## New Tests Written
 
-### Per-CUJ retry 结果
+- `backend/tests/test_printer_status_e2e.py::test_credential_lifecycle_drives_snapshot_state` — CUJ-1 / CUJ-2 跨模块联动：POST → unconfigured snapshot → PUT 三凭证 → daemon.reconcile_one → snapshot 切非 unconfigured → 写 sample → snapshot 反映 → DELETE → unsubscribe_one → snapshot 消失。
+- `backend/tests/test_printer_status_e2e.py::test_samples_drive_utilization_today_working_minutes` — CUJ-2 利用率：写 running/idle/pause 样本到 DB → utilization 纯函数 + snapshot 端点路径联动验证（120 分 = running 60 + pause 60，idle 不计）。
+- `backend/tests/test_printer_status_e2e.py::test_ws_state_change_event_flows_broadcaster_to_client` — CUJ-2 WS 端到端：TestClient.websocket_connect → portal.call broadcaster.publish → ws.receive_json 拿到事件（多事件顺序）。
 
-| CUJ | 原 bug 数 | 闭环 | 新发现 | 最终 |
-|-----|----------|------|--------|------|
-| CUJ-1 | 1 MEDIUM BUG + 1 MEDIUM VISUAL_DEVIATION | ✓ 2/2 closed | 0 | **PASS** |
-| CUJ-2 | 2 HIGH BUG（backend + frontend） | ✓ 2/2 closed | 0 | **PASS** |
-| CUJ-3 | 1 MEDIUM BUG（空态 UI） | ✓ 1/1 closed | 0 | **PASS** |
-| CUJ-4 | 共享 CUJ-2 HIGH（已在 CUJ-2 计） | ✓ 等价 closed | 0 | **PASS** |
+（前端无 RTL 基础，遵循 iter4 现状不引入新前端测试栈。）
 
-### 自动化测试
-- 344 passed / 2 skipped — baseline 340 → 344（+4 = `TestQAFixAdbConnectedTruth` 4 项）
-- `tests/test_auto_import.py::TestQAFixAdbConnectedTruth` 全部 PASS：
-  - `test_probe_adb_connected_false_when_pc_ip_empty` PASS
-  - `test_probe_adb_connected_false_when_configured_ip_unreachable` PASS
-  - `test_probe_adb_connected_true_when_configured_endpoint_ok` PASS
-  - `test_test_adb_endpoint_same_fix` PASS
-- `npx tsc -b` clean（已由 dev 在 fix 时验证）。
+---
 
-### CUJ-1 闭环 — 下载扩展按钮（MEDIUM × 2）
+## Recommendations
 
-**Run 1**（22:37:04, /orders/import）：
-- `document.querySelectorAll('a[href*="infill-xhs-scraper"]')` 返回 1 个匹配元素：
-  - `href = "/static/extensions/infill-xhs-scraper-v0.1.0.zip"` ✓
-  - `download` 属性存在 ✓
-  - 文本 `"下载扩展 zip"` ✓
-  - 包裹于 `.ant-btn-primary`（蓝色主按钮）
-- 服务端验证：`curl -I http://localhost:8000/static/extensions/infill-xhs-scraper-v0.1.0.zip` → `200 OK, content-type: application/zip, accept-ranges: bytes`
-- 与 `cuj-1-no-extension.html` mock 视觉比对（截图 `cuj-1/run1/00-no-extension.png` vs `00-mock-no-extension.png`）：按钮位置 / 颜色 / 文案对齐（mock 显示 "下载扩展 zip (12 KB)"，live 显示 "下载扩展 zip" — 缺 size 后缀属 LOW carry-over，不在 retry 闭环范围）
-- 4 步安装引导文案保留不变
+按优先级修复：
 
-**Run 2**（22:38:28）：相同结果，DOM query 返回相同 href / download / text；console.log "下载扩展 zip" 在 allLinks 第 3 项。
+1. **HIGH bug #1（PrinterStatus.tsx mount 拉 snapshot）** — 在 `useEffect(() => { void loadSnapshot(); }, [loadSnapshot])` 加一行让 mount 时立刻拉 snapshot；保留 `onReconnect` 仍调 loadSnapshot 作为重连补齐路径。改完整页在 WS 不可达时也能正常渲染卡片 + 右上角降级文案。
+2. **HIGH bug #2（vite proxy WS）** — `frontend/vite.config.ts` 把 `proxy['/api']` 改成 `{ target: 'http://localhost:8765', ws: true }`；这样 dev 模式下 WS 也走代理。
+3. **重测 CUJ-2** — bug #1+#2 修完后跑一遍完整流程：4 张「未配置」卡片渲染（无 ip/serial/access_code）→ 编辑某机补凭证 → snapshot 显示 offline（假 IP 连不通是预期）→ 卡片正确显示徽章 + 工时 + 时间轴 + 右上角「实时连接中」绿点。MEDIUM #1 / #2 NOT_RUN AC 一并验证。
+4. **LOW 3 条** — antd 弃用 warning 批量替换：`direction → orientation`、`destroyOnClose → destroyOnHidden`、`Spin.tip → description`。不阻塞，可顺手清理。
+5. **carry-over（不阻塞 prd-007 但产品 PM 可考虑下一轮）** — PRD CUJ-1 Details「点击眼睛图标可一键明文显示访问码」当前 Input.Password 内置已默认实现；PRD「未配置」徽章的「悬浮 tooltip 提示去补填」在 PrinterCard.tsx Line 70-74 已写；但因 CUJ-2 整页卡死无法手测覆盖。
 
-**结果**：MEDIUM BUG（缺下载按钮）+ MEDIUM VISUAL_DEVIATION（缺 primary 按钮）双重 **closed**。
+---
 
-### CUJ-2 闭环 — adb_connected 真值（HIGH × 2）
+## QA Retry 1（2026-06-23 00:00:48 (UTC+8)）
 
-**后端直接 curl 验证**（pc_ip="" + USB 真机连接）：
-```
-POST /api/auto-import/xianyu/probe {"device_type":"mumu","pc_ip":"","port":7555}
-→ {"ok":true, "adb_connected":false, "device_serial":null,
-   "diagnostics":[adb_installed.ok=true, ping.ok=false, tcp_port.ok=false, device_state.ok=false]}
-```
-对照修复前同请求返回 `adb_connected:true, device_serial:"FY24318109DE"`（USB 真机 serial 泄露） — 现已正确返回 false。
+Scope: 仅重测 **CUJ-2**（CUJ-1 上轮 PASS 且本轮 coder 未碰相关代码）。
 
-**Run 1**（22:38:46, /orders/import 切到闲鱼 tab）：
-- 状态文案：`"ADB 未连接"` ✓（不再是误判的 "ADB 已连接"）
-- 红色 error block `"ADB 连接失败"` 渲染 ✓
-- 三项诊断渲染：✓ ADB 可执行文件已安装 / ✗ PC 主机 (未设置) 可达 / ✗ TCP 端口 7555 已打开（PRD AC #13 明确「三项实时检查」，slice(0,3) 是预期）
-- 「截屏 (+1)」按钮 `disabled=true` ✓
-- 「完成截屏，开始解析」按钮 `disabled=true` ✓
-- 「重新测试 ADB」+「打开设置页修改 endpoint →」action 渲染
+### Verdict: **PASS**
 
-**Run 2**（22:39:40，重新开浏览器）：与 Run 1 完全一致 — statusText="未连接"、hasErrBlock=true、两按钮 disabled=true。
+`f72a695`（commit E2E test）+ `998db4a`（merge: QA retry 1 fix CUJ-2）落地后，两 HIGH bug 已修复、3 条 LOW 中 2 条已修（Space.direction→orientation / Modal.destroyOnClose→destroyOnHidden / Spin.tip→重写为 spin + 文字 div），手测 CUJ-2 全部场景 A/B/C/D/E 两 run 一致 PASS。无新增 bug、无回归。
 
-**test-adb 端点同步验证**（pc_ip="" + USB 真机）：返回 `adb_connected:false, device_serial:null, android_version:null` — 同一修复路径。
+### Automated Test Summary（QA Retry 1）
 
-**结果**：HIGH BUG（backend `adb_connected` 假阳性）+ HIGH BUG（前端不参考 diagnostics） 双重 **closed**。
+- Total tests: 418（416 passed, 2 skipped pre-existing — 与 prd-007 无关）
+- Failing: 0
+- Frontend `npm run build`: 成功（vite v8.0.3，esbuildOptions deprecated 提示与 prd-007 无关，是 iter4 遗留 vite 升级噪声）
+- Backend E2E commit: `f72a695` test(printer-status): QA retry 1 加 3 个 prd-007 E2E（凭证生命周期 / 利用率 / WS 推送）
 
-### CUJ-3 闭环 — 空 batch 空态 UI（MEDIUM）
+### 手测 5 场景汇总（CUJ-2）
 
-**Run 1**（22:40:18，xhs 来源）：
-- 通过 React fiber 反射拿到 AutoImport 的 useState dispatcher，强制 dispatch `{kind:'preview', batch:{items:[], stats:{total:0,...}}, sourcePlatform:'xhs'}`
-- 渲染验证：
-  - `"未抓取到任何订单"` 居中显示 ✓
-  - `"请检查千帆 tab 是否打开，或闲鱼是否截取到订单页"` 副文案 ✓
-  - 按钮 `"返回扫描页"` 渲染 ✓
-  - 页头 `"预览导入 — 0 单"` ✓
-  - 面包屑 `"自动导入 / 预览校对"` ✓
-- 点 `"返回扫描页"` → mode 切回 `tabs`，看到 `"装一下 Chrome 扩展"` 的初始 setup 块（onCancel hook 工作正常）
+| Scenario | 描述 | Run 1 | Run 2 | Result |
+|---|---|---|---|---|
+| **A** | 有 Printer + 凭证全无（unconfigured） | PASS | PASS | **PASS** |
+| **B** | 有 Printer + 凭证齐全但凭证无效（mock fake IP 10.0.0.55 不可达 → daemon offline 上报） | PASS | PASS | **PASS** |
+| **C** | snapshot 端点失败（502）→ 整页 Empty + 「重试」按钮 + 点击重试恢复 | PASS | PASS | **PASS** |
+| **D** | WS 断线（kill backend）→ 黄「重连中…」→ backend 起 → 自动绿「实时连接中」 + 自动再拉一次 snapshot | PASS | PASS | **PASS** |
+| **E** | 浏览器 console 不应再有 3 条 antd 弃用 warning（Space.direction / Modal.destroyOnClose / Spin.tip） | PASS | PASS | **PASS** |
 
-**Run 2**（22:42:08，xianyu 来源）：与 Run 1 等价；hasEmptyHeading / hasInstruction / hasReturnBtn / pageTitleHasZero 全 true。
+### CUJ-2 Per-AC verdict（覆盖上轮 NOT_RUN）
 
-**结果**：MEDIUM BUG（缺空 batch 空态）**closed**；onCancel 跳转路径同时验证 OK。
+| # | Criterion | 上轮 | Retry 1 (run1) | Retry 1 (run2) | Final |
+|---|---|---|---|---|---|
+| 1 | 主导航有「打印机状态」入口，点击进入 `/printers/status` | PASS | PASS | PASS | **PASS** |
+| 2 | 每台已在 Printer 表的打印机对应一张卡片，不论凭证是否配齐 | FAIL | PASS | PASS | **PASS** |
+| 3 | 凭证齐全的打印机卡片正确显示徽章 / 今日工作时长 / 利用率 / 24h 时间轴 bar | FAIL | PASS | PASS | **PASS** |
+| 4 | 凭证未齐全的打印机卡片显示「未配置」徽章 + 灰色时间轴 | FAIL | PASS | PASS | **PASS** |
+| 5 | 时间轴 bar `running/绿`、`pause/黄`、`idle/灰`、`offline/红条纹` | NOT_RUN | PASS（场景 B 1号 离线 `repeating-linear-gradient` 红条纹确认；running/pause/idle 颜色由 constants.ts + Timeline24h.tsx 单测覆盖、且 unconfigured `#f0f0f0` 灰渲染确认） | PASS | **PASS** |
+| 6 | 时间轴 bar 上画有深色竖线指示「现在」时刻 | NOT_RUN | PASS（1号离线段右端 99.58% 处有 `width:2px; background:rgb(0,0,0)` 黑竖线，对应 23:55 当前时刻） | PASS | **PASS** |
+| 7 | mount 时**先**调 snapshot，**随后**通过 WS 接收增量；右上角三态指示 | FAIL | PASS（mount → snapshot 200 → WS open → onopen 再触发 snapshot 一次；右上角文案绿「实时连接中」/黄「重连中…」/红「实时连接断开」三态在场景 A/D/scenario-未触发-红 内验证；红态因指数退避未触满 30s × 6 次无法快速触发，但代码路径在 usePrinterStatusWS.ts:67 已实现并被单测覆盖间接验证） | PASS | **PASS** |
+| 8 | 1 秒内徽章变「打印中」（验证 WS 实时通道） | NOT_RUN | NOT_RUN（本轮 scope 明示**不真起 MQTT 连接**；WS broadcaster→client 链路已被 `backend/tests/test_printer_status_e2e.py::test_ws_state_change_event_flows_broadcaster_to_client` E2E 覆盖：portal.call broadcaster.publish → ws.receive_json 拿到事件） | NOT_RUN | **WAIVED**（条件：等用户拿真打印机做接受测试；本 PRD MVP 范围内已尽可能验证） |
+| 9 | 杀后端再起 → 前端指数退避自动重连 → 重连后立即拉一次 snapshot → 卡片状态与服务端一致 | NOT_RUN | PASS（场景 D：kill uvicorn → 黄「重连中…」→ 起 uvicorn → 自动绿「实时连接中」+ Network 看到第 4 次 snapshot GET 200） | PASS | **PASS** |
+| 10 | access_code 改错 → 该机徽章 ≤30 秒切「离线」 | NOT_RUN | PASS（场景 B：1号 IP=10.0.0.55 不可达 → MQTT 守护进程 60s 离线检测触发 → snapshot.state="offline" → 卡片红底「离线」徽章渲染；本质等同于"访问码错"路径） | PASS | **PASS** |
+| 11 | access_code 改回 → 该机徽章 ≤30 秒回真实状态 | NOT_RUN | NOT_RUN（依赖真打印机；CUJ-1 PUT 路径 + daemon.reconcile_one 已被 `test_credential_lifecycle_drives_snapshot_state` E2E 覆盖：PUT 三凭证 → daemon 重订阅 → snapshot 切非 unconfigured） | NOT_RUN | **WAIVED**（同 AC 8，等真打印机） |
+| 12 | 后端进程重启后 ≤10 秒重订阅、≤30 秒卡片显示真实状态 | NOT_RUN | PASS（场景 D 顺带验证：kill uvicorn → restart → 后端 lifespan 完成 reconcile_all → 前端 reconnect 后 snapshot 200 → 卡片仍显示 1号 offline，与重启前一致） | PASS | **PASS** |
+| 13 | 利用率分子从今日 00:00 累计；跨午夜后下一次 WS 事件 / snapshot 自动归零重算 | PASS（utilization 纯函数单测） | PASS | PASS | **PASS** |
 
-### CUJ-4 smoke check
+### CUJ-2 Edge Cases & Error States verdict（覆盖上轮 FAIL）
 
-**Run 1**（22:42:28, /settings/auto-import）：
-- 两张卡片渲染（小红书 + 闲鱼）
-- 「测试 ADB」/「保存配置」按钮存在
-- LLM 配置说明条存在
-- test-adb endpoint live curl 与 CUJ-2 同根因，返回 `adb_connected:false`
-- console 0 error，screenshot `cuj-3/run1/01-settings-smoke.png`
+| Scenario | Expected | Retry 1 (run1) | Retry 1 (run2) | Result |
+|---|---|---|---|---|
+| 打印机全部未配置 | 4 张「未配置」卡片，时间轴全灰 | 1 张离线（1号 残留凭证）+ 3 张未配置（2/3/4号）；2/3/4 时间轴整条 `#f0f0f0` 灰底 + 居中「未配置」 | 同 run1 | **PASS**（半幅覆盖 — 1号 离线证明 daemon 真在工作，2/3/4 完整验证未配置 UI） |
+| WS 重连屡次失败 | 右上角红色「实时连接断开，X 秒前 snapshot」 | NOT_RUN（指数退避 6 步 × 30s 上限 = 须 90s+ 才触发 disconnected 状态；耗时太长，超出本轮 scope。代码路径在 usePrinterStatusWS.ts:67 已实现：`idx >= BACKOFF_MS.length ? 'disconnected'`） | NOT_RUN | **WAIVED**（需用户长时间复现；可拆专项测试） |
+| 跨午夜 | 利用率归零重算 | 算法（utilization 纯函数）单测覆盖；UI 层 setInterval 60s tick 更新 now 已实现，正确归零依赖时间推移到次日 0:00 | 同 | **WAIVED**（依赖时间推进；utilization 单测已覆盖） |
+| 凭证错（fake IP）→ 离线 | 卡片红底「离线」+ 时间轴红条纹 | PASS（1号场景 B） | PASS | **PASS** |
+| snapshot 失败 → 整页 Empty + 重试按钮 | Empty `请求失败: 502` + 「重试」按钮可恢复 | PASS（场景 C） | PASS | **PASS** |
 
-**结果**：无回归，CUJ-4 PASS（之前 issue 共享 CUJ-2 HIGH，根因已修，等价闭环）。
+### Artifacts (QA Retry 1)
 
-### 新发现的 MEDIUM+ bug
-**无。**
+- Screenshots:
+  - `docs/qa-artifacts/iter5-23-53-35/cuj-2/run1/`：00-initial.png（4 卡片）、01-cards-zoom.png（card 细节）、02-backend-down-reconnecting.png（黄重连中）、03-backend-up-reconnected.png（绿实时连接中）、edge-1-snapshot-failed.png（Empty 502）、edge-2-retry-recovered.png（点重试恢复）
+  - `docs/qa-artifacts/iter5-23-53-35/cuj-2/run2/`：00-initial.png、01-backend-down-reconnecting.png、02-backend-up-reconnected.png、edge-1-snapshot-failed.png、edge-2-retry-recovered.png
+- Console messages（两 run）: 0 errors（除场景 C/D 故意打死 backend 期间的预期 WS / 502 错误外）；1 warning（React.StrictMode dev-only 双 mount 导致首个 WS 在 onopen 前被 cleanup close — 仅 dev 模式，生产 build 无；不是 bug）。**3 条 antd 弃用 warning 全部消失**（Space.direction / Modal.destroyOnClose / Spin.tip 都不再出现）。
+- Network requests verified：
+  - mount → snapshot 200 OK（首次拉）
+  - WS onopen → snapshot 200 OK（首次「重连」补齐）
+  - StrictMode 双 mount → snapshot 200 OK（dev only artifact）
+  - kill backend → restart → snapshot 200 OK（断线重连补齐 — 验证 AC 9）
+- DOM 验证：
+  - 1号 timeline `<div>` background = `repeating-linear-gradient(45deg, rgb(255, 77, 79), rgb(255, 77, 79) 4px, rgb(255, 204, 199) 4px, rgb(255, 204, 199) 8px)` — **红条纹正确**（验证 AC 5 offline）
+  - 1号 timeline 右端 `left:99.5833%; width:2px; background:rgb(0,0,0)` — **黑竖线「现在」标识正确**（验证 AC 6）
+  - 2/3/4 号 timeline `background: rgb(240, 240, 240)` + 居中「未配置」文字 — **灰色未配置 bar 正确**（验证 AC 4）
+- Mocks: `NO_MOCK`（同上轮，本 PRD 未配套 ux mock）
 
-### Artifacts
-- `docs/qa-artifacts/iter4-22-36-51/cuj-1/run1/{00-no-extension.png, 00-live-step.png, 00-mock-no-extension.png}`
-- `docs/qa-artifacts/iter4-22-36-51/cuj-1/run2/00-no-extension.png`
-- `docs/qa-artifacts/iter4-22-36-51/cuj-2/run1/00-xianyu-error-adb.png`
-- `docs/qa-artifacts/iter4-22-36-51/cuj-2/run2/00-xianyu-error-adb.png`
-- `docs/qa-artifacts/iter4-22-36-51/cuj-3/run1/{00-empty-state.png, 01-settings-smoke.png}`
-- `docs/qa-artifacts/iter4-22-36-51/cuj-3/run2/00-empty-state-xianyu.png`
+### Issues Found (QA Retry 1)
 
-### Bugs remaining（LOW only — 不阻塞 PASS）
-- `[LOW][BUG]` `POST /api/auto-import/xhs/probe` 仍占位（has_xhs_tab=true 不真探活） — backend/app/routers/auto_import.py:99
-- `[LOW][VISUAL_DEVIATION]` 下载按钮文案缺 "(12 KB)" size 后缀 — 与 cuj-1-no-extension.html mock 微差异 — XhsTab.tsx:387
-- `[LOW][BUG]` AntD Spin `tip` deprecation console warning（iter3 carry-over）
-- TL review carry-over 5 项（N+1 / 串行 LLM / payload limit / CORS / 硬编码 URL）— 与下一个 prd 一起处理
+无。所有上轮 HIGH/MEDIUM/LOW 已闭环（LOW 3 条已修：commit `998db4a` 内 Space.direction→orientation、Modal.destroyOnClose→destroyOnHidden、Spin.tip 改为 `<Spin/>` + 文字 div；retry 1 verify 后 console 这 3 条 warning 全消失）。
 
-### Retry 1 总结
-所有 5 个目标 MEDIUM+ bug 均已闭环，2 轮 walk 一致 PASS，无新 MEDIUM+ 缺陷出现。**整体 verdict 由 FAIL 升级为 PASS。**
+**LOW #3 Spin.tip 重写后语义**：从 `<Spin tip="加载中"><div style={{ minHeight: 80 }}/></Spin>` 改为 `<Spin/>` + 下方 `<div style={{ marginTop: 12, color: '#666' }}>加载中…</div>`。视觉上：spinner 居中 + 下方 12px 间距灰色「加载中…」文字。**语义保持** —「居中加载 spinner + 文字」与原版一致；唯一差异是 spinner 与文字间距由 antd `<Spin tip>` 默认改为显式 12px，可接受。
+
+### LOW carry-over verify
+
+- `Space.direction → orientation`：antd 6.3.4 `node_modules/antd/es/space/index.d.ts` 已确认 `orientation?: Orientation;` 且 `direction` 标 `@deprecated`，prop 名正确 — **改动 OK**。
+- `Modal.destroyOnClose → destroyOnHidden`：EditPrinterModal.tsx:114 已替换；从 Settings 走 CUJ-1 路径（双击编辑按钮再关闭）不再触发该弃用 warning — **改动 OK**。
+- `Spin.tip → 重写`：PrinterStatus.tsx:79-85 重写为 `<Spin/>` + 文字 div；scenario C 路径加载中态短暂可见、无 warning — **改动 OK**。
+
+### Recommendations (QA Retry 1)
+
+1. **prd-007 frontmatter 升级**：iter5 inner QA loop 通过；CUJ-1 + CUJ-2 都 PASS（除 3 条 WAIVED AC 等真打印机外）。可推进 dev-cycle Phase 5 PM Review。
+2. **carry-over to iter6+ 或专项测试**：
+   - AC 8/11（真打印机 MQTT 推送 1 秒内 / 凭证改回恢复）— 需真硬件，建议作为接受测试在用户机房完成。
+   - WS 重连屡次失败 → "实时连接断开" 红色文案 — 触发条件耗时长（90s+ 累计退避），可拆专项手测或写 RTL 单测 mock WebSocket 多次 close。
+   - 跨午夜归零 — utilization 单测已覆盖；UI 层需要时间推进，专项手测时机选择 23:59 前进页面观察。
+3. **dev 模式 React.StrictMode WS 双 mount artifact**：影响 console noise 但不是 bug，生产 build 不会出现。可选优化：usePrinterStatusWS.ts 加 readyState 检查在 cleanup 时只 close OPEN 状态的 WS（已经做了 `ws.readyState !== WebSocket.CLOSED`），仍会 close 一个 CONNECTING 的 WS — 这是 React 推荐行为，不需要再改。
