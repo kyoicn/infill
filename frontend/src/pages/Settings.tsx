@@ -1,23 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Card, Table, Button, Modal, Input, InputNumber, Space, Popconfirm, TimePicker, message } from 'antd';
-import { PlusOutlined, DeleteOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
+import { Card, Table, Button, Modal, Input, InputNumber, Space, Popconfirm, Tag, TimePicker, message } from 'antd';
+import { PlusOutlined, DeleteOutlined, EditOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import dayjs from 'dayjs';
+import EditPrinterModal, { type Printer } from './EditPrinterModal';
 
 const DAY_NAMES = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
 export default function Settings() {
-  const [printers, setPrinters] = useState<any[]>([]);
+  const [printers, setPrinters] = useState<Printer[]>([]);
   const [scheduleConfigs, setScheduleConfigs] = useState<any[]>([]);
   const [changeover, setChangeover] = useState('15');
   const [printerModal, setPrinterModal] = useState(false);
   const [windowModal, setWindowModal] = useState(false);
   const [editingDay, setEditingDay] = useState<number>(0);
   const [windows, setWindows] = useState<{ start: string; end: string }[]>([]);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingPrinter, setEditingPrinter] = useState<Printer | null>(null);
 
+  const loadPrinters = () => {
+    // TODO(T4.1 merge): drop the cast once api.getPrinters returns Printer[].
+    api.getPrinters().then((rows) => setPrinters(rows as Printer[]));
+  };
 
   const reload = () => {
-    api.getPrinters().then(setPrinters);
+    loadPrinters();
     api.getScheduleConfigs().then(setScheduleConfigs);
     api.getSystemConfigs().then(configs => {
       const co = configs.find((c: any) => c.key === 'changeover_minutes');
@@ -90,13 +97,33 @@ export default function Settings() {
           pagination={false}
           columns={[
             { title: 'ID', dataIndex: 'id', width: 60 },
-            { title: '名称', dataIndex: 'name' },
             {
-              title: '操作', width: 80,
-              render: (_: any, rec: any) => (
-                <Popconfirm title="确定删除？" onConfirm={() => deletePrinter(rec.id)}>
-                  <Button size="small" danger icon={<DeleteOutlined />} />
-                </Popconfirm>
+              title: '名称',
+              render: (_: any, rec: Printer) => {
+                const unconfigured = rec.ip === null || rec.serial === null || rec.access_code_masked === null;
+                return (
+                  <Space>
+                    <span>{rec.name}</span>
+                    {unconfigured && <Tag color="default">未配置监测</Tag>}
+                  </Space>
+                );
+              },
+            },
+            {
+              title: '操作', width: 140,
+              render: (_: any, rec: Printer) => (
+                <Space size="small">
+                  <Button
+                    size="small"
+                    icon={<EditOutlined />}
+                    onClick={() => { setEditingPrinter(rec); setEditModalOpen(true); }}
+                  >
+                    编辑
+                  </Button>
+                  <Popconfirm title="确定删除？" onConfirm={() => deletePrinter(rec.id)}>
+                    <Button size="small" danger icon={<DeleteOutlined />} />
+                  </Popconfirm>
+                </Space>
               ),
             },
           ]}
@@ -195,6 +222,14 @@ export default function Settings() {
           </Button>
         </Space>
       </Card>
+
+      {/* 编辑打印机弹窗 */}
+      <EditPrinterModal
+        open={editModalOpen}
+        printer={editingPrinter}
+        onCancel={() => { setEditModalOpen(false); setEditingPrinter(null); }}
+        onSaved={() => { setEditModalOpen(false); setEditingPrinter(null); loadPrinters(); }}
+      />
 
       {/* 时间窗口弹窗 */}
       <Modal title={`编辑时间窗口 — ${DAY_NAMES[editingDay]}`} open={windowModal} onOk={saveWindows} onCancel={() => setWindowModal(false)} width={500}>
