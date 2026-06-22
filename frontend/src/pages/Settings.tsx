@@ -192,7 +192,7 @@ export default function Settings() {
 
       {/* 重置数据库 */}
       <Card title="数据库维护" style={{ marginBottom: 24 }}>
-        <Space direction="vertical">
+        <Space orientation="vertical">
           <span style={{ color: '#666' }}>
             重置数据库会删除所有排班数据并重建表结构。库存、订单、打印机和系统配置会保留，产品目录从 YAML 重新加载。
           </span>

@@ -111,7 +111,7 @@ export default function EditPrinterModal({ open, printer, onCancel, onSaved }: E
       onCancel={onCancel}
       onOk={handleOk}
       confirmLoading={submitting}
-      destroyOnClose
+      destroyOnHidden
     >
       <Form form={form} layout="vertical">
         <Form.Item

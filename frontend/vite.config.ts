@@ -98,7 +98,9 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      '/api': 'http://localhost:8765',
+      // ws:true 必须 — /api/ws/printers/status 走 WebSocket upgrade，字符串
+      // 简写不转 upgrade 帧，浏览器看到 connection refused，WS 永远连不上
+      '/api': { target: 'http://localhost:8765', ws: true, changeOrigin: true },
       '/static': 'http://localhost:8765',
     },
   },
