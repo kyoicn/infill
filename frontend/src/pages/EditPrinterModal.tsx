@@ -1,23 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Modal, Form, Input, Typography, Button, Space, message } from 'antd';
-import { api } from '../api/client';
-
-// TODO(T4.1 merge): remove these placeholders and import from '../api/client'
-//   when T4.1 lands (它会 export Printer / PrinterUpdateBody)。
-export interface Printer {
-  id: number;
-  name: string;
-  ip: string | null;
-  serial: string | null;
-  access_code_masked: string | null;
-}
-
-export type PrinterUpdateBody = Partial<{
-  name: string;
-  ip: string;
-  serial: string;
-  access_code: string;
-}>;
+import { api, type Printer, type PrinterUpdateBody } from '../api/client';
 
 interface EditPrinterModalProps {
   open: boolean;

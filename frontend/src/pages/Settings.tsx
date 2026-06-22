@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Card, Table, Button, Modal, Input, InputNumber, Space, Popconfirm, Tag, TimePicker, message } from 'antd';
 import { PlusOutlined, DeleteOutlined, EditOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
-import { api } from '../api/client';
+import { api, type Printer } from '../api/client';
 import dayjs from 'dayjs';
-import EditPrinterModal, { type Printer } from './EditPrinterModal';
+import EditPrinterModal from './EditPrinterModal';
 
 const DAY_NAMES = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
@@ -19,8 +19,7 @@ export default function Settings() {
   const [editingPrinter, setEditingPrinter] = useState<Printer | null>(null);
 
   const loadPrinters = () => {
-    // TODO(T4.1 merge): drop the cast once api.getPrinters returns Printer[].
-    api.getPrinters().then((rows) => setPrinters(rows as Printer[]));
+    api.getPrinters().then(setPrinters);
   };
 
   const reload = () => {

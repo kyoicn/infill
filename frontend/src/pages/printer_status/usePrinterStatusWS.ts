@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { BACKOFF_MS } from './constants';
-import type { PrinterStatusEvent, PrinterWSMessage } from './types';
+import type { PrinterStatusEvent, PrinterWSMessage } from '../../api/client';
 
 export type WSStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
 

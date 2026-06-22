@@ -5,25 +5,13 @@ import {
   ExclamationCircleFilled,
   SyncOutlined,
 } from '@ant-design/icons';
-// TODO(T4.1 merge): T4.1 把 PrinterStatusSnapshot / PrinterStatusEvent /
-// api.getPrinterStatusSnapshot() export 到 ../api/client；
-// merge 时把 types 改成 from '../api/client'，并用 api.getPrinterStatusSnapshot() 替换本地 fetcher。
-import type {
-  PrinterStatusEvent,
-  PrinterStatusSnapshot,
-} from './printer_status/types';
+import {
+  api,
+  type PrinterStatusEvent,
+  type PrinterStatusSnapshot,
+} from '../api/client';
 import { usePrinterStatusWS } from './printer_status/usePrinterStatusWS';
 import { PrinterCard } from './printer_status/PrinterCard';
-
-// TODO(T4.1 merge): 替换为 api.getPrinterStatusSnapshot()
-async function fetchPrinterStatusSnapshot(): Promise<PrinterStatusSnapshot[]> {
-  const res = await fetch('/api/printers/status/snapshot');
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `请求失败: ${res.status}`);
-  }
-  return res.json();
-}
 
 export default function PrinterStatus() {
   const [snapshots, setSnapshots] = useState<PrinterStatusSnapshot[] | null>(null);
@@ -33,7 +21,7 @@ export default function PrinterStatus() {
 
   const loadSnapshot = useCallback(async () => {
     try {
-      const data = await fetchPrinterStatusSnapshot();
+      const data = await api.getPrinterStatusSnapshot();
       setSnapshots(data);
       setError(null);
     } catch (e) {

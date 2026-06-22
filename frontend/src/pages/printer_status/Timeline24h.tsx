@@ -1,6 +1,6 @@
 import { Tooltip } from 'antd';
 import { STATE_COLORS, STATE_LABELS } from './constants';
-import type { PrinterStateOrUnconfigured, TimelineSegment } from './types';
+import type { PrinterStateOrUnconfigured, TimelineSegment } from '../../api/client';
 
 interface Timeline24hProps {
   timeline: TimelineSegment[];

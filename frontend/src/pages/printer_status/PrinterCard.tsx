@@ -2,7 +2,7 @@ import { Card, Tag, Tooltip } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
 import { STATE_COLORS, STATE_LABELS } from './constants';
 import { Timeline24h } from './Timeline24h';
-import type { PrinterStateOrUnconfigured, PrinterStatusSnapshot } from './types';
+import type { PrinterStateOrUnconfigured, PrinterStatusSnapshot } from '../../api/client';
 
 interface PrinterCardProps {
   snapshot: PrinterStatusSnapshot;
