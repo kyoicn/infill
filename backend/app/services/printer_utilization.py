@@ -178,3 +178,39 @@ def compute_today_snapshot_for_printer(
         last_state_change_ts = pre_sample.ts
 
     return current_state, working_minutes, last_state_change_ts, timeline
+
+
+def compute_day_working_minutes(
+    db: Session,
+    printer_id: int,
+    day_start: datetime,
+    day_end: datetime,
+) -> int:
+    """计算 [day_start, day_end] 区间内累计 working 分钟数。
+
+    复用 `compute_today_snapshot` 纯函数：把 day_end 当作 "now"、day_start 当作 "today_start"。
+    适用于历史日（day_end = day_start + 24h）与今日（day_end = 真实当前时间）两种场景。
+    """
+    pre_sample = (
+        db.query(PrinterStatusSample)
+        .filter(
+            PrinterStatusSample.printer_id == printer_id,
+            PrinterStatusSample.ts <= day_start,
+        )
+        .order_by(PrinterStatusSample.ts.desc())
+        .limit(1)
+        .first()
+    )
+    day_samples = (
+        db.query(PrinterStatusSample)
+        .filter(
+            PrinterStatusSample.printer_id == printer_id,
+            PrinterStatusSample.ts > day_start,
+            PrinterStatusSample.ts <= day_end,
+        )
+        .order_by(PrinterStatusSample.ts.asc())
+        .all()
+    )
+    merged: list = ([pre_sample] if pre_sample is not None else []) + day_samples
+    working_minutes, _ = compute_today_snapshot(merged, day_end, day_start)
+    return working_minutes

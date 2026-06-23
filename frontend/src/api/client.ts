@@ -47,6 +47,17 @@ export interface PrinterStatusPing {
   ts?: string;
 }
 
+export interface HistoryDay {
+  date: string; // "YYYY-MM-DD"
+  working_minutes: number;
+}
+
+export interface PrinterHistoryOut {
+  printer_id: number;
+  name: string;
+  history: HistoryDay[]; // 升序，今天在最后
+}
+
 export type PrinterWSMessage = PrinterStatusEvent | PrinterStatusPing;
 
 export interface Printer {
@@ -91,6 +102,8 @@ export const api = {
     request<Printer>(`/printers/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
   deletePrinter: (id: number) => request<any>(`/printers/${id}`, { method: 'DELETE' }),
   getPrinterStatusSnapshot: () => request<PrinterStatusSnapshot[]>('/printers/status/snapshot'),
+  getPrinterUtilizationHistory: (days = 7) =>
+    request<PrinterHistoryOut[]>(`/printers/utilization/history?days=${days}`),
 
   // 配置
   getScheduleConfigs: () => request<any[]>('/config/schedule'),

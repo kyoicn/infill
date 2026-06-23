@@ -11,15 +11,18 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Printer
-from ..schemas_printer_status import PrinterStatusOut
-from ..services.printer_utilization import compute_today_snapshot_for_printer
+from ..schemas_printer_status import HistoryDay, PrinterHistoryOut, PrinterStatusOut
+from ..services.printer_utilization import (
+    compute_day_working_minutes,
+    compute_today_snapshot_for_printer,
+)
 
 
 router = APIRouter(prefix="/api/printers", tags=["printer-status"])
@@ -69,6 +72,38 @@ def get_status_snapshot(db: Session = Depends(get_db)) -> list[PrinterStatusOut]
                 timeline=timeline,
             )
         )
+    return out
+
+
+@router.get("/utilization/history", response_model=list[PrinterHistoryOut])
+def get_utilization_history(
+    days: int = Query(7, ge=1, le=90),
+    db: Session = Depends(get_db),
+) -> list[PrinterHistoryOut]:
+    """过去 N 天每台打印机的每日 working_minutes（自然日，本地时区）。
+
+    - 包含今日（today_end = 真实当前时间，工作时长仍在累加）。
+    - 历史日 day_end = day_start + 24h（满一天）。
+    - 未配置打印机也返回，但 history 全部 working_minutes=0（无样本）。
+    """
+    now = datetime.now()
+    today_start = datetime(now.year, now.month, now.day, 0, 0, 0)
+
+    printers = db.query(Printer).order_by(Printer.id.asc()).all()
+    out: list[PrinterHistoryOut] = []
+    for p in printers:
+        history: list[HistoryDay] = []
+        for i in range(days - 1, -1, -1):
+            day_start = today_start - timedelta(days=i)
+            day_end = now if i == 0 else day_start + timedelta(days=1)
+            working_minutes = compute_day_working_minutes(db, p.id, day_start, day_end)
+            history.append(
+                HistoryDay(
+                    date=day_start.strftime("%Y-%m-%d"),
+                    working_minutes=working_minutes,
+                )
+            )
+        out.append(PrinterHistoryOut(printer_id=p.id, name=p.name, history=history))
     return out
 
 

@@ -7,6 +7,8 @@ import {
 } from '@ant-design/icons';
 import {
   api,
+  type HistoryDay,
+  type PrinterHistoryOut,
   type PrinterStatusEvent,
   type PrinterStatusSnapshot,
 } from '../api/client';
@@ -15,6 +17,7 @@ import { PrinterCard } from './printer_status/PrinterCard';
 
 export default function PrinterStatus() {
   const [snapshots, setSnapshots] = useState<PrinterStatusSnapshot[] | null>(null);
+  const [historyByPrinter, setHistoryByPrinter] = useState<Record<number, HistoryDay[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<Date>(new Date());
@@ -29,6 +32,17 @@ export default function PrinterStatus() {
       setError(msg);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      const rows: PrinterHistoryOut[] = await api.getPrinterUtilizationHistory(7);
+      const map: Record<number, HistoryDay[]> = {};
+      for (const r of rows) map[r.printer_id] = r.history;
+      setHistoryByPrinter(map);
+    } catch {
+      // 历史拉失败不影响实时状态展示 — 卡片底部柱状条直接不渲染
     }
   }, []);
 
@@ -50,7 +64,14 @@ export default function PrinterStatus() {
   // 先 snapshot 再 WS，是两个独立动作）。onReconnect 回调留作断线重连补齐。
   useEffect(() => {
     void loadSnapshot();
-  }, [loadSnapshot]);
+    void loadHistory();
+  }, [loadSnapshot, loadHistory]);
+
+  // 每 5 分钟刷一次历史（当天最后一格随时间增长）
+  useEffect(() => {
+    const id = setInterval(() => void loadHistory(), 5 * 60_000);
+    return () => clearInterval(id);
+  }, [loadHistory]);
 
   // 每分钟 tick 一次更新「现在」竖线位置（粒度足够 — 时间轴 1440 分一格）
   useEffect(() => {
@@ -128,7 +149,7 @@ export default function PrinterStatus() {
       <Row gutter={[16, 16]}>
         {snapshots.map((s) => (
           <Col key={s.printer_id} xs={24} sm={12} lg={6}>
-            <PrinterCard snapshot={s} now={now} />
+            <PrinterCard snapshot={s} now={now} history={historyByPrinter[s.printer_id]} />
           </Col>
         ))}
       </Row>

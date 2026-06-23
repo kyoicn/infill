@@ -32,3 +32,14 @@ class PrinterStatusEvent(BaseModel):
     printer_id: int
     state: Literal["running", "pause", "idle", "offline"]
     ts: datetime
+
+
+class HistoryDay(BaseModel):
+    date: str  # "YYYY-MM-DD"
+    working_minutes: int
+
+
+class PrinterHistoryOut(BaseModel):
+    printer_id: int
+    name: str
+    history: list[HistoryDay]  # 升序，最旧在前、最新（今日）在后
