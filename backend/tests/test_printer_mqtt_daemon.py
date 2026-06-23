@@ -319,7 +319,7 @@ def test_startup_and_reconcile_logs_never_leak_raw_access_code(caplog):
 
         # 触发 on_disconnect 也走一遍（rc != 0 + connect 失败路径）
         daemon._on_connect(MagicMock(), {"printer_id": 42, "serial": "SN-42"}, {}, rc=4)
-        daemon._on_disconnect(MagicMock(), {"printer_id": 42, "serial": "SN-42"}, rc=1)
+        daemon._on_disconnect(MagicMock(), {"printer_id": 42, "serial": "SN-42"}, MagicMock(), reason_code=1)
 
         # 关键断言：原值绝不出现在任何日志里
         assert secret not in caplog.text
@@ -350,3 +350,21 @@ def test_normalize_gcode_state_helper_branches():
     assert _normalize_gcode_state("FAILED") == "idle"
     assert _normalize_gcode_state("foobar") == "idle"
     assert _normalize_gcode_state(None) == "idle"
+
+
+def test_on_disconnect_signature_matches_paho_v2_callback_api_version2():
+    """回归：paho-mqtt 2.x VERSION2 的 on_disconnect 实际签名是
+    (client, userdata, disconnect_flags, reason_code, properties)。
+    若 _on_disconnect 漏了 disconnect_flags 参数，paho 后台线程会在断连时
+    抛 TypeError 并整线程崩溃 — 任何重连/认证失败都救不回来。
+    用 paho 自身的回调签名约束直接验，避免再次 drift。
+    """
+    import inspect
+    from app.services.printer_mqtt_daemon import MqttDaemon
+
+    sig = inspect.signature(MqttDaemon._on_disconnect)
+    params = list(sig.parameters)
+    # self, client, userdata, disconnect_flags, reason_code, [properties]
+    assert params[:5] == ["self", "client", "userdata", "disconnect_flags", "reason_code"], (
+        f"_on_disconnect 签名 drift: {params}"
+    )

@@ -134,9 +134,9 @@ class MqttDaemon:
         normalized = _normalize_gcode_state(raw_state)
         self._sampler.on_event(printer_id, normalized, datetime.now())
 
-    def _on_disconnect(self, client, userdata, rc, properties=None):
+    def _on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):
         printer_id = userdata.get("printer_id") if userdata else None
-        logger.info("printer %s disconnected rc=%s", printer_id, rc)
+        logger.info("printer %s disconnected rc=%s", printer_id, reason_code)
 
     # ---------- 生命周期 ----------
 
