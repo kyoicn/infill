@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { Card, Tag, Tooltip } from 'antd';
 import { SettingOutlined } from '@ant-design/icons';
 import { STATE_COLORS, STATE_LABELS } from './constants';
@@ -48,42 +49,26 @@ function fmtHistoryDate(iso: string): string {
   return `${parseInt(m[1], 10)}月${parseInt(m[2], 10)}日`;
 }
 
-function HistoryMiniBars({ history }: { history: HistoryDay[] }) {
+function HistoryList({ history }: { history: HistoryDay[] }) {
   if (history.length === 0) return null;
-  const avg = Math.round(
-    history.reduce((s, d) => s + d.working_minutes, 0) / history.length,
-  );
+  // 倒序显示：今天在最上
+  const rows = [...history].reverse();
   return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ fontSize: 12, color: '#999', marginBottom: 4 }}>
-        最近 {history.length} 天
-      </div>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, height: 32 }}>
-        {history.map((d, i) => {
-          const ratio = d.working_minutes / 1440;
-          const h = Math.max(2, Math.round(ratio * 32)); // 至少 2px 让空日也可见
-          const isToday = i === history.length - 1;
+    <div style={{ marginTop: 12, fontSize: 12 }}>
+      <div style={{ color: '#999', marginBottom: 4 }}>最近 {history.length} 天</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', columnGap: 12, rowGap: 2 }}>
+        {rows.map((d, i) => {
+          const pct = (d.working_minutes / 14.4).toFixed(1);
+          const isToday = i === 0;
+          const color = isToday ? '#333' : '#666';
           return (
-            <Tooltip
-              key={d.date}
-              title={`${fmtHistoryDate(d.date)} ${formatDuration(d.working_minutes)}`}
-            >
-              <div
-                style={{
-                  flex: 1,
-                  height: h,
-                  background: STATE_COLORS.running,
-                  opacity: isToday ? 1 : 0.6,
-                  borderRadius: 2,
-                  cursor: 'default',
-                }}
-              />
-            </Tooltip>
+            <Fragment key={d.date}>
+              <span style={{ color }}>{fmtHistoryDate(d.date)}{isToday ? ' (今天)' : ''}</span>
+              <span style={{ color, textAlign: 'right' }}>{formatDuration(d.working_minutes)}</span>
+              <span style={{ color, textAlign: 'right' }}>{pct}%</span>
+            </Fragment>
           );
         })}
-      </div>
-      <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
-        {history.length} 天日均：{formatDuration(avg)}
       </div>
     </div>
   );
@@ -135,7 +120,7 @@ export function PrinterCard({ snapshot, now, history }: PrinterCardProps) {
         </div>
       )}
       <Timeline24h timeline={snapshot.timeline} state={state} now={now} />
-      {state !== 'unconfigured' && history && <HistoryMiniBars history={history} />}
+      {state !== 'unconfigured' && history && <HistoryList history={history} />}
     </Card>
   );
 }
