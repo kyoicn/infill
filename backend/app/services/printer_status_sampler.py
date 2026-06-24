@@ -26,7 +26,11 @@ from ..models import PrinterStatusSample
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_INTERVAL_SEC = 30
-OFFLINE_THRESHOLD_SEC = 90
+# Bambu 在 IDLE/RUNNING 稳态下的 MQTT 推送间隔实测可达 2-5 分钟。设计文档原
+# 假设的 90s 阈值会把"懒推送"误判为离线，造成 idle/offline 锯齿。把阈值拉到
+# 10 分钟覆盖 Bambu 真实推送间隔；真离线由 daemon 的 _on_disconnect 直接写
+# 一条 offline sample（不依赖此 timeout）。
+OFFLINE_THRESHOLD_SEC = 600
 
 State = Literal["running", "pause", "idle", "offline"]
 
@@ -149,10 +153,8 @@ class Sampler:
             if elapsed > OFFLINE_THRESHOLD_SEC and last_state != "offline":
                 # 走 on_event 路径：会写 sample + 广播 + 更新 _last_state
                 self.on_event(printer_id, "offline", now)
-            elif last_state is not None:
-                # 心跳兜底 sample（不广播；ts 用 now，但不刷新 _last_event_ts 防离线
-                # 检测被自己 mask 掉）
-                self._write_sample(printer_id, last_state, now)
+            # 不再写"同状态"兜底 sample —— 利用率算法靠线段插值，相邻状态变化
+            # 之间不需要重复 sample；旧逻辑每 30s 一条同状态行纯属噪声。
 
     # ---------- 内部：写库 / 广播 ----------
 

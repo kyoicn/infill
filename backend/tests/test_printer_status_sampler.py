@@ -159,7 +159,12 @@ def test_sampler_on_event_only_writes_and_broadcasts_on_state_change():
 # case 4: 心跳兜底 — 30s 后 state 仍 running 时再写一条 sample、广播不增加
 # =========================================================================
 
-def test_heartbeat_tick_writes_steady_state_sample_without_broadcasting(monkeypatch):
+def test_heartbeat_tick_does_not_write_steady_state_sample(monkeypatch):
+    """心跳 tick 在 last_state 未变 + 未越离线阈值时**不写库不广播**。
+
+    历史曾经在这种情况下也补写一条"同状态"sample，纯属噪声 — 利用率算法
+    靠线段插值，相邻状态变化之间不需要重复 sample。
+    """
     factory, written = _make_db_factory()
     broadcaster = MagicMock(spec=Broadcaster)
 
@@ -191,11 +196,8 @@ def test_heartbeat_tick_writes_steady_state_sample_without_broadcasting(monkeypa
 
     _run(go())
 
-    # 写库 +1（心跳兜底），总计 2
-    assert len(written) == 2
-    # 第二条仍是 running
-    assert written[1].state == "running"
-    assert written[1].printer_id == 1
+    # 心跳不再写"同状态"兜底 sample
+    assert len(written) == 1
     # 广播不增加
     assert broadcaster.publish.call_count == 1
 

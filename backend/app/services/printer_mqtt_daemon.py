@@ -137,6 +137,14 @@ class MqttDaemon:
     def _on_disconnect(self, client, userdata, disconnect_flags, reason_code, properties=None):
         printer_id = userdata.get("printer_id") if userdata else None
         logger.info("printer %s disconnected rc=%s", printer_id, reason_code)
+        # 真实断开（认证失败 / 网络抖动 / 打印机断电）立刻报 offline，不依赖
+        # sampler 的 OFFLINE_THRESHOLD_SEC timeout。paho loop_start 会自动重连，
+        # 重连后会有新的 on_message 推一条真实 state 覆盖回来。
+        if printer_id is not None:
+            try:
+                self._sampler.on_event(printer_id, "offline", datetime.now())
+            except Exception:  # noqa: BLE001
+                logger.exception("printer %s on_disconnect failed to write offline", printer_id)
 
     # ---------- 生命周期 ----------
 
