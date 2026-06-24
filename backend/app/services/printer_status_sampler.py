@@ -26,11 +26,11 @@ from ..models import PrinterStatusSample
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_INTERVAL_SEC = 30
-# Bambu 在 IDLE/RUNNING 稳态下的 MQTT 推送间隔实测可达 2-5 分钟。设计文档原
-# 假设的 90s 阈值会把"懒推送"误判为离线，造成 idle/offline 锯齿。把阈值拉到
-# 10 分钟覆盖 Bambu 真实推送间隔；真离线由 daemon 的 _on_disconnect 直接写
-# 一条 offline sample（不依赖此 timeout）。
-OFFLINE_THRESHOLD_SEC = 600
+# Bambu MQTT 推送实测极不稳定：打印过程中可连续 20-30 分钟不推任何消息。
+# "N 秒没消息 = 离线" 这种判定不可靠 —— 真离线由 daemon _on_disconnect 写
+# offline sample（paho keepalive=60s 探活，断了 1 秒内即知），sampler 不再做
+# 消息层 timeout。阈值留在这里作为兜底安全网：1 小时仍无消息则保守标 offline。
+OFFLINE_THRESHOLD_SEC = 3600
 
 State = Literal["running", "pause", "idle", "offline"]
 
