@@ -45,6 +45,30 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # ---------- bridge artifact: 打成单文件 .pyz 附到 release ----------
+      - name: Set up Python (for bridge build)
+        if: github.event_name == 'release'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build bridge.pyz with shiv
+        if: github.event_name == 'release'
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install shiv
+          shiv -e bridge:main -o bridge.pyz \
+            -r bridge/requirements.txt \
+            --site-packages bridge/
+          ls -la bridge.pyz
+
+      - name: Attach bridge.pyz to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: bridge.pyz
+
   deploy:
     needs: build
     runs-on: [self-hosted, macOS, deploy]
@@ -69,6 +93,26 @@ jobs:
       - name: Logout from GHCR
         if: always()
         run: docker logout ghcr.io || true
+
+      # ---------- bridge: 下载 release 里的 .pyz、覆盖、kickstart launchd ----------
+      - name: Update bridge.pyz from release assets
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ ! -d "$HOME/.infill-bridge/bin" ]; then
+            echo "bridge not bootstrapped yet (missing ~/.infill-bridge/bin) — skipping"
+            echo "首装请在 mini 上跑 bridge/installer.sh init"
+            exit 0
+          fi
+          gh release download "${{ github.event.release.tag_name }}" \
+            -R "${{ github.repository }}" \
+            -p bridge.pyz -D /tmp/ --clobber
+          install -m 755 /tmp/bridge.pyz "$HOME/.infill-bridge/bin/bridge.pyz"
+          rm -f /tmp/bridge.pyz
+          launchctl kickstart -k "gui/$(id -u)/com.infill.bridge"
+          echo "bridge updated and kicked"
 
       - name: Healthcheck
         run: |

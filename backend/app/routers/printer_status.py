@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta
+from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, Request, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -27,6 +29,27 @@ from ..services.printer_utilization import (
 
 router = APIRouter(prefix="/api/printers", tags=["printer-status"])
 ws_router = APIRouter(prefix="/api/ws", tags=["printer-status"])
+# 内部端点：宿主机 bridge.py 用这条把 LAN MQTT 翻译过来的事件喂给 sampler。
+# 部署在 mini 容器场景下，bridge 跑在 Mac 宿主机访问 LAN 打印机，再 POST 到容器。
+internal_router = APIRouter(prefix="/api/internal", tags=["printer-status-internal"])
+
+
+class PrinterStateInbound(BaseModel):
+    printer_id: int
+    state: Literal["running", "pause", "idle", "offline"]
+    ts: datetime
+
+
+@internal_router.post("/printer_state")
+def receive_printer_state(event: PrinterStateInbound, request: Request) -> dict:
+    """宿主机 bridge → 容器 sampler 的事件入口。
+
+    认证：当前无；mini 上容器与 bridge 同主机，端口仅 LAN 暴露。
+    如需收紧，加 INFILL_BRIDGE_TOKEN 环境变量 + Authorization 头校验即可。
+    """
+    sampler = request.app.state.printer_status_sampler
+    sampler.on_event(event.printer_id, event.state, event.ts)
+    return {"ok": True}
 
 
 WS_PING_INTERVAL_SEC = 25

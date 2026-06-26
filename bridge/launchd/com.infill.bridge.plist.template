@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.infill.bridge</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>@@INSTALL_DIR@@/bin/bridge.pyz</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>INFILL_DB_PATH</key>
+    <string>@@HOME@@/workspace/infill-deploy/data/data.db</string>
+    <key>INFILL_API_URL</key>
+    <string>http://localhost:8000</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>StandardOutPath</key>
+  <string>@@INSTALL_DIR@@/log/bridge.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>@@INSTALL_DIR@@/log/bridge.err.log</string>
+
+  <key>WorkingDirectory</key>
+  <string>@@INSTALL_DIR@@</string>
+</dict>
+</plist>

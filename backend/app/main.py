@@ -65,19 +65,25 @@ async def lifespan(app: FastAPI):
         db.close()
 
     # 5. prd-007：起 MQTT 守护进程 + 心跳循环；三对象挂到 app.state 供 router 取
+    # 环境变量 SKIP_MQTT_DAEMON=1 时跳过容器内 MQTT 客户端启动 —— mini 部署场景
+    # 容器到 LAN 不可达，由宿主机上的 bridge.py 经 POST /api/internal/printer_state
+    # 把事件喂给 sampler。
+    skip_daemon = bool(os.environ.get("SKIP_MQTT_DAEMON"))
     broadcaster = Broadcaster()
     sampler = Sampler(broadcaster)
     daemon = MqttDaemon(sampler)
     app.state.printer_status_broadcaster = broadcaster
     app.state.printer_status_sampler = sampler
     app.state.printer_status_daemon = daemon
-    daemon.startup()  # 同步：paho loop_start 非阻塞
+    if not skip_daemon:
+        daemon.startup()  # 同步：paho loop_start 非阻塞
     await sampler.start_heartbeat_loop()
     try:
         yield
     finally:
         sampler.stop_heartbeat_loop()
-        daemon.shutdown()
+        if not skip_daemon:
+            daemon.shutdown()
 
 
 app = FastAPI(title="3D打印排班系统", lifespan=lifespan)
@@ -100,6 +106,7 @@ app.include_router(intake.router)
 app.include_router(auto_import_router.router)
 app.include_router(printer_status_router.router)
 app.include_router(printer_status_router.ws_router)
+app.include_router(printer_status_router.internal_router)
 
 
 @app.get("/api/health")
