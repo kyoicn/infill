@@ -16,7 +16,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # 需要 write 才能给 release 加 bridge.pyz asset
       packages: write
     steps:
       - uses: actions/checkout@v4
